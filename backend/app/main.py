@@ -4,6 +4,7 @@ import os
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
@@ -114,13 +115,23 @@ app.add_middleware(
 
 
 @app.get("/")
-def api_root():
-    return {
-        "service": "wind-finance-api",
-        "status": "ok",
-        "docs": "/docs",
-        "health": "/health",
-    }
+def serve_frontend():
+    return FileResponse(BASE_DIR.parent / "sitefinance" / "site.html")
+
+
+@app.get("/site.html")
+def serve_frontend_alias():
+    return FileResponse(BASE_DIR.parent / "sitefinance" / "site.html")
+
+
+@app.get("/style.css")
+def serve_frontend_css():
+    return FileResponse(BASE_DIR.parent / "sitefinance" / "style.css")
+
+
+@app.get("/script.js")
+def serve_frontend_js():
+    return FileResponse(BASE_DIR.parent / "sitefinance" / "script.js")
 
 
 @app.get("/health")
@@ -154,6 +165,3 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @app.get("/auth/me", response_model=UserResponse)
 def current_user(user: User = Depends(get_current_user)):
     return user
-
-
-app.mount("/", StaticFiles(directory=BASE_DIR.parent / "sitefinance", html=True), name="frontend")

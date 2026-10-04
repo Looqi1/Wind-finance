@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 	<div class="app">
@@ -17,6 +17,7 @@
 				<a href="#investments"><span class="nav-icon"><i data-lucide="chart-no-axes-combined"></i></span> Инвестиции</a>
 				<a href="#crypto"><span class="nav-icon"><i data-lucide="bitcoin"></i></span> Крипто</a>
 				<a href="#converter"><span class="nav-icon"><i data-lucide="repeat-2"></i></span> Конвертер</a>
+				<a href="#game"><span class="nav-icon"><i data-lucide="gamepad-2"></i></span> Игра</a>
 			</nav>
 			<div class="sidebar-bottom">
 				<p><strong>Последнее обновление</strong><br>Сегодня, 12:42 по Москве</p>
@@ -27,18 +28,33 @@
 		<main id="dashboard">
 			<header class="topbar">
 				<div><p class="eyebrow">Рынок в реальном времени</p><h1>Курсы валют</h1><p class="subline">Следи за изменениями рынка в одном месте.</p></div>
-				<div class="profile-menu">
-					<button class="profile-trigger" type="button" aria-expanded="false" aria-controls="profile-dropdown">
-						<span class="avatar wind-avatar"><i data-lucide="wind"></i></span><span class="profile-copy"><span class="profile-name">Алексей</span><span class="profile-meta">Wind Plus</span></span><span class="profile-chevron"><i data-lucide="chevron-down"></i></span>
+				<div class="topbar-actions">
+					<div class="notification-menu">
+						<button class="icon-button notification-button" type="button" aria-label="Уведомления" aria-expanded="false" aria-controls="notification-panel">
+							<i data-lucide="bell"></i>
+							<span class="notif-dot"></span>
+						</button>
+						<div class="notification-panel" id="notification-panel" hidden>
+							<div class="notification-header"><strong>Уведомления</strong><span id="notification-badge">3</span></div>
+							<div class="notification-list" id="notification-list"></div>
+						</div>
+					</div>
+					<button class="icon-button theme-toggle" type="button" aria-label="Сменить тему" data-theme-toggle>
+						<i data-lucide="moon"></i>
 					</button>
-					<div class="profile-dropdown" id="profile-dropdown" hidden>
-						<div class="dropdown-user"><span class="avatar wind-avatar small"><i data-lucide="wind"></i></span><div><strong>Алексей</strong><span>Wind Plus · личный аккаунт</span></div></div>
-						<div class="dropdown-divider"></div>
-						<a href="#settings"><span><i data-lucide="settings-2"></i></span> Настройки</a>
-						<a href="#currency"><span><i data-lucide="wallet-cards"></i></span> Основная валюта <b>RUB</b></a>
-						<a href="#alerts"><span><i data-lucide="bell"></i></span> Уведомления</a>
-						<div class="dropdown-divider"></div>
-						<a class="logout" href="#logout"><span><i data-lucide="log-out"></i></span> Выйти</a>
+					<div class="profile-menu">
+						<button class="profile-trigger" type="button" aria-expanded="false" aria-controls="profile-dropdown">
+							<span class="avatar wind-avatar"><i data-lucide="wind"></i></span><span class="profile-copy"><span class="profile-name">Алексей</span><span class="profile-meta">Wind Plus</span></span><span class="profile-chevron"><i data-lucide="chevron-down"></i></span>
+						</button>
+						<div class="profile-dropdown" id="profile-dropdown" hidden>
+							<div class="dropdown-user"><span class="avatar wind-avatar small"><i data-lucide="wind"></i></span><div><strong>Алексей</strong><span>Wind Plus · личный аккаунт</span></div></div>
+							<div class="dropdown-divider"></div>
+							<a href="#settings"><span><i data-lucide="settings-2"></i></span> Настройки</a>
+							<a href="#currency"><span><i data-lucide="wallet-cards"></i></span> Основная валюта <b>RUB</b></a>
+							<a href="#alerts"><span><i data-lucide="bell"></i></span> Уведомления</a>
+							<div class="dropdown-divider"></div>
+							<a class="logout" href="#logout"><span><i data-lucide="log-out"></i></span> Выйти</a>
+						</div>
 					</div>
 				</div>
 			</header>
@@ -64,31 +80,113 @@
 				</article>
 			</section>
 
+			<section id="converter" class="market-section">
+				<div class="section-heading"><div><h2>Конвертер</h2><p>Быстрый расчёт суммы</p></div></div>
+				<article class="card schedule converter">
+					<label>У меня есть</label>
+					<div class="convert-row currency-picker-row">
+						<input type="number" value="100" min="0" step="0.01">
+						<select class="converter-from" hidden aria-label="Валюта, с которой конвертируем">
+							<option value="USD" selected>USD</option>
+							<option value="EUR">EUR</option>
+							<option value="RUB">RUB</option>
+							<option value="CNY">CNY</option>
+							<option value="GBP">GBP</option>
+							<option value="AED">AED</option>
+						</select>
+						<div class="currency-stack">
+							<button class="currency-pill" type="button" data-currency-field="from">USD · $</button>
+						</div>
+					</div>
+					<label>Получаю</label>
+					<div class="convert-row currency-picker-row">
+						<output class="converter-output">9 248,00</output>
+						<select class="converter-to" hidden aria-label="Валюта, в которую конвертируем">
+							<option value="USD">USD</option>
+							<option value="EUR">EUR</option>
+							<option value="RUB" selected>RUB</option>
+							<option value="CNY">CNY</option>
+							<option value="GBP">GBP</option>
+							<option value="AED">AED</option>
+						</select>
+						<div class="currency-stack">
+							<button class="currency-pill" type="button" data-currency-field="to">RUB · ₽</button>
+						</div>
+					</div>
+					<div class="converter-actions-row">
+						<button class="swap-currency" type="button" id="swap-currencies" aria-label="Поменять валюты"><i data-lucide="arrow-left-right"></i></button>
+						<button class="all-currency-button" type="button" data-modal="currency-modal">Все валюты</button>
+					</div>
+					<button class="converter-submit" type="button" aria-label="Обменять валюту">
+						<span class="converter-submit-wave" aria-hidden="true"></span>
+						<span class="converter-submit-label"><i data-lucide="refresh-cw"></i> Обменять</span>
+					</button>
+					<p class="converter-note">По курсу 92,48 ₽ за 1 USD</p>
+				</article>
+			</section>
+
 			<section class="content-grid">
 				<div id="rates">
 					<div class="section-heading"><div><h2>Избранные валюты</h2><p>К российскому рублю · ЦБ и рынок</p></div><a href="#rates">Все валюты →</a></div>
 					<div class="course-list">
-						<article class="card course currency"><div class="course-icon orange"><i data-lucide="dollar-sign"></i></div><div><h3>Доллар США <span class="code">USD</span></h3><p>1 USD = 92,48 RUB</p></div><div class="rate-change positive">+0,37%</div></article>
-						<article class="card course currency"><div class="course-icon purple"><i data-lucide="euro"></i></div><div><h3>Евро <span class="code">EUR</span></h3><p>1 EUR = 100,21 RUB</p></div><div class="rate-change negative">−0,12%</div></article>
-						<article class="card course currency"><div class="course-icon blue"><i data-lucide="japanese-yen"></i></div><div><h3>Китайский юань <span class="code">CNY</span></h3><p>1 CNY = 12,86 RUB</p></div><div class="rate-change positive">+0,08%</div></article>
+						<article class="card course currency favorite-currency-card" data-favorite-currency="USD" tabindex="0" role="button" aria-label="Выбрать пару USD / RUB"><div class="course-icon orange"><i data-lucide="dollar-sign"></i></div><div><h3>Доллар США <span class="code">USD</span></h3><p>1 USD = 92,48 RUB</p></div><div class="rate-change positive">+0,37%</div></article>
+						<article class="card course currency favorite-currency-card" data-favorite-currency="EUR" tabindex="0" role="button" aria-label="Выбрать пару EUR / RUB"><div class="course-icon purple"><i data-lucide="euro"></i></div><div><h3>Евро <span class="code">EUR</span></h3><p>1 EUR = 100,21 RUB</p></div><div class="rate-change negative">−0,12%</div></article>
+						<article class="card course currency favorite-currency-card" data-favorite-currency="CNY" tabindex="0" role="button" aria-label="Выбрать пару CNY / RUB"><div class="course-icon blue"><i data-lucide="japanese-yen"></i></div><div><h3>Китайский юань <span class="code">CNY</span></h3><p>1 CNY = 12,86 RUB</p></div><div class="rate-change positive">+0,08%</div></article>
 					</div>
-				</div>
-				<div id="converter">
-					<div class="section-heading"><div><h2>Конвертер</h2><p>Быстрый расчёт суммы</p></div></div>
-					<article class="card schedule converter">
-						<label>У меня есть</label><div class="convert-row"><input type="number" value="100"><select><option>USD · $</option><option>EUR · €</option><option>RUB · ₽</option></select></div>
-						<div class="swap" aria-hidden="true"><i data-lucide="arrow-down-up"></i></div>
-						<label>Получаю</label><div class="convert-row"><output>9 248,00</output><select><option>RUB · ₽</option><option>USD · $</option><option>EUR · €</option></select></div>
-						<p class="converter-note">По курсу 92,48 ₽ за 1 USD</p>
-					</article>
 				</div>
 			</section>
 
 			<section class="market-section" id="investments">
-				<div class="section-heading"><div><h2>Инвестиции</h2><p>Твой портфель · доходность за месяц</p></div><a href="#investments">Открыть портфель →</a></div>
+				<div class="section-heading"><div><h2>Инвестиции</h2><p>Твой портфель · доходность за месяц</p></div><button type="button" class="portfolio-link" data-open-investment-profile>Открыть портфель →</button></div>
 				<div class="asset-grid">
-					<article class="card asset-card"><div class="asset-top"><span class="asset-icon teal"><i data-lucide="landmark"></i></span><span class="rate-change positive">+8,4%</span></div><h3>Индекс Мосбиржи</h3><strong class="asset-value">3 184,62</strong><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-					<article class="card asset-card"><div class="asset-top"><span class="asset-icon amber"><i data-lucide="factory"></i></span><span class="rate-change positive">+4,2%</span></div><h3>Сбербанк</h3><strong class="asset-value">315,40 ₽</strong><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+					<article class="card asset-card"><div class="asset-top"><span class="asset-icon teal"><i data-lucide="landmark"></i></span><div class="asset-growth"><strong class="asset-value">3 184,62</strong><span class="rate-change positive">+8,4%</span></div></div><div class="asset-meta"><h3>Индекс Мосбиржи</h3><span class="asset-gain">+36 740 ₽ за месяц</span></div><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+					<article class="card asset-card"><div class="asset-top"><span class="asset-icon amber"><i data-lucide="factory"></i></span><div class="asset-growth"><strong class="asset-value">315,40 ₽</strong><span class="rate-change positive">+4,2%</span></div></div><div class="asset-meta"><h3>Сбербанк</h3><span class="asset-gain">+12,7 ₽ за день</span></div><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+					<article class="card asset-card"><div class="asset-top"><span class="asset-icon purple"><i data-lucide="briefcase-business"></i></span><div class="asset-growth"><strong class="asset-value">1 248,00 ₽</strong><span class="rate-change positive">+11,8%</span></div></div><div class="asset-meta"><h3>ETF на РФ</h3><span class="asset-gain">+131,5 ₽ за неделю</span></div><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+					<article class="card asset-card"><div class="asset-top"><span class="asset-icon orange"><i data-lucide="trending-up"></i></span><div class="asset-growth"><strong class="asset-value">89 500 ₽</strong><span class="rate-change positive">+6,9%</span></div></div><div class="asset-meta"><h3>Фонд облигаций</h3><span class="asset-gain">+5 760 ₽ за квартал</span></div><div class="mini-chart green-chart"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+				</div>
+			</section>
+
+			<section class="investment-profile" id="investment-profile">
+				<div class="profile-hero card">
+					<div class="profile-header compact-profile-header">
+						<button class="back-button" type="button" data-back-view="investments" aria-label="Вернуться к инвестициям"><span>←</span> Назад</button>
+						<button class="button button-light add-asset-button" type="button" data-modal="add-asset-modal">+ Добавить актив</button>
+					</div>
+					<div class="portfolio-summary">
+						<div>
+							<span class="portfolio-label">Общая стоимость</span>
+							<strong>146 720 ₽</strong>
+						</div>
+						<div>
+							<span class="portfolio-label">Доход</span>
+							<strong class="positive">+18 430 ₽</strong>
+						</div>
+						<div>
+							<span class="portfolio-label">Доходность</span>
+							<strong class="positive">+14,4%</strong>
+						</div>
+					</div>
+				</div>
+
+				<div class="portfolio-grid">
+					<div class="card portfolio-card">
+						<div class="section-heading compact"><div><h3>Активы</h3><p>Текущие позиции</p></div></div>
+						<div class="portfolio-list">
+							<div class="portfolio-item"><div class="portfolio-main"><span class="asset-icon teal"><i data-lucide="landmark"></i></span><div><strong>Индекс Мосбиржи</strong><small>1 250 ед.</small></div></div><div class="portfolio-side"><span>3 184,62 ₽</span><em class="positive">+8,4%</em></div></div>
+							<div class="portfolio-item"><div class="portfolio-main"><span class="asset-icon amber"><i data-lucide="factory"></i></span><div><strong>Сбербанк</strong><small>42 акции</small></div></div><div class="portfolio-side"><span>315,40 ₽</span><em class="positive">+4,2%</em></div></div>
+							<div class="portfolio-item"><div class="portfolio-main"><span class="asset-icon purple"><i data-lucide="briefcase-business"></i></span><div><strong>ETF на РФ</strong><small>3 200 ₽ инвест.</small></div></div><div class="portfolio-side"><span>1 248,00 ₽</span><em class="positive">+11,8%</em></div></div>
+							<div class="portfolio-item"><div class="portfolio-main"><span class="asset-icon orange"><i data-lucide="trending-up"></i></span><div><strong>Фонд облигаций</strong><small>89 500 ₽</small></div></div><div class="portfolio-side"><span>89 500 ₽</span><em class="positive">+6,9%</em></div></div>
+						</div>
+					</div>
+
+					<div class="card portfolio-card">
+						<div class="section-heading compact"><div><h3>История</h3><p>Последние операции</p></div></div>
+						<div class="ledger-list">
+							<div class="ledger-row"><span class="ledger-tag buy">Покупка</span><div><strong>ETF на РФ</strong><small>12.04.2026</small></div><b>+12 000 ₽</b></div>
+							<div class="ledger-row"><span class="ledger-tag sell">Продажа</span><div><strong>Сбербанк</strong><small>09.04.2026</small></div><b>-4 300 ₽</b></div>
+							<div class="ledger-row"><span class="ledger-tag transfer">Пополнение</span><div><strong>Баланс</strong><small>07.04.2026</small></div><b>+20 000 ₽</b></div>
+						</div>
+					</div>
 				</div>
 			</section>
 
@@ -100,6 +198,72 @@
 					<div class="chart-source"><span><i></i> Bybit Spot</span><span id="crypto-updated">Обновление...</span></div>
 					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy"><i data-lucide="arrow-up-right"></i> Купить</button><button class="trade-button sell-button" type="button" data-trade="sell"><i data-lucide="arrow-down-right"></i> Продать</button></div>
 				</article>
+				<div class="crypto-news-heading section-heading"><div><h3>Новости рынка</h3><p>Коротко о том, что двигает криптовалюты</p></div><span class="news-refresh"><i data-lucide="radio"></i> LIVE</span></div>
+				<div class="crypto-news-grid">
+					<article class="crypto-news-feature card">
+						<div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin">₿</span><span class="news-feature-label">Главное</span></div>
+						<div class="news-feature-copy"><div class="news-meta"><span class="news-tag positive-tag">BTC</span><time>12 мин назад</time></div><h3>Биткоин удерживает уровень после резкого роста объёмов</h3><p>Покупатели сохраняют инициативу, но рынок ждёт подтверждения движения выше локального сопротивления.</p><div class="news-footer"><span><i data-lucide="trending-up"></i> Позитивно</span><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button></div></div>
+					</article>
+					<div class="crypto-news-list">
+						<article class="crypto-news-item card"><span class="news-icon purple"><i data-lucide="landmark"></i></span><div><div class="news-meta"><span class="news-tag purple-tag">ETH</span><time>28 мин назад</time></div><h3>Экосистема Ethereum готовится к новой волне активности</h3><small>Нейтрально · 3 мин чтения</small></div><button type="button" aria-label="Открыть новость"><i data-lucide="chevron-right"></i></button></article>
+						<article class="crypto-news-item card"><span class="news-icon amber"><i data-lucide="zap"></i></span><div><div class="news-meta"><span class="news-tag amber-tag">Рынок</span><time>41 мин назад</time></div><h3>Объём торгов на споте вырос перед открытием США</h3><small>Важно для волатильности · 2 мин чтения</small></div><button type="button" aria-label="Открыть новость"><i data-lucide="chevron-right"></i></button></article>
+						<article class="crypto-news-item card"><span class="news-icon teal"><i data-lucide="shield-check"></i></span><div><div class="news-meta"><span class="news-tag teal-tag">Регуляция</span><time>1 ч назад</time></div><h3>Крупные площадки усиливают прозрачность резервов</h3><small>Долгосрочно позитивно · 4 мин чтения</small></div><button type="button" aria-label="Открыть новость"><i data-lucide="chevron-right"></i></button></article>
+					</div>
+				</div>
+			</section>
+
+			<section class="market-section" id="game">
+				<div class="section-heading"><div><p class="eyebrow">История Wind Finance</p><h2>Wind Cargo</h2><p>Лови грузы, пока рыночный ветер не разбросал весь портфель</p></div><span class="live-badge"><i></i> CARGO RUN</span></div>
+				<article class="card wind-game-card">
+					<div class="game-story"><div class="story-chapter"><span id="game-chapter-label">Глава 1</span><strong id="game-chapter-title">Первый груз</strong></div><p id="game-story-copy">Курьерский маршрут только открылся. Поймай 5 целых коробок и довези первый заказ.</p><div class="story-progress"><span id="game-progress-bar"></span></div><small id="game-mission">Цель: 5 коробок</small></div>
+					<div class="game-stats"><div><span>Очки</span><strong id="game-score">0</strong></div><div><span>Время</span><strong id="game-time">30</strong></div><div><span>Серия</span><strong id="game-combo">0</strong></div><div><span>Рекорд</span><strong id="game-best">0</strong></div></div>
+					<div class="wind-game-arena" id="wind-game-arena" aria-label="Игровое поле Wind Cargo"><div class="game-start-state"><span class="game-start-icon"><i data-lucide="package-open"></i></span><strong>Готов поймать груз?</strong><small>Двигай корзинку по всей ширине и лови целые коробки</small></div><div class="game-lanes" aria-hidden="true"><span></span><span></span></div><div class="game-objects" id="game-objects"></div><div class="game-player" id="game-player" aria-label="Корзина игрока"><i data-lucide="shopping-basket"></i></div></div>
+					<div class="game-controls"><div class="game-pad"><button type="button" id="game-left" aria-label="Левая дорожка"><i data-lucide="chevron-left"></i></button><button type="button" id="game-right" aria-label="Правая дорожка"><i data-lucide="chevron-right"></i></button></div><button class="button" id="game-start" type="button"><i data-lucide="play"></i> Начать историю</button><span id="game-message">Три главы. Один шанс удержать портфель.</span></div>
+				</article>
+			</section>
+
+			<section class="settings-page" id="settings">
+				<div class="card settings-hero profile-hero">
+					<div class="profile-header compact-profile-header">
+						<button class="back-button" type="button" data-back-view="settings" aria-label="Вернуться назад"><span>←</span> Назад</button>
+						<div class="status-pill"><i data-lucide="shield-check"></i> Secure sync</div>
+					</div>
+					<div class="settings-summary">
+						<div>
+							<span class="portfolio-label">Профиль</span>
+							<strong>Wind Plus</strong>
+						</div>
+						<div>
+							<span class="portfolio-label">Доходность</span>
+							<strong class="positive">+14,4%</strong>
+						</div>
+						<div>
+							<span class="portfolio-label">Баланс</span>
+							<strong>24 500 ₽</strong>
+						</div>
+					</div>
+				</div>
+
+				<div class="settings-grid">
+					<div class="card settings-card">
+						<div class="section-heading compact"><div><h3>Личный кабинет</h3><p>Управление аккаунтом</p></div></div>
+						<div class="settings-list">
+							<div class="setting-item"><div><strong>Основная валюта</strong><small>Российский рубль</small></div><span class="setting-tag">RUB</span></div>
+							<div class="setting-item"><div><strong>Уведомления</strong><small>О росте и падении активов</small></div><span class="toggle-pill active">Вкл</span></div>
+							<div class="setting-item"><div><strong>Темная тема</strong><small>Ночной режим для мини-приложения</small></div><span class="toggle-pill active">On</span></div>
+							<div class="setting-item"><div><strong>Безопасность</strong><small>Двухфакторная защита</small></div><span class="setting-tag soft">2FA</span></div>
+						</div>
+					</div>
+
+					<div class="card settings-card">
+						<div class="section-heading compact"><div><h3>Состояние портфеля</h3><p>Что сейчас важно</p></div></div>
+						<div class="insight-list">
+							<div class="insight-item"><span class="insight-dot green"></span><div><strong>USD / RUB</strong><small>+0,34 ₽ за сегодня</small></div></div>
+							<div class="insight-item"><span class="insight-dot orange"></span><div><strong>BTC / USDT</strong><small>Порог срабатывания: +6%</small></div></div>
+							<div class="insight-item"><span class="insight-dot blue"></span><div><strong>ETF</strong><small>Доходность в пределах цели</small></div></div>
+						</div>
+					</div>
+				</div>
 			</section>
 		</main>
 	</div>
@@ -116,17 +280,81 @@
 				<label>Пароль<input id="auth-password" type="password" required minlength="8" autocomplete="current-password" placeholder="Минимум 8 символов"></label>
 				<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span><i data-lucide="arrow-right"></i></button>
 			</form>
+			<button class="button secondary-button demo-login-button" id="demo-login-button" type="button">Войти как demo</button>
 			<p class="auth-error" id="auth-error" role="alert"></p>
 		</div>
 	</div>
 	<div class="wind-burst" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
 	<div class="success-toast" role="status" aria-live="polite"><span class="success-content"><strong>Успешно</strong><span class="success-message"></span></span></div>
+	<div class="modal" id="currency-modal" hidden>
+		<div class="modal-card currency-modal-card" role="dialog" aria-modal="true" aria-labelledby="currency-modal-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<div class="currency-modal-head">
+				<p class="eyebrow">Валюты</p>
+				<h2 id="currency-modal-title">Выберите пару</h2>
+			</div>
+			<div class="currency-flow-rail" aria-hidden="true"><span></span><span></span></div>
+			<div class="currency-grid">
+				<button class="currency-choice active" type="button" data-currency="USD" data-side="from">USD · $</button>
+				<button class="currency-choice" type="button" data-currency="EUR" data-side="from">EUR · €</button>
+				<button class="currency-choice" type="button" data-currency="RUB" data-side="from">RUB · ₽</button>
+				<button class="currency-choice" type="button" data-currency="CNY" data-side="from">CNY · ¥</button>
+				<button class="currency-choice" type="button" data-currency="GBP" data-side="from">GBP · £</button>
+				<button class="currency-choice" type="button" data-currency="AED" data-side="from">AED · د.إ</button>
+			</div>
+		</div>
+	</div>
 	<div class="modal" id="topup-modal" hidden>
 		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="topup-title">
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Баланс Wind Finance</p><h2 id="topup-title">Пополнить баланс</h2><p class="modal-copy">Выбери сумму для демонстрационного пополнения.</p>
-			<div class="amount-options"><button type="button" class="amount-option">1 000 ₽</button><button type="button" class="amount-option active">5 000 ₽</button><button type="button" class="amount-option">10 000 ₽</button></div>
-			<button class="button modal-submit" type="button" data-success="Баланс пополнен на 5 000 ₽">Пополнить баланс <span>→</span></button>
+			<p class="eyebrow">Баланс Wind Finance</p>
+			<h2 id="topup-title">Пополнить баланс</h2>
+			<p class="modal-copy">Выбери готовую сумму или введи своё значение вручную.</p>
+			<div class="topup-form">
+				<div class="amount-options">
+					<button type="button" class="amount-option" data-amount="1000">1 000 ₽</button>
+					<button type="button" class="amount-option active" data-amount="5000">5 000 ₽</button>
+					<button type="button" class="amount-option" data-amount="10000">10 000 ₽</button>
+				</div>
+				<div class="custom-amount">
+					<label for="custom-topup-amount">Своя сумма</label>
+					<div class="custom-amount-input">
+						<span>₽</span>
+						<input id="custom-topup-amount" type="number" min="100" step="100" placeholder="Введите сумму" inputmode="numeric">
+					</div>
+				</div>
+				<div class="payment-methods">
+					<button type="button" class="payment-option active" data-payment="card">
+						<span class="picker-icon teal"><i data-lucide="credit-card"></i></span>
+						<span><strong>Карта</strong><small>Visa / MasterCard</small></span>
+					</button>
+					<button type="button" class="payment-option" data-payment="sbp">
+						<span class="picker-icon purple"><i data-lucide="wallet"></i></span>
+						<span><strong>СБП</strong><small>Моментально</small></span>
+					</button>
+				</div>
+			</div>
+			<button id="topup-submit" class="button modal-submit" type="button" data-default-amount="5000" data-success="Баланс пополнен на 5 000 ₽">Пополнить на 5 000 ₽ <span>→</span></button>
+		</div>
+	</div>
+	<div class="modal" id="checkout-modal" hidden>
+		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Оплата</p>
+			<h2 id="checkout-title">Подтверждение оплаты</h2>
+			<p class="modal-copy">Покупка будет выполнена безопасно внутри мини-приложения.</p>
+			<div class="crypto-order-fields">
+				<label>Количество<input id="crypto-buy-quantity" type="number" min="0.00000001" step="0.00000001" value="0.01" inputmode="decimal"></label>
+				<label>Цена за монету<input id="crypto-buy-price" type="number" min="0" step="0.01" inputmode="decimal"></label>
+			</div>
+			<div class="checkout-summary">
+				<div class="checkout-row"><span>Актив</span><strong id="checkout-asset">BTC / USDT</strong></div>
+				<div class="checkout-row"><span>Количество</span><strong id="checkout-quantity">0,01</strong></div>
+				<div class="checkout-row"><span>Цена</span><strong id="checkout-price">0 USDT</strong></div>
+				<div class="checkout-row"><span>Сумма</span><strong id="checkout-amount">0 ₽</strong></div>
+				<div class="checkout-row"><span>Метод</span><strong id="checkout-method">Карта</strong></div>
+			</div>
+			<button id="confirm-payment" class="button modal-submit" type="button" data-success="Покупка подтверждена, средства зарезервированы">Подтвердить оплату <span>→</span></button>
 		</div>
 	</div>
 	<div class="modal" id="subscription-modal" hidden>
@@ -137,8 +365,34 @@
 			<button class="button modal-submit" type="button" data-success="Подписка Wind Finance Plus активирована">Оформить подписку <span>→</span></button>
 		</div>
 	</div>
+	<div class="modal" id="add-asset-modal" hidden>
+		<div class="modal-card add-asset-card" role="dialog" aria-modal="true" aria-labelledby="add-asset-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Добавить актив</p>
+			<h2 id="add-asset-title">Выбери новый инструмент</h2>
+			<div class="asset-picker-list">
+				<button class="asset-picker-option active" type="button" data-asset-name="ETF на РФ">
+					<span class="picker-icon teal"><i data-lucide="briefcase-business"></i></span>
+					<span><strong>ETF на РФ</strong><small>Фонды и индексы</small></span>
+				</button>
+				<button class="asset-picker-option" type="button" data-asset-name="Акции Сбера">
+					<span class="picker-icon amber"><i data-lucide="factory"></i></span>
+					<span><strong>Акции Сбера</strong><small>Российский рынок</small></span>
+				</button>
+				<button class="asset-picker-option" type="button" data-asset-name="Облигации">
+					<span class="picker-icon orange"><i data-lucide="landmark"></i></span>
+					<span><strong>Облигации</strong><small>Долгий доход</small></span>
+				</button>
+				<button class="asset-picker-option" type="button" data-asset-name="Крипто">
+					<span class="picker-icon purple"><i data-lucide="bitcoin"></i></span>
+					<span><strong>Крипто</strong><small>BTC / ETH / SOL</small></span>
+				</button>
+			</div>
+			<button class="button modal-submit" type="button" data-success="Новый актив добавлен в портфель">Добавить в портфель <span>→</span></button>
+		</div>
+	</div>
 	<script src="https://unpkg.com/lucide@latest"></script>
 	<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-	<script src="script.js?v=4"></script>
+	<script src="script.js?v=5"></script>
 </body>
 </html>
