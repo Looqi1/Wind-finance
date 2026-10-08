@@ -213,12 +213,32 @@
 			</section>
 
 			<section class="market-section" id="game">
-				<div class="section-heading"><div><p class="eyebrow">История Wind Finance</p><h2>Wind Cargo</h2><p>Лови грузы, пока рыночный ветер не разбросал весь портфель</p></div><span class="live-badge"><i></i> CARGO RUN</span></div>
-				<article class="card wind-game-card">
-					<div class="game-story"><div class="story-chapter"><span id="game-chapter-label">Глава 1</span><strong id="game-chapter-title">Первый груз</strong></div><p id="game-story-copy">Курьерский маршрут только открылся. Поймай 5 целых коробок и довези первый заказ.</p><div class="story-progress"><span id="game-progress-bar"></span></div><small id="game-mission">Цель: 5 коробок</small></div>
-					<div class="game-stats"><div><span>Очки</span><strong id="game-score">0</strong></div><div><span>Время</span><strong id="game-time">30</strong></div><div><span>Серия</span><strong id="game-combo">0</strong></div><div><span>Рекорд</span><strong id="game-best">0</strong></div></div>
-					<div class="wind-game-arena" id="wind-game-arena" aria-label="Игровое поле Wind Cargo"><div class="game-start-state"><span class="game-start-icon"><i data-lucide="package-open"></i></span><strong>Готов поймать груз?</strong><small>Двигай корзинку по всей ширине и лови целые коробки</small></div><div class="game-lanes" aria-hidden="true"><span></span><span></span></div><div class="game-objects" id="game-objects"></div><div class="game-player" id="game-player" aria-label="Корзина игрока"><i data-lucide="shopping-basket"></i></div></div>
-					<div class="game-controls"><div class="game-pad"><button type="button" id="game-left" aria-label="Левая дорожка"><i data-lucide="chevron-left"></i></button><button type="button" id="game-right" aria-label="Правая дорожка"><i data-lucide="chevron-right"></i></button></div><button class="button" id="game-start" type="button"><i data-lucide="play"></i> Начать историю</button><span id="game-message">Три главы. Один шанс удержать портфель.</span></div>
+				<div class="section-heading"><div><p class="eyebrow">Сюжет · 3 главы</p><h2>Crypto Drop</h2><p>Лови ящики с активами и берегись рагпуллов</p></div><span class="live-badge"><i></i> ИГРА</span></div>
+				<article class="card cg-card">
+					<div class="cg-story">
+						<div class="cg-chapter"><span id="cg-chapter-label">Глава 1</span><strong id="cg-chapter-title">Первый депозит</strong></div>
+						<p id="cg-story-copy">Рынок только проснулся. Ящики падают спокойно, наполни кошелёк первыми активами.</p>
+					</div>
+					<div class="cg-stats">
+						<div><span>Портфель</span><strong id="cg-score">$0</strong></div>
+						<div><span>Жизни</span><strong id="cg-lives">♥♥♥</strong></div>
+						<div><span>Серия</span><strong id="cg-combo">x1</strong></div>
+						<div><span>Рекорд</span><strong id="cg-best">$0</strong></div>
+					</div>
+					<div class="cg-progress"><span id="cg-progress-bar"></span></div>
+					<div class="cg-stage" id="cg-stage" data-chapter="1">
+						<canvas id="cg-canvas"></canvas>
+						<div class="cg-overlay" id="cg-overlay">
+							<strong id="cg-overlay-title">Готов к рейсу?</strong>
+							<p id="cg-overlay-text">С облака сыплются ящики с активами. Лови их корзиной. Ящики с ☠ это рагпулл: они сжигают жизнь. Управление: мышь, касание или стрелки ← →.</p>
+							<button class="button" id="cg-start" type="button">Начать рейс</button>
+						</div>
+					</div>
+					<div class="cg-controls">
+						<button type="button" id="cg-left" aria-label="Влево">‹</button>
+						<span id="cg-message">Три главы. Один шанс удержать портфель.</span>
+						<button type="button" id="cg-right" aria-label="Вправо">›</button>
+					</div>
 				</article>
 			</section>
 

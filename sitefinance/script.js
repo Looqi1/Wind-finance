@@ -147,19 +147,25 @@ const showSuccess = (message) => {
 	successToast.classList.add('visible');
 };
 
-document.querySelectorAll('[data-success]').forEach((button) => {
-	button.addEventListener('click', () => {
-		closeModal(button.closest('.modal'));
-		if (button.closest('#add-asset-modal')) {
-			const selected = document.querySelector('.asset-picker-option.active');
-			if (selected) {
-				showSuccess(`Актив «${selected.dataset.assetName}» добавлен в портфель`);
-				return;
-			}
+		const handleTopup = () => {
+			const customInput = document.querySelector('#custom-topup-amount');
+			const activePreset = document.querySelector('#topup-modal .amount-option.active');
+			const amount = Number(customInput?.value || activePreset?.dataset.amount || 5000);
+			
+			USER_WALLETS.RUB += amount;
+			saveWallets();
+			showSuccess(`Баланс пополнен на ${formatMoney(amount)} ₽`);
+			closeModal(document.getElementById('topup-modal'));
+		};
+
+		const topupSubmit = document.querySelector('#topup-submit');
+		if (topupSubmit) {
+			// Удаляем старые слушатели, если они были (в данном случае просто заменяем поведение)
+			topupSubmit.addEventListener('click', (e) => {
+				e.stopImmediatePropagation(); // предотвращаем стандартный обработчик [data-success]
+				handleTopup();
+			});
 		}
-		showSuccess(button.dataset.success);
-	});
-});
 
 const assetPickerOptions = document.querySelectorAll('.asset-picker-option');
 assetPickerOptions.forEach((option) => {
@@ -183,8 +189,36 @@ document.querySelectorAll('[data-trade]').forEach((button) => {
 
 const confirmPaymentButton = document.getElementById('confirm-payment');
 confirmPaymentButton?.addEventListener('click', () => {
-	closeModal(confirmPaymentButton.closest('.modal'));
-	showSuccess('Покупка подтверждена, средства зарезервированы');
+	const quantityInput = document.getElementById('crypto-buy-quantity');
+	const priceInput = document.getElementById('crypto-buy-price');
+	const symbol = (cryptoPair?.value || 'BTCUSDT').replace('USDT', '');
+	
+	const quantity = Number(quantityInput?.value || 0);
+	const price = Number(priceInput?.value || 0);
+	const totalUsd = quantity * price;
+
+	if (quantity > 0) {
+		// Проверяем наличие USD (или RUB, если USD нет)
+		if (USER_WALLETS.USD >= totalUsd) {
+			USER_WALLETS.USD -= totalUsd;
+			USER_WALLETS[symbol] = (USER_WALLETS[symbol] || 0) + quantity;
+			saveWallets();
+			showSuccess(`Куплено ${quantity} ${symbol}`);
+			closeModal(confirmPaymentButton.closest('.modal'));
+		} else {
+			// Если USD мало, попробуем списать в RUB
+			const totalRub = totalUsd * CURRENCY_RATES.USD;
+			if (USER_WALLETS.RUB >= totalRub) {
+				USER_WALLETS.RUB -= totalRub;
+				USER_WALLETS[symbol] = (USER_WALLETS[symbol] || 0) + quantity;
+				saveWallets();
+				showSuccess(`Куплено ${quantity} ${symbol} за рубли`);
+				closeModal(confirmPaymentButton.closest('.modal'));
+			} else {
+				showSuccess('Недостаточно средств для покупки');
+			}
+		}
+	}
 });
 
 document.addEventListener('keydown', (event) => {
@@ -207,6 +241,127 @@ let bybitSocket;
 let streamVersion = 0;
 
 	const CURRENCY_RATES = { USD: 92.48, EUR: 100.21, RUB: 1, CNY: 12.86, GBP: 109.4, AED: 25.2 };
+
+	// Инициализация балансов
+	let USER_WALLETS = JSON.parse(localStorage.getItem('wind_wallets')) || {
+		RUB: 24500,
+		USD: 0,
+		EUR: 0,
+		CNY: 0,
+		GBP: 0,
+		AED: 0,
+		BTC: 0,
+		ETH: 0,
+		SOL: 0
+	};
+
+	const CRYPTO_RATES = {
+		BTC: 65000, // в USD (условно)
+		ETH: 3200,
+		SOL: 150
+	};
+
+	const saveWallets = () => {
+		localStorage.setItem('wind_wallets', JSON.stringify(USER_WALLETS));
+		updateBalanceUI();
+	};
+
+	const updateBalanceUI = () => {
+		const mainBalanceContainer = document.querySelector('.wallet-balance');
+		if (!mainBalanceContainer) return;
+
+		let totalRub = 0;
+		let balancesHtml = '<span class="wallet-label">Твои активы</span><div class="balances-grid">';
+		
+		Object.entries(USER_WALLETS).forEach(([code, val]) => {
+			if (val > 0) {
+				const isCrypto = ['BTC', 'ETH', 'SOL'].includes(code);
+				const rate = isCrypto ? (CRYPTO_RATES[code] * CURRENCY_RATES.USD) : CURRENCY_RATES[code];
+				totalRub += val * rate;
+				
+				const displayVal = isCrypto ? val.toFixed(4) : formatMoney(val);
+				balancesHtml += `
+					<div class="balance-item">
+						<small>${code}</small>
+						<strong>${displayVal}</strong>
+					</div>
+				`;
+			}
+		});
+
+		balancesHtml += `</div><div class="total-estimate">Эквивалент: ${formatMoney(totalRub)} ₽</div>`;
+		mainBalanceContainer.innerHTML = balancesHtml;
+
+		// Обновление балансов в секции настроек
+		const settingsBalance = document.querySelector('.settings-summary div:last-child strong');
+		if (settingsBalance) {
+			settingsBalance.textContent = `${formatMoney(totalRub)} ₽`;
+		}
+
+		// Обновление баланса в профиле инвестора (Общая стоимость)
+		const portfolioTotal = document.querySelector('.portfolio-summary div:first-child strong');
+		if (portfolioTotal) {
+			portfolioTotal.textContent = `${formatMoney(totalRub)} ₽`;
+		}
+
+		updateConverterAvailable();
+		updatePortfolioList();
+	};
+
+	const updateConverterAvailable = () => {
+		const converter = document.querySelector('.schedule.converter');
+		if (!converter) return;
+		const fromSelect = converter.querySelector('.converter-from');
+		const label = converter.querySelector('label[for="converter-amount"]') || converter.querySelector('label');
+		if (fromSelect && label) {
+			const currency = fromSelect.value;
+			const balance = USER_WALLETS[currency] || 0;
+			label.innerHTML = `У меня есть <span style="float:right; color:var(--green)">Доступно: ${formatMoney(balance)} ${currency}</span>`;
+		}
+	};
+
+	const updatePortfolioList = () => {
+		const portfolioList = document.querySelector('.portfolio-list');
+		if (!portfolioList) return;
+		
+		const icons = {
+			USD: 'dollar-sign',
+			EUR: 'euro',
+			RUB: 'wallet',
+			CNY: 'japanese-yen',
+			GBP: 'pound-sterling',
+			AED: 'landmark'
+		};
+
+		const colors = {
+			USD: 'orange',
+			EUR: 'purple',
+			RUB: 'teal',
+			CNY: 'blue',
+			GBP: 'amber',
+			AED: 'teal'
+		};
+
+		let html = '';
+		Object.entries(USER_WALLETS).forEach(([code, val]) => {
+			if (val > 0) {
+				html += `
+					<div class="portfolio-item">
+						<div class="portfolio-main">
+							<span class="asset-icon ${colors[code] || 'teal'}"><i data-lucide="${icons[code] || 'circle'}"></i></span>
+							<div><strong>${code} Balance</strong><small>${code} Валюта</small></div>
+						</div>
+						<div class="portfolio-side">
+							<span>${formatMoney(val)} ${code}</span>
+						</div>
+					</div>
+				`;
+			}
+		});
+		
+		portfolioList.innerHTML = html;
+		if (window.lucide) window.lucide.createIcons();
+	};
 
 	const formatCurrencyCode = (code) => {
 		const mapping = {
@@ -258,8 +413,8 @@ let streamVersion = 0;
 };
 
 	const executeConverter = () => {
-	const converter = document.querySelector('.schedule.converter');
-	if (!converter) return;
+		const converter = document.querySelector('.schedule.converter');
+		if (!converter) return;
 
 		const amountInput = converter.querySelector('input[type="number"]');
 		const fromSelect = converter.querySelector('.converter-from');
@@ -270,7 +425,27 @@ let streamVersion = 0;
 		const from = fromSelect.value;
 		const to = toSelect.value;
 		const amount = Number(amountInput.value || 0);
-		const result = amount * getConverterRate(from, to);
+
+		if (amount <= 0) {
+			showSuccess('Введите сумму больше нуля');
+			return;
+		}
+
+		if (USER_WALLETS[from] < amount) {
+			showSuccess('Недостаточно средств на балансе');
+			button.classList.add('shake-error');
+			setTimeout(() => button.classList.remove('shake-error'), 400);
+			return;
+		}
+
+		const rate = getConverterRate(from, to);
+		const result = amount * rate;
+
+		// Процесс обмена
+		USER_WALLETS[from] -= amount;
+		USER_WALLETS[to] = (USER_WALLETS[to] || 0) + result;
+		
+		saveWallets();
 
 		button.classList.remove('is-animating');
 		void button.offsetWidth;
@@ -375,234 +550,403 @@ appNavigation.forEach((link) => {
 	link.addEventListener('click', () => setAppView(link.getAttribute('href').slice(1)));
 });
 
-const gameArena = document.querySelector('#wind-game-arena');
-const gameObjects = document.querySelector('#game-objects');
-const gamePlayer = document.querySelector('#game-player');
-const gameStart = document.querySelector('#game-start');
-const gameLeft = document.querySelector('#game-left');
-const gameRight = document.querySelector('#game-right');
-const gameScore = document.querySelector('#game-score');
-const gameTime = document.querySelector('#game-time');
-const gameComboLabel = document.querySelector('#game-combo');
-const gameBest = document.querySelector('#game-best');
-const gameMessage = document.querySelector('#game-message');
-const gameChapterLabel = document.querySelector('#game-chapter-label');
-const gameChapterTitle = document.querySelector('#game-chapter-title');
-const gameStoryCopy = document.querySelector('#game-story-copy');
-const gameMission = document.querySelector('#game-mission');
-const gameProgressBar = document.querySelector('#game-progress-bar');
-let gameTimer;
-let gameRunning = false;
-let gameScoreValue = 0;
-let gameTimeValue = 30;
-let gameComboValue = 0;
-let gameChapter = 1;
-let lastCatchAt = 0;
-let gamePlayerX = .5;
-let gameAnimationFrame;
-let gameSpawnTimer;
-let gameLastFrame = 0;
-let gameObjectsState = [];
-let gameStack = [];
-let gameBestValue = Number(localStorage.getItem('wind_game_best') || 0);
 
-const gameChapters = [
-	{ label: 'Глава 1', title: 'Первый груз', copy: 'Курьерский маршрут только открылся. Поймай 5 целых коробок и довези первый заказ.', mission: 5 },
-	{ label: 'Глава 2', title: 'Час пик', copy: 'Заказы идут один за другим. Быстрые доставки дают серию, а каждая третья коробка приносит двойную награду.', mission: 12 },
-	{ label: 'Глава 3', title: 'Ночной склад', copy: 'Финальный рейс. Повреждённые коробки смешались с ценным грузом, поэтому каждая дорожка теперь важна.', mission: 20 },
-];
+(() => {
+	const stage = document.getElementById('cg-stage');
+	const canvas = document.getElementById('cg-canvas');
+	if (!stage || !canvas) return;
+	const ctx = canvas.getContext('2d');
+	const el = (id) => document.getElementById(id);
+	const ui = {
+		score: el('cg-score'), lives: el('cg-lives'), combo: el('cg-combo'), best: el('cg-best'),
+		msg: el('cg-message'), bar: el('cg-progress-bar'), label: el('cg-chapter-label'),
+		title: el('cg-chapter-title'), copy: el('cg-story-copy'), overlay: el('cg-overlay'),
+		oTitle: el('cg-overlay-title'), oText: el('cg-overlay-text'), start: el('cg-start'),
+	};
 
-const updateGameChapter = () => {
-	const nextChapter = gameScoreValue >= 12 ? 3 : gameScoreValue >= 5 ? 2 : 1;
-	gameChapter = nextChapter;
-	const chapter = gameChapters[nextChapter - 1];
-	if (gameChapterLabel) gameChapterLabel.textContent = chapter.label;
-	if (gameChapterTitle) gameChapterTitle.textContent = chapter.title;
-	if (gameStoryCopy) gameStoryCopy.textContent = chapter.copy;
-	if (gameMission) gameMission.textContent = `Цель: ${chapter.mission} коробок`;
-	if (gameProgressBar) gameProgressBar.style.width = `${Math.min(100, (gameScoreValue / chapter.mission) * 100)}%`;
-	gameArena?.classList.toggle('storm-mode', nextChapter === 2);
-	gameArena?.classList.toggle('eye-mode', nextChapter === 3);
-};
+	// goal: сколько ящиков нужно уложить ВСЕГО, чтобы закончить главу
+	const CHAPTERS = [
+		{ label: 'Глава 1', title: 'Первый депозит', copy: 'Рынок только проснулся. Укладывай ящики в башню ровно: криво лежащие падают.', goal: 8, speed: 140, spawn: 1.0, bad: 0.10, wind: 0 },
+		{ label: 'Глава 2', title: 'Волатильность', copy: 'Ящики летят вкось и быстрее. Не качай башню резкими рывками, и держи серию.', goal: 20, speed: 185, spawn: 0.8, bad: 0.18, wind: 55 },
+		{ label: 'Глава 3', title: 'Крипто-зима', copy: 'Рагпуллов всё больше, они сносят верх башни. Доведи портфель до финала.', goal: 36, speed: 230, spawn: 0.65, bad: 0.24, wind: 80 },
+	];
+	const TYPES = {
+		btc: { sym: '₿', color: '#f2a33a', value: 500 },
+		eth: { sym: 'Ξ', color: '#7b83d9', value: 300 },
+		sol: { sym: '◎', color: '#2bb59b', value: 150 },
+		gold: { sym: '★', color: '#e0a82e', value: 2000 },
+		rug: { sym: '☠', color: '#d9544f', value: 0 },
+	};
+	const PW = 88, PH = 34;
+	const STEP = 0.88;      // насколько ящики перекрываются в башне
+	const STACK_MAX = 6;    // сколько ящиков до «Доставки»
+	const money = (n) => '$' + Math.round(n).toLocaleString('ru-RU');
+	const keys = new Set();
 
-const updateGameStats = () => {
-	if (gameScore) gameScore.textContent = String(gameScoreValue);
-	if (gameTime) gameTime.textContent = String(gameTimeValue);
-	if (gameComboLabel) gameComboLabel.textContent = gameComboValue > 1 ? `x${gameComboValue}` : '0';
-	if (gameBest) gameBest.textContent = String(gameBestValue);
-	updateGameChapter();
-};
+	let w = 0, h = 0, raf = 0, last = 0, running = false;
+	const s = { px: 0, prevPx: 0, lean: 0, dir: 0, items: [], fx: [], stack: [], debris: [], timer: 0, score: 0, lives: 3, combo: 1, caught: 0, chapter: 0, shake: 0, lastCatch: 0, best: Number(localStorage.getItem('cg_best') || 0), t: 0 };
 
-const setGamePlayerPosition = (clientX) => {
-	if (!gameArena || !gamePlayer) return;
-	const bounds = gameArena.getBoundingClientRect();
-	moveGamePosition((clientX - bounds.left) / bounds.width);
-};
+	const clampX = (x) => Math.min(w - PW / 2, Math.max(PW / 2, x));
+	const basketTop = () => h - PH - 6;
 
-const moveGamePosition = (position) => {
-	gamePlayerX = Math.min(.94, Math.max(.06, position));
-	if (gamePlayer) gamePlayer.style.left = `${gamePlayerX * 100}%`;
-	gameStack.forEach((object, index) => {
-		object.element.style.left = `calc(${gamePlayerX * 100}% + ${object.stackOffset}px)`;
-		object.element.style.bottom = `${58 + index * 27}px`;
-	});
-};
+	// центры ящиков башни в мировых координатах
+	const layout = () => {
+		return s.stack.map((c) => ({
+			x: s.px + c.dx + s.lean * (c.level + 1) * 0.6,
+			y: basketTop() + 2 + c.dy
+		}));
+	};
+	const topSurface = () => {
+		let min = basketTop() + 2;
+		const lay = layout();
+		lay.forEach((p, i) => {
+			const top = p.y - s.stack[i].size / 2;
+			if (top < min) min = top;
+		});
+		return min - 40;
+	};
 
-const clearGameObjects = () => {
-	window.cancelAnimationFrame(gameAnimationFrame);
-	window.clearInterval(gameSpawnTimer);
-	gameObjectsState = [];
-	gameStack = [];
-	if (gameObjects) gameObjects.innerHTML = '';
-};
+	const resize = () => {
+		const r = stage.getBoundingClientRect();
+		if (!r.width) return;
+		const dpr = window.devicePixelRatio || 1;
+		w = r.width; h = r.height;
+		canvas.width = Math.round(w * dpr);
+		canvas.height = Math.round(h * dpr);
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		s.px = clampX(s.px || w / 2);
+		if (!running) draw();
+	};
 
-const spawnGameObject = () => {
-	if (!gameRunning || !gameObjects) return;
-	const isBomb = Math.random() < (gameChapter === 3 ? .28 : .17);
-	const isBonus = !isBomb && Math.random() < .14;
-	const element = document.createElement('span');
-	element.className = `game-falling-object ${isBomb ? 'bomb' : isBonus ? 'bonus' : 'crate'}`;
-	element.textContent = isBomb ? '●' : isBonus ? '★' : '▣';
-	const x = .08 + Math.random() * .84;
-	element.style.left = `${x * 100}%`;
-	element.style.top = '-34px';
-	gameObjects.appendChild(element);
-	gameObjectsState.push({ element, x, y: -34, speed: 105 + gameChapter * 22 + Math.random() * 45, rotation: (Math.random() - .5) * 24, type: isBomb ? 'bomb' : isBonus ? 'bonus' : 'crate' });
-};
+	const setChapter = (i) => {
+		s.chapter = i;
+		const c = CHAPTERS[i];
+		ui.label.textContent = c.label;
+		ui.title.textContent = c.title;
+		ui.copy.textContent = c.copy;
+		stage.dataset.chapter = String(i + 1);
+	};
 
-const landCrate = (object) => {
-	const stackIndex = gameStack.length;
-	const supportOffset = gameStack.length ? gameStack[gameStack.length - 1].stackOffset : 0;
-	const stackOffset = supportOffset + (Math.random() - .5) * 28;
-	if (gameStack.length && Math.abs(stackOffset - supportOffset) > 11) {
-		object.element.classList.add('slide-off');
-		object.element.style.setProperty('--slide-x', `${stackOffset < supportOffset ? -90 : 90}px`);
-		window.setTimeout(() => object.element.remove(), 360);
-		gameMessage.textContent = 'Коробка не попала на опору и соскользнула.';
-		return;
-	}
-	object.element.classList.add('stacked');
-	object.stackOffset = stackOffset;
-	object.element.style.left = `calc(${gamePlayerX * 100}% + ${stackOffset}px)`;
-	object.element.style.top = 'auto';
-	object.element.style.bottom = `${58 + stackIndex * 27}px`;
-	object.element.style.transform = `translateX(-50%) rotate(${object.rotation}deg)`;
-	gameStack.push(object);
-	const now = Date.now();
-	gameComboValue = now - lastCatchAt < 1600 ? gameComboValue + 1 : 1;
-	lastCatchAt = now;
-	gameScoreValue += object.type === 'bonus' ? 3 : gameChapter === 2 && gameComboValue % 3 === 0 ? 2 : 1;
-	gameMessage.textContent = object.type === 'bonus' ? 'Золотая посылка легла на вершину башни.' : gameComboValue > 1 ? `Серия x${gameComboValue}! Башня растёт.` : 'Коробка аккуратно уложена.';
-};
+	const updateUi = () => {
+		ui.score.textContent = money(s.score);
+		ui.lives.textContent = '♥'.repeat(Math.max(0, s.lives)) + '♡'.repeat(Math.max(0, 3 - s.lives));
+		ui.combo.textContent = 'x' + s.combo;
+		ui.best.textContent = money(s.best);
+		const from = s.chapter ? CHAPTERS[s.chapter - 1].goal : 0;
+		const to = CHAPTERS[s.chapter].goal;
+		ui.bar.style.width = Math.min(100, ((s.caught - from) / (to - from)) * 100) + '%';
+	};
 
-const explodeBomb = (bombX) => {
-	gameComboValue = 0;
-	const arenaWidth = gameArena.clientWidth;
-	const blastRadius = Math.min(150, arenaWidth * .32);
-	const removed = gameStack.filter((object) => Math.abs((gamePlayerX + object.stackOffset / arenaWidth) - bombX) * arenaWidth <= blastRadius);
-	gameStack = gameStack.filter((object) => !removed.includes(object));
-	moveGamePosition(gamePlayerX);
-	removed.forEach((object) => {
-		object.element.classList.add('explode');
-		const direction = object.stackOffset / Math.max(1, Math.abs(object.stackOffset));
-		object.element.style.setProperty('--blast-x', `${(direction || (Math.random() > .5 ? 1 : -1)) * 90}px`);
-		window.setTimeout(() => object.element.remove(), 260);
-	});
-	gameMessage.textContent = removed.length ? `Взрыв задел ${removed.length} ${removed.length === 1 ? 'коробку' : 'коробки'} в радиусе.` : 'Бомба взорвалась рядом, башня устояла.';
-	gameArena.classList.add('hit');
-	window.setTimeout(() => gameArena.classList.remove('hit'), 300);
-};
+	const spawn = () => {
+		const c = CHAPTERS[s.chapter];
+		let key;
+		if (Math.random() < c.bad) key = 'rug';
+		else if (Math.random() < 0.09) key = 'gold';
+		else key = ['btc', 'eth', 'sol'][Math.floor(Math.random() * 3)];
+		const size = key === 'gold' ? 42 : 36;
+		// Ящики падают в пределах ширины корзины (с небольшим запасом)
+		const range = PW + 40;
+		const x = s.px - range / 2 + Math.random() * range;
+		s.items.push({ key, size, x: Math.max(size, Math.min(w - size, x)), y: -size, speed: c.speed * (0.85 + Math.random() * 0.3), rot: (Math.random() - 0.5) * 0.4, spin: (Math.random() - 0.5) * 1.0, phase: Math.random() * 6 });
+	};
 
-const runGameFrame = (timestamp) => {
-	if (!gameRunning || !gameArena || !gamePlayer) return;
-	const delta = Math.min(.04, (timestamp - gameLastFrame) / 1000 || 0);
-	gameLastFrame = timestamp;
-	const arenaHeight = gameArena.clientHeight;
-	const playerRect = gamePlayer.getBoundingClientRect();
-	const arenaRect = gameArena.getBoundingClientRect();
-	const playerLeft = playerRect.left - arenaRect.left;
-	const playerRight = playerLeft + playerRect.width;
-	gameObjectsState = gameObjectsState.filter((object) => {
-		object.y += object.speed * delta;
-		object.element.style.transform = `translate(-50%, ${object.y}px) rotate(${object.rotation + object.y * .04}deg)`;
-		const objectRect = object.element.getBoundingClientRect();
-		const objectLeft = objectRect.left - arenaRect.left;
-		const objectRight = objectLeft + objectRect.width;
-		const atBase = object.y + objectRect.height >= arenaHeight - 68 && object.y <= arenaHeight - 20 && objectRight >= playerLeft && objectLeft <= playerRight;
-		if (atBase && object.type === 'bomb') explodeBomb(object.x);
-		if (atBase && object.type !== 'bomb') landCrate(object);
-		if (atBase || object.y > arenaHeight + 40) {
-			if (!atBase || object.type === 'bomb') object.element.remove();
-			return false;
+	const floatText = (x, y, text, color) => s.fx.push({ x, y, text, color, life: 1 });
+
+	const showOverlay = (title, text, button) => {
+		ui.oTitle.textContent = title;
+		ui.oText.textContent = text;
+		ui.start.textContent = button;
+		ui.overlay.hidden = false;
+	};
+
+	const finish = (result) => {
+		running = false;
+		cancelAnimationFrame(raf);
+		keys.clear(); s.dir = 0;
+		if (s.score > s.best) { s.best = s.score; localStorage.setItem('cg_best', String(s.best)); }
+		updateUi();
+		if (result === true) showOverlay('Ты пережил крипто-зиму!', `Финальный портфель: ${money(s.score)}. Рынок запомнит это имя.`, 'Сыграть ещё раз');
+		else if (result === false) showOverlay('Ликвидация', `Рагпулл забрал последнюю жизнь. Портфель: ${money(s.score)}.`, 'Попробовать снова');
+		else showOverlay('Рейс остановлен', `Портфель: ${money(s.score)}.`, 'Начать заново');
+		draw();
+	};
+
+	// ящики башни, начиная с индекса from, падают с неё
+	const detach = (from, power = 1) => {
+		const lay = layout();
+		const removed = s.stack.splice(from);
+		let lost = 0;
+		removed.forEach((c, j) => {
+			const p = lay[from + j];
+			const side = c.dx === 0 ? (Math.random() > 0.5 ? 1 : -1) : Math.sign(c.dx);
+			s.debris.push({ key: c.key, size: c.size, x: p.x, y: p.y, vx: side * (50 + Math.random() * 120) * power, vy: -90 - Math.random() * 120, rot: c.rot, vrot: side * (2 + Math.random() * 5) });
+			lost += c.gain;
+		});
+		s.score = Math.max(0, s.score - lost);
+		s.combo = 1;
+		s.shake = 0.25;
+		if (removed.length) floatText(s.px, basketTop() - 70, '−' + money(lost), '#d9544f');
+		return removed.length;
+	};
+
+	// башня устойчива, если центр тяжести всего, что выше, лежит над опорой
+	const checkStability = () => {
+		for (let k = 0; k < s.stack.length; k++) {
+			const c = s.stack[k];
+			const supDx = c.parentIdx === -1 ? 0 : s.stack[c.parentIdx].dx;
+			const supHalf = c.parentIdx === -1 ? PW / 2 : s.stack[c.parentIdx].size / 2;
+			if (Math.abs(c.dx - supDx) > supHalf * 1.1) {
+				detach(k);
+				ui.msg.textContent = 'Башня рухнула! Укладывай ровнее.';
+				return true;
+			}
 		}
+		return false;
+	};
+
+	const deliver = () => {
+		const lay = layout();
+		const sum = s.stack.reduce((a, c) => a + c.gain, 0);
+		const bonus = Math.round(sum * 0.5);
+		s.stack.forEach((c, i) => {
+			s.debris.push({ key: c.key, size: c.size, x: lay[i].x, y: lay[i].y, vx: (Math.random() - 0.5) * 260, vy: -380 - Math.random() * 120, rot: c.rot, vrot: (Math.random() - 0.5) * 6 });
+		});
+		s.stack = [];
+		s.score += bonus;
+		floatText(s.px, basketTop() - 90, 'Доставка! +' + money(bonus), '#e0a82e');
+		ui.msg.textContent = 'Башня доставлена, бонус на счёт!';
+	};
+
+	// возвращает true, если предмет «израсходован» (приземлился или взорвался)
+	const land = (it) => {
+		const lay = layout();
+		let parentIdx = -1;
+		let landingY = basketTop() + 2;
+
+		for (let i = s.stack.length - 1; i >= 0; i--) {
+			const p = lay[i], c = s.stack[i];
+			if (Math.abs(it.x - p.x) < (it.size + c.size) / 2 * 0.85) {
+				if (it.y + it.size / 2 >= p.y - c.size / 2 && it.y + it.size / 2 < p.y) {
+					parentIdx = i;
+					landingY = p.y - c.size / 2;
+					break;
+				}
+			}
+		}
+
+		if (parentIdx === -1) {
+			if (it.y + it.size / 2 >= basketTop()) {
+				if (Math.abs(it.x - s.px) < PW / 2 + it.size * 0.45) {
+					landingY = basketTop() + 2;
+				} else {
+					it.passed = true; return false;
+				}
+			} else return false;
+		}
+
+		if (it.key === 'rug') {
+			s.lives -= 1; s.combo = 1; s.shake = 0.35;
+			const n = s.stack.length;
+			if (n) detach(Math.max(0, n - 2), 1.6);
+			floatText(it.x, basketTop() - 30, '−1 ♥', '#d9544f');
+			ui.msg.textContent = n ? 'Рагпулл снёс верх башни!' : 'Рагпулл! Проверяй, что ловишь.';
+			updateUi();
+			if (s.lives <= 0) finish(false);
+			return true;
+		}
+
+		const now = performance.now();
+		s.combo = now - s.lastCatch < 2200 ? Math.min(5, s.combo + 1) : 1;
+		s.lastCatch = now;
+		const gain = TYPES[it.key].value * s.combo;
+		s.score += gain; s.caught += 1;
+		
+		const level = parentIdx === -1 ? 0 : s.stack[parentIdx].level + 1;
+		const dy = (parentIdx === -1) ? -it.size / 2 : s.stack[parentIdx].dy - (s.stack[parentIdx].size + it.size) / 2 * STEP;
+		
+		s.stack.push({ key: it.key, size: it.size, dx: it.x - s.px, dy, level, parentIdx, rot: it.rot * 0.3, gain });
+		floatText(it.x, landingY - 20, '+' + money(gain), it.key === 'gold' ? '#e0a82e' : '#24785b');
+		ui.msg.textContent = it.key === 'gold' ? 'Золотой ящик лёг на башню!' : s.combo > 1 ? `Серия ×${s.combo}! Башня растёт.` : 'Ящик уложен.';
+
+		const fell = checkStability();
+		if (!fell && s.stack.length >= STACK_MAX) deliver();
+
+		if (s.caught >= CHAPTERS[s.chapter].goal) {
+			if (s.chapter + 1 >= CHAPTERS.length) { updateUi(); finish(true); return true; }
+			setChapter(s.chapter + 1);
+			ui.msg.textContent = 'Новая глава: ' + CHAPTERS[s.chapter].title;
+		}
+		updateUi();
 		return true;
-	});
-	updateGameStats();
-	gameAnimationFrame = window.requestAnimationFrame(runGameFrame);
-};
+	};
 
-const finishGame = () => {
-	gameRunning = false;
-	window.clearInterval(gameTimer);
-	gameArena?.classList.remove('running');
-	gameArena?.classList.remove('storm-mode', 'eye-mode');
-	clearGameObjects();
-	gameComboValue = 0;
-	if (gameScoreValue > gameBestValue) {
-		gameBestValue = gameScoreValue;
-		localStorage.setItem('wind_game_best', String(gameBestValue));
-		gameMessage.textContent = 'Новый рекорд! Сегодня склад работает на тебя.';
-	} else {
-		gameMessage.textContent = `Маршрут завершён. Доставлено коробок: ${gameScoreValue}`;
+	const update = (dt) => {
+		const c = CHAPTERS[s.chapter];
+		s.t += dt;
+		const move = Math.max(-1, Math.min(1, s.dir + (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0)));
+		s.px = clampX(s.px + move * 580 * dt);
+
+		// раскачивание башни при движении
+		const vx = dt > 0 ? (s.px - s.prevPx) / dt : 0;
+		s.prevPx = s.px;
+		const target = Math.max(-3, Math.min(3, -vx * 0.004));
+		s.lean += (target - s.lean) * Math.min(1, dt * 8);
+
+		s.timer -= dt;
+		if (s.timer <= 0) { spawn(); s.timer = c.spawn * (0.7 + Math.random() * 0.6); }
+
+		const alive = [];
+		for (const it of s.items) {
+			it.y += it.speed * dt;
+			it.x += Math.sin(s.t * 1.6 + it.phase) * c.wind * dt;
+			it.rot += it.spin * dt;
+			if (!it.passed && it.y + it.size / 2 >= topSurface()) {
+				if (land(it)) { if (!running) return; continue; }
+			}
+			if (it.y > h + it.size) {
+				if (it.key !== 'rug' && s.combo > 1) { s.combo = 1; updateUi(); }
+				continue;
+			}
+			alive.push(it);
+		}
+		s.items = alive;
+
+		s.debris = s.debris.filter((d) => {
+			d.vy += 900 * dt;
+			d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.vrot * dt;
+			return d.y < h + 80;
+		});
+		s.fx = s.fx.filter((f) => (f.life -= dt * 1.2) > 0);
+		s.fx.forEach((f) => { f.y -= 40 * dt; });
+		if (s.shake > 0) s.shake -= dt;
+	};
+
+	const rr = (x, y, wd, ht, r) => {
+		ctx.beginPath();
+		ctx.moveTo(x + r, y);
+		ctx.arcTo(x + wd, y, x + wd, y + ht, r);
+		ctx.arcTo(x + wd, y + ht, x, y + ht, r);
+		ctx.arcTo(x, y + ht, x, y, r);
+		ctx.arcTo(x, y, x + wd, y, r);
+		ctx.closePath();
+	};
+
+	const drawCrate = (key, sz, x, y, rot) => {
+		const t = TYPES[key];
+		ctx.save();
+		ctx.translate(x, y);
+		ctx.rotate(rot);
+		if (key === 'gold') { ctx.shadowColor = 'rgba(244,201,93,.9)'; ctx.shadowBlur = 16; }
+		ctx.fillStyle = t.color;
+		rr(-sz / 2, -sz / 2, sz, sz, 7); ctx.fill();
+		ctx.shadowBlur = 0;
+		ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5; ctx.stroke();
+		ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 2;
+		ctx.beginPath();
+		ctx.moveTo(-sz / 2 + 4, -sz / 2 + 4); ctx.lineTo(sz / 2 - 4, sz / 2 - 4);
+		ctx.moveTo(sz / 2 - 4, -sz / 2 + 4); ctx.lineTo(-sz / 2 + 4, sz / 2 - 4);
+		ctx.stroke();
+		ctx.fillStyle = '#fff';
+		ctx.font = `700 ${Math.round(sz * 0.55)}px "Space Grotesk", sans-serif`;
+		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+		ctx.fillText(t.sym, 0, 1);
+		ctx.restore();
+	};
+
+	const drawBasket = () => {
+		const bx = s.px - PW / 2, by = basketTop();
+		ctx.fillStyle = '#246f55';
+		ctx.beginPath();
+		ctx.moveTo(bx - 6, by); ctx.lineTo(bx + PW + 6, by);
+		ctx.lineTo(bx + PW - 8, by + PH); ctx.lineTo(bx + 8, by + PH);
+		ctx.closePath(); ctx.fill();
+		ctx.fillStyle = '#77d5a7';
+		rr(bx - 9, by - 5, PW + 18, 9, 4); ctx.fill();
+		ctx.fillStyle = '#fff';
+		ctx.font = '700 17px "Space Grotesk", sans-serif';
+		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+		ctx.fillText('WALLET', s.px, by + PH / 2 + 3);
+	};
+
+	function draw() {
+		if (!w) return;
+		ctx.clearRect(0, 0, w, h);
+		ctx.save();
+		if (s.shake > 0) ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+		s.items.forEach((it) => drawCrate(it.key, it.size, it.x, it.y, it.rot));
+		s.debris.forEach((d) => drawCrate(d.key, d.size, d.x, d.y, d.rot));
+		const lay = layout();
+		s.stack.forEach((c, i) => {
+			// чем сильнее ящик смещён от опоры, тем заметнее он «клонится»
+			const supDx = i === 0 ? 0 : s.stack[i - 1].dx;
+			const supHalf = i === 0 ? PW / 2 : s.stack[i - 1].size / 2;
+			const tilt = ((c.dx - supDx) / supHalf) * 0.1 + s.lean * 0.012;
+			drawCrate(c.key, c.size, lay[i].x, lay[i].y, tilt + c.rot * 0.3);
+		});
+		drawBasket();
+		s.fx.forEach((f) => {
+			ctx.globalAlpha = Math.max(0, f.life);
+			ctx.fillStyle = f.color;
+			ctx.font = '700 16px "Space Grotesk", sans-serif';
+			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.fillText(f.text, f.x, f.y);
+		});
+		ctx.restore();
 	}
-	gameStart.innerHTML = '<i data-lucide="rotate-cw"></i> Пройти ещё раз';
-	if (window.lucide) window.lucide.createIcons();
-	updateGameStats();
-};
 
-const startGame = () => {
-	if (!gameArena || !gamePlayer || !gameStart) return;
-	window.clearInterval(gameTimer);
-	gameRunning = true;
-	gameScoreValue = 0;
-	gameTimeValue = 30;
-	gameComboValue = 0;
-	lastCatchAt = 0;
-	gamePlayerX = .5;
-	gameArena.classList.add('running');
-	gameArena.classList.remove('storm-mode', 'eye-mode');
-	gameStart.innerHTML = '<i data-lucide="timer"></i> История идёт';
-	gameMessage.textContent = 'Лови коробки быстрее, пока склад не закрылся!';
-	clearGameObjects();
-	moveGamePosition(.5);
-	gameSpawnTimer = window.setInterval(spawnGameObject, 620 - gameChapter * 70);
-	spawnGameObject();
-	updateGameStats();
-	if (window.lucide) window.lucide.createIcons();
-	gameLastFrame = performance.now();
-	gameAnimationFrame = window.requestAnimationFrame(runGameFrame);
-	gameTimer = window.setInterval(() => {
-		gameTimeValue -= 1;
-		updateGameStats();
-		if (gameTimeValue <= 0) finishGame();
-	}, 1000);
-};
+	const frame = (ts) => {
+		if (!running) return;
+		if (document.body.dataset.view !== 'game') { finish(null); return; }
+		const dt = Math.min(0.04, (ts - last) / 1000 || 0);
+		last = ts;
+		update(dt);
+		if (!running) return;
+		draw();
+		raf = requestAnimationFrame(frame);
+	};
 
-gameStart?.addEventListener('click', startGame);
-gameLeft?.addEventListener('click', () => moveGamePosition(gamePlayerX - .12));
-gameRight?.addEventListener('click', () => moveGamePosition(gamePlayerX + .12));
-gameArena?.addEventListener('pointermove', (event) => {
-	if (gameRunning) setGamePlayerPosition(event.clientX);
-});
-gameArena?.addEventListener('pointerdown', (event) => {
-	if (gameRunning) setGamePlayerPosition(event.clientX);
-});
-window.addEventListener('keydown', (event) => {
-	if (!gameRunning || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-	event.preventDefault();
-	moveGamePosition(gamePlayerX + (event.key === 'ArrowLeft' ? -.1 : .1));
-});
-updateGameStats();
+	const start = () => {
+		resize();
+		Object.assign(s, { items: [], fx: [], stack: [], debris: [], timer: 0.4, score: 0, lives: 3, combo: 1, caught: 0, shake: 0, lastCatch: 0, t: 0, dir: 0, lean: 0, px: w / 2, prevPx: w / 2 });
+		setChapter(0);
+		updateUi();
+		ui.msg.textContent = 'Укладывай ящики в башню. Череп = рагпулл!';
+		ui.overlay.hidden = true;
+		running = true;
+		last = performance.now();
+		raf = requestAnimationFrame(frame);
+	};
+
+	const pointerMove = (e) => {
+		if (!running) return;
+		s.px = clampX(e.clientX - stage.getBoundingClientRect().left);
+	};
+
+	ui.start.addEventListener('click', start);
+	stage.addEventListener('pointermove', pointerMove);
+	stage.addEventListener('pointerdown', pointerMove);
+
+	const bindPad = (id, dir) => {
+		const b = el(id);
+		if (!b) return;
+		b.addEventListener('pointerdown', (e) => { e.preventDefault(); s.dir = dir; });
+		['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, () => { s.dir = 0; }));
+	};
+	bindPad('cg-left', -1);
+	bindPad('cg-right', 1);
+
+	window.addEventListener('keydown', (e) => {
+		if (!running || !['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) return;
+		e.preventDefault();
+		keys.add(e.code);
+	});
+	window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+	new ResizeObserver(resize).observe(stage);
+	setChapter(0);
+	updateUi();
+	resize();
+})();
 
 document.querySelectorAll('[data-open-investment-profile]').forEach((button) => {
 	button.addEventListener('click', openInvestmentProfile);
@@ -837,19 +1181,10 @@ if (converter) {
 	document.querySelector('.all-currency-button')?.addEventListener('click', () => openCurrencyModal('from'));
 	syncCurrencyButtons();
 	updateConverter();
+	updateBalanceUI();
 }
 
-const getApiBase = () => {
-	if (window.WIND_API_URL) return window.WIND_API_URL;
-	const hostname = window.location.hostname;
-	if (window.location.port === '5500' || hostname.includes('-5500.')) {
-		return window.location.origin;
-	}
-	if (hostname.includes('-8000.')) {
-		return `${window.location.protocol}//${hostname.replace('-8000.', '-5500.')}`;
-	}
-	return `${window.location.protocol}//${hostname}:5500`;
-};
+const getApiBase = () => window.WIND_API_URL || window.location.origin;
 
 const apiBase = getApiBase();
 const authGate = document.querySelector('#auth-gate');
