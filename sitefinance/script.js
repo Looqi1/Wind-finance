@@ -1402,6 +1402,919 @@ if (cryptoChartElement && window.LightweightCharts) {
 	});
 }
 
+(() => {
+	const modal = document.getElementById('crypto-topup-modal');
+	const topup = document.getElementById('topup-modal');
+	if (!modal || !topup) return;
+
+	const COINS = {
+		USDT: { networks: ['TRC20', 'BEP20', 'ERC20'], decimals: 2 },
+		BTC: { networks: ['Bitcoin'], decimals: 8 },
+		ETH: { networks: ['ERC20'], decimals: 6 },
+		SOL: { networks: ['Solana'], decimals: 4 },
+	};
+	const priceUsd = { USDT: 1, BTC: 65000, ETH: 3200, SOL: 150 }; // запасные цены
+	const $ = (id) => document.getElementById(id);
+	const ui = {
+		network: $('crypto-network'), rub: $('crypto-rub'), pay: $('crypto-pay-amount'), rate: $('crypto-rate'),
+		address: $('crypto-address'), link: $('crypto-link'), qr: $('crypto-qr'), timer: $('crypto-timer'), paid: $('crypto-paid'),
+	};
+	let coin = 'USDT', rub = 5000, timerId = 0, qr = null, invoice = null, seq = 0;
+
+	const fmt = (n, d = 2) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: d });
+
+	const getRub = () => {
+		const custom = Number(document.querySelector('#custom-topup-amount')?.value || 0);
+		if (custom > 0) return custom;
+		return Number(topup.querySelector('.amount-option.active')?.dataset.amount || 5000);
+	};
+
+	// ДЕМО-счёт. В настоящей версии счёт создаёт сервер (см. POST /payments/crypto ниже).
+	const demoInvoice = () => ({ address: `DEMO-${coin}-${Math.random().toString(36).slice(2, 10).toUpperCase()}-NOT-REAL`, demo: true });
+
+	const createInvoice = async () => {
+		try {
+			const token = localStorage.getItem('wind_access_token');
+			const r = await fetch(`${apiBase}/payments/crypto`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+				body: JSON.stringify({ coin, network: ui.network.value, amount_rub: rub }),
+			});
+			if (!r.ok) throw new Error('no api');
+			const d = await r.json();
+			return { address: d.address, payUrl: d.pay_url, demo: false };
+		} catch (e) {
+			return demoInvoice();
+		}
+	};
+
+	// ссылка-кошелёк (по ней же строится QR)
+	const buildUri = (address, amount) => {
+		const a = amount.toFixed(COINS[coin].decimals);
+		if (coin === 'BTC') return `bitcoin:${address}?amount=${a}`;
+		if (coin === 'SOL') return `solana:${address}?amount=${a}`;
+		return address; // USDT / ETH: у кошельков нет единого формата ссылки, в QR кладём адрес
+	};
+
+	const drawQr = (text) => {
+		if (!window.QRCode) { ui.qr.textContent = 'QR недоступен: не загрузилась библиотека'; return; }
+		if (!qr) {
+			ui.qr.textContent = '';
+			qr = new QRCode(ui.qr, { text, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+		} else {
+			qr.clear();
+			qr.makeCode(text);
+		}
+	};
+
+	const render = () => {
+		const c = COINS[coin];
+		const amount = rub / CURRENCY_RATES.USD / priceUsd[coin];
+		ui.rub.textContent = `${fmt(rub, 0)} ₽`;
+		ui.pay.textContent = `${fmt(amount, c.decimals)} ${coin}`;
+		ui.rate.textContent = `1 ${coin} ≈ ${fmt(priceUsd[coin] * CURRENCY_RATES.USD, 2)} ₽`;
+		if (!invoice) return;
+
+		const uri = invoice.payUrl || buildUri(invoice.address, amount);
+		ui.address.textContent = invoice.address;
+		ui.link.textContent = uri;
+		if (uri.includes(':')) ui.link.setAttribute('href', uri); else ui.link.removeAttribute('href');
+		drawQr(uri);
+		modal.querySelectorAll('.crypto-demo-tag').forEach((t) => { t.hidden = !invoice.demo; });
+	};
+
+	const fillNetworks = () => {
+		ui.network.innerHTML = COINS[coin].networks.map((n) => `<option value="${n}">${n}</option>`).join('');
+	};
+
+	const startTimer = () => {
+		clearInterval(timerId);
+		const expires = Date.now() + 30 * 60 * 1000;
+		ui.paid.disabled = false;
+		const tick = () => {
+			const left = Math.max(0, expires - Date.now());
+			ui.timer.textContent = `${String(Math.floor(left / 60000)).padStart(2, '0')}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
+			if (!left) { clearInterval(timerId); ui.timer.textContent = 'время вышло'; ui.paid.disabled = true; }
+		};
+		tick();
+		timerId = setInterval(tick, 1000);
+	};
+
+	const refresh = async () => {
+		const id = ++seq;
+		invoice = null;
+		ui.address.textContent = 'Создаём счёт…';
+		ui.link.textContent = '…';
+		ui.link.removeAttribute('href');
+		render();
+		const inv = await createInvoice();
+		if (id !== seq) return; // пока ждали, пользователь выбрал другую монету
+		invoice = inv;
+		render();
+		startTimer();
+	};
+
+	const loadPrices = async () => {
+		await Promise.all(['BTC', 'ETH', 'SOL'].map(async (c) => {
+			try {
+				const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${c}USDT`);
+				const price = Number((await r.json()).result.list[0].lastPrice);
+				if (price > 0) priceUsd[c] = price;
+			} catch (e) { /* остаётся запасная цена */ }
+		}));
+		render(); // пересчитает сумму, ссылку и QR
+	};
+
+	const open = () => {
+		rub = getRub();
+		fillNetworks();
+		modal.hidden = false;
+		refresh();
+		loadPrices();
+	};
+
+	// выбор «Криптовалюта» сразу открывает форму оплаты
+	topup.querySelector('.payment-option[data-payment="crypto"]')?.addEventListener('click', () => {
+		topup.querySelectorAll('.payment-option').forEach((o) => o.classList.toggle('active', o.dataset.payment === 'card'));
+		closeModal(topup);
+		open();
+	});
+
+	document.querySelectorAll('#crypto-coins .crypto-coin').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			coin = btn.dataset.coin;
+			document.querySelectorAll('#crypto-coins .crypto-coin').forEach((b) => b.classList.toggle('active', b === btn));
+			fillNetworks();
+			refresh();
+		});
+	});
+	ui.network.addEventListener('change', refresh);
+
+	modal.querySelectorAll('[data-copy]').forEach((btn) => {
+		btn.addEventListener('click', async () => {
+			try {
+				await navigator.clipboard.writeText($(btn.dataset.copy).textContent);
+				btn.textContent = 'Скопировано';
+			} catch (e) {
+				btn.textContent = 'Выдели вручную';
+			}
+			setTimeout(() => { btn.textContent = 'Копировать'; }, 1800);
+		});
+	});
+
+	ui.paid.addEventListener('click', () => {
+		closeModal(modal);
+		showSuccess('Заявка создана. Баланс пополнится после подтверждений сети');
+	});
+
+	new MutationObserver(() => { if (modal.hidden) clearInterval(timerId); })
+		.observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+})();
+
+(() => {
+	const form = document.getElementById('alert-form');
+	if (!form) return;
+	const $ = (id) => document.getElementById(id);
+	const priceEl = $('alert-price'), hint = $('alert-hint'), listEl = $('alert-list'), countEl = $('alert-count');
+	const currentEl = $('alert-current'), quickEl = $('alert-quick'), card = $('price-alerts');
+	const KEY = 'wind_price_alerts', HKEY = 'wind_price_alerts_done';
+	const MAX = 10;
+	const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+	const PCTS = [1, 3, 5, 10];
+	const prices = {};
+	const rows = new Map();
+	let symbol = 'BTCUSDT', dir = 'above', freshId = null;
+
+	const load = (key) => {
+		try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+	};
+	const okDir = (d) => d === 'above' || d === 'below';
+	let alerts = load(KEY)
+		.filter((a) => a && typeof a.id === 'string' && SYMBOLS.includes(a.symbol) && okDir(a.dir) && Number(a.price) > 0)
+		.map((a) => ({ id: a.id, symbol: a.symbol, dir: a.dir, price: Number(a.price), start: Number(a.start) > 0 ? Number(a.start) : null }));
+	let history = load(HKEY)
+		.filter((h) => h && SYMBOLS.includes(h.symbol) && okDir(h.dir) && Number(h.price) > 0)
+		.slice(0, 3)
+		.map((h) => ({ symbol: h.symbol, dir: h.dir, price: Number(h.price), time: String(h.time || '').slice(0, 20) }));
+
+	const save = () => { try { localStorage.setItem(KEY, JSON.stringify(alerts)); } catch (e) { /* хранилище недоступно */ } };
+	const saveHistory = () => { try { localStorage.setItem(HKEY, JSON.stringify(history)); } catch (e) { /* хранилище недоступно */ } };
+	const fmtPrice = (p) => Number(p).toLocaleString('ru-RU', { maximumFractionDigits: p >= 1000 ? 2 : p >= 1 ? 4 : 6 });
+	const label = (s) => `${s.slice(0, -4)}/USDT`;
+	const signed = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+	const nowTime = () => new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+	const setHint = (text, kind = '') => { hint.textContent = text; hint.className = `alert-hint${kind ? ' ' + kind : ''}`; };
+	const mk = (tag, cls, text) => {
+		const n = document.createElement(tag);
+		if (cls) n.className = cls;
+		if (text != null) n.textContent = text;
+		return n;
+	};
+	const icon = (name) => { const i = document.createElement('i'); i.setAttribute('data-lucide', name); return i; };
+
+	const fetchPrice = async (s) => {
+		const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}`);
+		const price = Number((await r.json()).result.list[0].lastPrice);
+		if (!(price > 0)) throw new Error('bad price');
+		prices[s] = price;
+		return price;
+	};
+
+	// ---- живая цена выбранной монеты ----
+	const showCurrent = (tick) => {
+		const p = prices[symbol];
+		currentEl.textContent = p ? `${fmtPrice(p)} USDT` : '…';
+		if (tick) {
+			currentEl.classList.remove('tick-up', 'tick-down');
+			void currentEl.offsetWidth;
+			currentEl.classList.add(tick);
+		}
+	};
+
+	// ---- быстрые уровни ----
+	const buildQuick = () => {
+		PCTS.forEach((p) => {
+			const b = mk('button');
+			b.type = 'button';
+			b.dataset.pct = String(p);
+			quickEl.appendChild(b);
+		});
+	};
+	const updateQuick = () => {
+		quickEl.querySelectorAll('button').forEach((b) => { b.textContent = `${dir === 'above' ? '+' : '−'}${b.dataset.pct}%`; });
+	};
+	const roundPrice = (v) => (v >= 1000 ? Math.round(v) : v >= 1 ? Number(v.toFixed(2)) : Number(v.toFixed(4)));
+	quickEl.addEventListener('click', (e) => {
+		const b = e.target.closest('button[data-pct]');
+		const cur = prices[symbol];
+		if (!b) return;
+		if (!cur) { setHint('Ждём текущую цену, попробуй через секунду', 'error'); return; }
+		const k = 1 + (dir === 'above' ? 1 : -1) * Number(b.dataset.pct) / 100;
+		priceEl.value = String(roundPrice(cur * k));
+		setHint('');
+	});
+
+	// ---- выбор монеты и условия ----
+	const setSymbol = (s) => {
+		if (!SYMBOLS.includes(s)) return;
+		symbol = s;
+		document.querySelectorAll('#alert-coins .alert-coin').forEach((b) => b.classList.toggle('active', b.dataset.symbol === s));
+		showCurrent();
+		if (!prices[s]) fetchPrice(s).then(() => { if (symbol === s) showCurrent(); }).catch(() => {});
+	};
+	document.querySelectorAll('#alert-coins .alert-coin').forEach((b) => {
+		b.addEventListener('click', () => { setSymbol(b.dataset.symbol); priceEl.value = ''; setHint(''); });
+	});
+	document.querySelectorAll('#alert-dir button').forEach((b) => {
+		b.addEventListener('click', () => {
+			dir = b.dataset.dir;
+			document.querySelectorAll('#alert-dir button').forEach((x) => x.classList.toggle('active', x === b));
+			updateQuick();
+			setHint('');
+		});
+	});
+
+	// ---- список ----
+	const progressOf = (a, cur) => {
+		if (a.start == null || a.start === a.price) return 0;
+		return Math.max(0, Math.min(1, (cur - a.start) / (a.price - a.start)));
+	};
+	const updateRow = (r) => {
+		const a = r.a;
+		const cur = prices[a.symbol];
+		if (!cur) { r.small.textContent = 'Ждём цену…'; return; }
+		if (a.start == null) { a.start = cur; save(); }
+		r.small.textContent = `Сейчас ${fmtPrice(cur)} · до цели ${signed((a.price / cur - 1) * 100)}`;
+		r.bar.style.width = `${Math.round(progressOf(a, cur) * 100)}%`;
+	};
+
+	const render = () => {
+		countEl.textContent = `${alerts.length} / ${MAX}`;
+		listEl.textContent = '';
+		rows.clear();
+
+		if (!alerts.length) {
+			const e = mk('div', 'alert-empty');
+			e.append(icon('bell-off'), mk('span', '', 'Активных уведомлений нет. Задай уровень выше, и мы напомним.'));
+			listEl.appendChild(e);
+		}
+
+		alerts.forEach((a) => {
+			const row = mk('div', `alert-item ${a.dir === 'above' ? 'up' : 'down'}${a.id === freshId ? ' fresh' : ''}`);
+			const badge = mk('div', 'alert-badge');
+			badge.appendChild(icon(a.dir === 'above' ? 'trending-up' : 'trending-down'));
+			const main = mk('div', 'alert-main');
+			const small = mk('small', '', 'Ждём цену…');
+			main.append(mk('strong', '', `${label(a.symbol)} ${a.dir === 'above' ? '≥' : '≤'} ${fmtPrice(a.price)} USDT`), small);
+			const del = mk('button', 'alert-delete', '×');
+			del.type = 'button';
+			del.setAttribute('aria-label', 'Удалить уведомление');
+			del.addEventListener('click', () => { alerts = alerts.filter((x) => x.id !== a.id); save(); render(); });
+			const bar = mk('span');
+			const track = mk('div', 'alert-progress');
+			track.appendChild(bar);
+			row.append(badge, main, del, track);
+			listEl.appendChild(row);
+			rows.set(a.id, { a, small, bar });
+		});
+		freshId = null;
+
+		if (history.length) {
+			listEl.appendChild(mk('div', 'alert-sub', 'Сработавшие'));
+			history.forEach((h, i) => {
+				const row = mk('div', `alert-item done ${h.dir === 'above' ? 'up' : 'down'}`);
+				const badge = mk('div', 'alert-badge');
+				badge.appendChild(icon('check'));
+				const main = mk('div', 'alert-main');
+				main.append(mk('strong', '', `${label(h.symbol)} ${h.dir === 'above' ? '≥' : '≤'} ${fmtPrice(h.price)} USDT`), mk('small', '', `Сработало${h.time ? ' в ' + h.time : ''}`));
+				const del = mk('button', 'alert-delete', '×');
+				del.type = 'button';
+				del.setAttribute('aria-label', 'Убрать из списка');
+				del.addEventListener('click', () => { history.splice(i, 1); saveHistory(); render(); });
+				row.append(badge, main, del);
+				listEl.appendChild(row);
+			});
+		}
+
+		if (window.lucide) window.lucide.createIcons();
+		void listEl.offsetWidth; // чтобы полосы прогресса плавно заполнились с нуля
+		rows.forEach(updateRow);
+	};
+
+	// ---- срабатывание ----
+	const fire = (a, price) => {
+		const msg = `${label(a.symbol)} ${a.dir === 'above' ? 'достиг' : 'опустился до'} ${fmtPrice(a.price)} USDT`;
+		portfolioNotifications.unshift({ type: 'alert', title: msg, detail: `Сейчас ${fmtPrice(price)} USDT`, time: nowTime() });
+		portfolioNotifications.splice(20);
+		renderNotifications();
+		showSuccess(msg);
+		card.classList.remove('fired');
+		void card.offsetWidth;
+		card.classList.add('fired');
+		setTimeout(() => card.classList.remove('fired'), 1400);
+		try {
+			if ('Notification' in window && Notification.permission === 'granted') new Notification('Wind Finance', { body: msg });
+		} catch (e) { /* системные уведомления недоступны */ }
+	};
+
+	const check = async () => {
+		const before = prices[symbol];
+		const symbols = [...new Set([symbol, ...alerts.map((a) => a.symbol)])];
+		await Promise.all(symbols.map((s) => fetchPrice(s).catch(() => {})));
+		const after = prices[symbol];
+		showCurrent(before && after && before !== after ? (after > before ? 'tick-up' : 'tick-down') : undefined);
+
+		const hit = alerts.filter((a) => prices[a.symbol] && (a.dir === 'above' ? prices[a.symbol] >= a.price : prices[a.symbol] <= a.price));
+		if (hit.length) {
+			alerts = alerts.filter((a) => !hit.includes(a));
+			hit.forEach((a) => {
+				history.unshift({ symbol: a.symbol, dir: a.dir, price: a.price, time: nowTime() });
+				fire(a, prices[a.symbol]);
+			});
+			history = history.slice(0, 3);
+			save();
+			saveHistory();
+			render();
+		} else {
+			rows.forEach(updateRow);
+		}
+	};
+
+	// ---- создание ----
+	form.addEventListener('submit', async (event) => {
+		event.preventDefault();
+		const price = Number(priceEl.value);
+		if (!(price > 0)) { setHint('Введи цену больше нуля', 'error'); return; }
+		if (alerts.length >= MAX) { setHint(`Максимум ${MAX} уведомлений. Удали ненужные.`, 'error'); return; }
+		if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+
+		let current;
+		try { current = await fetchPrice(symbol); } catch (e) { setHint('Не удалось получить текущую цену. Попробуй ещё раз.', 'error'); return; }
+		showCurrent();
+		if (dir === 'above' ? current >= price : current <= price) {
+			setHint(`Цена уже ${dir === 'above' ? 'выше' : 'ниже'} этого уровня (сейчас ${fmtPrice(current)} USDT)`, 'error');
+			return;
+		}
+		const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+		alerts.push({ id, symbol, dir, price, start: current });
+		freshId = id;
+		save();
+		priceEl.value = '';
+		render();
+		setHint(`Готово! Напомним, когда ${label(symbol)} ${dir === 'above' ? 'поднимется' : 'опустится'} до ${fmtPrice(price)} USDT`, 'ok');
+	});
+
+	// выбранная в терминале пара подставляется сама
+	if (typeof cryptoPair !== 'undefined' && cryptoPair) {
+		const sync = () => setSymbol(cryptoPair.value);
+		sync();
+		cryptoPair.addEventListener('change', sync);
+	}
+
+	buildQuick();
+	updateQuick();
+	render();
+	check();
+	setInterval(check, 10000);
+})();
+
+(() => {
+	const modal = document.getElementById('article-modal');
+	if (!modal) return;
+	const $ = (id) => document.getElementById(id);
+	const el = { tag: $('article-tag'), info: $('article-info'), title: $('article-title'), body: $('article-body'), quiz: $('article-quiz'), note: $('article-note'), action: $('article-action') };
+	const NOTE_NEWS = 'Демонстрационный материал. Не является инвестиционной рекомендацией.';
+	const NOTE_EDU = 'Учебный материал. Не является инвестиционной рекомендацией.';
+
+	const NEWS = {
+		btc: {
+			tag: 'BTC', tagClass: 'positive-tag', info: '12 мин назад · Позитивно · 3 мин чтения',
+			title: 'Биткоин удерживает уровень после резкого роста объёмов',
+			paragraphs: [
+				'Всплеск торговых объёмов часто сопровождает попытку пробить значимый уровень. Если после такого движения цена не откатывается, это обычно трактуют как признак того, что покупатели готовы удерживать позиции.',
+				'Но один рост объёма не гарантирует продолжения тренда. Трейдеры ждут подтверждения: закрепления цены выше локального сопротивления на нескольких свечах и сохранения высокой активности на этом уровне.',
+				'Что стоит наблюдать: поведение цены у ближайшего сопротивления, соотношение объёма на росте и на коррекции, реакцию рынка на макроэкономические новости. При ложном пробое цена быстро возвращается ниже уровня, и именно для таких случаев используют стоп-приказы.',
+			],
+		},
+		eth: {
+			tag: 'ETH', tagClass: 'purple-tag', info: '28 мин назад · Нейтрально · 3 мин чтения',
+			title: 'Экосистема Ethereum готовится к новой волне активности',
+			paragraphs: [
+				'Об оживлении сети судят по нескольким показателям: числу транзакций, размеру комиссий, количеству активных адресов и объёму средств, заблокированных в приложениях.',
+				'Рост активности не всегда означает рост цены. Иногда сеть загружена из-за популярного запуска, а на котировках это почти не сказывается. И наоборот, цена может расти на ожиданиях, пока сама сеть остаётся спокойной.',
+				'Для оценки полезно сравнивать несколько метрик за одинаковый период и смотреть, подтверждает ли их движение график цены.',
+			],
+		},
+		volume: {
+			tag: 'Рынок', tagClass: 'amber-tag', info: '41 мин назад · Важно для волатильности · 2 мин чтения',
+			title: 'Объём торгов на споте вырос перед открытием США',
+			paragraphs: [
+				'Перед открытием американской сессии на рынке обычно становится больше участников. Растут объёмы, и вместе с ними нередко вырастает волатильность.',
+				'При высокой волатильности цена движется быстрее, а исполнение рыночных заявок может проходить с проскальзыванием: сделка совершится по цене хуже ожидаемой. Лимитные заявки помогают контролировать цену входа.',
+				'В такие часы разумно не увеличивать размер позиции из азарта и заранее определить уровень, на котором ты закроешь сделку, если рынок пойдёт против тебя.',
+			],
+		},
+		reserves: {
+			tag: 'Регуляция', tagClass: 'teal-tag', info: '1 ч назад · Долгосрочно позитивно · 4 мин чтения',
+			title: 'Крупные площадки усиливают прозрачность резервов',
+			paragraphs: [
+				'Доказательство резервов (proof of reserves) — способ показать, что у площадки действительно есть активы, которые она хранит для клиентов. Данные публикуются так, чтобы их можно было проверить независимо.',
+				'У метода есть ограничения. Он подтверждает наличие активов, но не всегда показывает обязательства площадки. Поэтому его считают одним из признаков надёжности, а не полной гарантией.',
+				'Практический вывод для пользователя: не держи на бирже больше, чем готов потерять, а долгосрочные накопления храни на кошельке, где приватные ключи есть только у тебя.',
+			],
+		},
+	};
+
+	const LESSONS = [
+		{
+			id: 'blockchain', icon: 'blocks', level: 'Новичок', minutes: 4,
+			title: 'Что такое криптовалюта и блокчейн', desc: 'Как устроен общий журнал операций и кому принадлежат монеты.',
+			paragraphs: [
+				'Криптовалюта — цифровой актив, учёт которого ведётся не в одном банке, а в распределённой сети компьютеров. Все операции записываются в блокчейн — общий журнал, где записи нельзя тихо изменить задним числом.',
+				'Каждая запись (блок) связана с предыдущей через криптографический хеш. Чтобы подделать старую операцию, пришлось бы пересчитать всю цепочку после неё, а сеть отвергнет такую подделку.',
+				'Владение подтверждается ключами: публичный адрес похож на номер счёта, приватный ключ — на подпись. Кто знает приватный ключ, тот управляет средствами, поэтому его нельзя никому передавать.',
+			],
+			quiz: { q: 'Что подтверждает право распоряжаться криптовалютой?', options: ['Публичный адрес', 'Приватный ключ', 'Название сети'], answer: 1, why: 'Приватный ключ позволяет подписывать операции, поэтому его хранят в тайне.' },
+		},
+		{
+			id: 'candles', icon: 'trending-up', level: 'Новичок', minutes: 5,
+			title: 'Как читать свечной график', desc: 'Тело, тени и цвет свечи: что они говорят о цене.',
+			paragraphs: [
+				'Каждая свеча показывает движение цены за выбранный период. На твоём графике это 15 минут, 1 час, 4 часа или 1 день.',
+				'Тело свечи — расстояние между ценой открытия и закрытия. Тонкие линии (тени) показывают максимум и минимум за период. Зелёная свеча означает, что цена закрылась выше открытия, красная — ниже.',
+				'Длинная тень говорит, что цена заходила далеко, но вернулась: рынок отверг этот уровень. Один график не даёт прогноза, поэтому смотри на несколько таймфреймов и не принимай решение по одной свече.',
+			],
+			quiz: { q: 'Что показывают тени свечи?', options: ['Цену открытия и закрытия', 'Максимум и минимум за период', 'Объём торгов'], answer: 1, why: 'Верхняя тень — максимум периода, нижняя — минимум.' },
+		},
+		{
+			id: 'networks', icon: 'network', level: 'Новичок', minutes: 4,
+			title: 'Сети и адреса: не потерять перевод', desc: 'Почему USDT в разных сетях это не одно и то же.',
+			paragraphs: [
+				'Одна и та же монета может существовать в разных сетях. USDT, например, есть в TRC20, BEP20 и ERC20. Это разные блокчейны со своими адресами и комиссиями.',
+				'Если отправить монету по сети, которую получатель не поддерживает, средства обычно не вернуть. Поэтому перед переводом сверяй сеть у отправителя и у получателя.',
+				'Полезная привычка: сначала отправь небольшую тестовую сумму, дождись зачисления и только потом переводи основную. Проверяй адрес целиком, а не только первые символы.',
+			],
+			quiz: { q: 'Что сделать перед крупным переводом?', options: ['Отправить сразу всю сумму', 'Проверить сеть и сделать тестовый перевод', 'Выбрать любую сеть, они одинаковые'], answer: 1, why: 'Тестовый перевод стоит копейки, а ошибка в сети может стоить всей суммы.' },
+		},
+		{
+			id: 'risk', icon: 'shield-check', level: 'Средний', minutes: 6,
+			title: 'Стоп-лосс и управление риском', desc: 'Как заранее ограничить убыток и посчитать размер позиции.',
+			paragraphs: [
+				'Рынок нельзя предсказать, но можно ограничить потери. Главное правило: заранее реши, сколько готов потерять в одной сделке. Частый ориентир — 1–2% от капитала.',
+				'Стоп-лосс — заявка, которая закроет позицию при достижении заданной цены. Размер позиции считают от стопа: размер = допустимый убыток / расстояние до стопа в долях.',
+				'Пример: капитал 100 000 ₽, риск 1% = 1 000 ₽. Если стоп стоит на 5% ниже входа, размер позиции будет 1 000 / 0,05 = 20 000 ₽.',
+			],
+			quiz: { q: 'Капитал 100 000 ₽, риск 1%, стоп в 5% от входа. Какой размер позиции?', options: ['5 000 ₽', '20 000 ₽', '50 000 ₽'], answer: 1, why: 'Допустимый убыток 1 000 ₽ делим на 0,05 и получаем 20 000 ₽.' },
+		},
+		{
+			id: 'diversify', icon: 'layers', level: 'Средний', minutes: 5,
+			title: 'Диверсификация портфеля', desc: 'Почему пять похожих монет не равны пяти разным активам.',
+			paragraphs: [
+				'Диверсификация — распределение денег между активами, которые ведут себя по-разному, чтобы падение одного не обрушило весь портфель.',
+				'Недостаточно купить пять разных альткоинов: они часто падают одновременно с биткоином, то есть сильно коррелируют. Смешивай разные классы активов: облигации, акции, валюту и небольшую долю крипты.',
+				'Доля рискованных активов зависит от срока и твоего запаса прочности: чем короче горизонт, тем меньше места для волатильных вложений. Периодически возвращай доли к плану — это называется ребалансировкой.',
+			],
+			quiz: { q: 'Что лучше снижает риск портфеля?', options: ['Пять похожих альткоинов', 'Активы разных классов', 'Всё в самый растущий актив'], answer: 1, why: 'Активы разных классов реже падают одновременно.' },
+		},
+		{
+			id: 'scams', icon: 'triangle-alert', level: 'Новичок', minutes: 5,
+			title: 'Мошенничество и рагпулл', desc: 'Как распознать схему и что никогда нельзя сообщать.',
+			paragraphs: [
+				'Рагпулл — схема, при которой создатели токена привлекают деньги, а затем выводят ликвидность и исчезают. Цена обваливается почти до нуля. Поэтому в игре Crypto Drop ящики с ☠ отнимают жизнь.',
+				'Признаки риска: обещания гарантированной доходности, давление «успей сегодня», анонимная команда, невозможность продать токен, ажиотаж только в соцсетях.',
+				'Золотые правила: никому не сообщай seed-фразу и приватный ключ, ни поддержке, ни «администраторам»; проверяй адрес сайта; не переходи по ссылкам из личных сообщений; вкладывай только то, что готов потерять.',
+			],
+			quiz: { q: 'Кому можно сообщить seed-фразу?', options: ['Поддержке биржи', 'Никому', 'Администратору чата'], answer: 1, why: 'Настоящая поддержка никогда не просит seed-фразу. Любой, кто просит, мошенник.' },
+		},
+	];
+
+	// прогресс обучения
+	const DONE_KEY = 'wind_lessons_done';
+	let done = [];
+	try { done = JSON.parse(localStorage.getItem(DONE_KEY) || '[]'); } catch (e) { done = []; }
+	if (!Array.isArray(done)) done = [];
+	const isDone = (id) => done.includes(id);
+	let syncAction = null;
+
+	const markDone = (id) => {
+		if (!isDone(id)) {
+			done.push(id);
+			try { localStorage.setItem(DONE_KEY, JSON.stringify(done)); } catch (e) { /* хранилище недоступно */ }
+		}
+		renderEdu();
+		if (syncAction) syncAction();
+	};
+
+	const renderQuiz = (lesson) => {
+		const q = document.createElement('p');
+		q.className = 'quiz-q';
+		q.textContent = lesson.quiz.q;
+		const list = document.createElement('div');
+		list.className = 'quiz-options';
+		const fb = document.createElement('p');
+		fb.className = 'quiz-feedback';
+		let answered = false;
+		lesson.quiz.options.forEach((text, i) => {
+			const b = document.createElement('button');
+			b.type = 'button';
+			b.className = 'quiz-option';
+			b.textContent = text;
+			b.addEventListener('click', () => {
+				if (answered) return;
+				if (i !== lesson.quiz.answer) {
+					b.classList.add('wrong');
+					b.disabled = true;
+					fb.textContent = 'Не совсем. Попробуй ещё раз.';
+					return;
+				}
+				answered = true;
+				b.classList.add('correct');
+				fb.textContent = `Верно! ${lesson.quiz.why}`;
+				markDone(lesson.id);
+			});
+			list.appendChild(b);
+		});
+		el.quiz.append(q, list, fb);
+		el.quiz.hidden = false;
+	};
+
+	const renderAction = (lesson) => {
+		syncAction = () => {
+			el.action.textContent = isDone(lesson.id) ? 'Урок пройден ✓' : 'Отметить пройденным';
+			el.action.disabled = isDone(lesson.id);
+		};
+		el.action.hidden = false;
+		el.action.onclick = () => markDone(lesson.id);
+		syncAction();
+	};
+
+	const openArticle = ({ tag, tagClass, info, title, paragraphs, note, lesson }) => {
+		el.tag.textContent = tag;
+		el.tag.className = `news-tag ${tagClass}`;
+		el.info.textContent = info;
+		el.title.textContent = title;
+		el.body.textContent = '';
+		paragraphs.forEach((t) => {
+			const p = document.createElement('p');
+			p.textContent = t;
+			el.body.appendChild(p);
+		});
+		el.note.textContent = note;
+		el.quiz.textContent = '';
+		el.quiz.hidden = true;
+		el.action.hidden = true;
+		el.action.onclick = null;
+		syncAction = null;
+		if (lesson) { renderQuiz(lesson); renderAction(lesson); }
+		modal.hidden = false;
+		modal.querySelector('.article-card').scrollTop = 0;
+	};
+
+	const bindOpen = (node, open) => {
+		node.addEventListener('click', open);
+		node.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+		});
+	};
+
+	// новости
+	document.querySelectorAll('[data-news]').forEach((card) => {
+		bindOpen(card, () => {
+			const n = NEWS[card.dataset.news];
+			if (n) openArticle({ ...n, note: NOTE_NEWS });
+		});
+	});
+
+	// обучение
+	const renderEdu = () => {
+		const grid = $('edu-grid');
+		if (!grid) return;
+		grid.textContent = '';
+		LESSONS.forEach((l) => {
+			const card = document.createElement('article');
+			card.className = `edu-card card${isDone(l.id) ? ' done' : ''}`;
+			card.tabIndex = 0;
+			card.setAttribute('role', 'button');
+			card.setAttribute('aria-label', `Открыть урок: ${l.title}`);
+			card.innerHTML = `
+				<span class="edu-icon"><i data-lucide="${l.icon}"></i></span>
+				<div>
+					<div class="edu-meta"><span class="edu-level">${l.level}</span><span>${l.minutes} мин</span></div>
+					<h4>${l.title}</h4>
+					<p>${l.desc}</p>
+				</div>
+				<span class="edu-done">✓</span>`;
+			bindOpen(card, () => openArticle({
+				tag: l.level, tagClass: 'positive-tag', info: `${l.minutes} мин чтения · урок`,
+				title: l.title, paragraphs: l.paragraphs, note: NOTE_EDU, lesson: l,
+			}));
+			grid.appendChild(card);
+		});
+		const count = LESSONS.filter((l) => isDone(l.id)).length;
+		$('edu-progress-text').textContent = `Пройдено ${count} из ${LESSONS.length}`;
+		$('edu-progress-bar').style.width = `${(count / LESSONS.length) * 100}%`;
+		if (window.lucide) window.lucide.createIcons();
+	};
+
+	// вкладки «Новости» / «Обучение»
+	const TABS = {
+		news: { title: 'Новости рынка', sub: 'Коротко о том, что двигает криптовалюты' },
+		edu: { title: 'Обучение', sub: 'Короткие уроки с проверкой знаний' },
+	};
+	document.querySelectorAll('[data-learn-tab]').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const tab = btn.dataset.learnTab;
+			document.querySelectorAll('[data-learn-tab]').forEach((b) => b.classList.toggle('active', b === btn));
+			$('learn-news').hidden = tab !== 'news';
+			$('learn-edu').hidden = tab !== 'edu';
+			$('learn-title').textContent = TABS[tab].title;
+			$('learn-sub').textContent = TABS[tab].sub;
+		});
+	});
+
+	renderEdu();
+})();
+
+(() => {
+	const cards = document.querySelectorAll('.invest-card');
+	if (!cards.length) return;
+	const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	if (reduce || !('IntersectionObserver' in window)) return; // без анимации остаются готовые значения из HTML
+
+	const counters = document.querySelectorAll('.invest-card [data-count]');
+	counters.forEach((n) => { n.dataset.final = n.textContent; });
+
+	const animate = (node) => {
+		cancelAnimationFrame(node._raf);
+		const to = Number(node.dataset.count);
+		const dec = Number(node.dataset.decimals || 0);
+		const pre = node.dataset.prefix || '';
+		const suf = node.dataset.suffix || '';
+		const start = performance.now();
+		const step = (now) => {
+			const k = Math.min(1, (now - start) / 1100);
+			const v = to * (1 - Math.pow(1 - k, 3));
+			node.textContent = pre + v.toLocaleString('ru-RU', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suf;
+			if (k < 1) node._raf = requestAnimationFrame(step);
+			else node.textContent = node.dataset.final;
+		};
+		node._raf = requestAnimationFrame(step);
+	};
+
+	document.documentElement.classList.add('inv-anim');
+	const io = new IntersectionObserver((entries) => {
+		entries.forEach((entry) => {
+			const card = entry.target;
+			if (entry.isIntersecting) {
+				card.classList.add('in-view');
+				card.querySelectorAll('[data-count]').forEach(animate);
+			} else {
+				card.classList.remove('in-view'); // при следующем показе анимация сыграет заново
+				card.querySelectorAll('[data-count]').forEach((n) => { cancelAnimationFrame(n._raf); n.textContent = n.dataset.final; });
+			}
+		});
+	}, { threshold: 0.2 });
+	cards.forEach((c) => io.observe(c));
+})();
+
+(() => {
+	const modal = document.getElementById('buy-asset-modal');
+	if (!modal) return;
+	const $ = (id) => document.getElementById(id);
+	const ui = {
+		title: $('buy-asset-title'), price: $('buy-asset-price'), name: $('buy-asset-name'), qty: $('buy-asset-qty'),
+		sum: $('buy-asset-sum'), balance: $('buy-asset-balance'), amount: $('buy-asset-amount'), error: $('buy-asset-error'),
+		confirm: $('buy-asset-confirm'),
+	};
+	const presets = modal.querySelectorAll('#buy-asset-presets .amount-option');
+	let asset = null;
+
+	const fmt = (n, d = 2) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: d });
+	const getBalance = () => {
+		const node = document.querySelector('.wallet-balance strong');
+		return Number((node?.dataset.fxFinal || node?.textContent || '').replace(/\D/g, '')) || 0;
+	};
+	const getAmount = () => {
+		const custom = Number(ui.amount.value || 0);
+		if (custom > 0) return custom;
+		return Number(modal.querySelector('#buy-asset-presets .amount-option.active')?.dataset.amount || 0);
+	};
+
+	const render = () => {
+		if (!asset) return;
+		const amount = getAmount();
+		ui.qty.textContent = `${fmt(amount / asset.price, 4)} ${asset.unit}`;
+		ui.sum.textContent = `${fmt(amount)} ₽`;
+		ui.balance.textContent = `${fmt(getBalance(), 0)} ₽`;
+		ui.error.textContent = '';
+	};
+
+	document.querySelectorAll('[data-buy-asset]').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const card = btn.closest('.invest-card');
+			if (!card) return;
+			asset = { name: card.dataset.assetName, price: Number(card.dataset.price), unit: card.dataset.unit || 'ед.' };
+			if (!(asset.price > 0)) return;
+			ui.title.textContent = `Купить: ${asset.name}`;
+			ui.name.textContent = asset.name;
+			ui.price.textContent = `${fmt(asset.price)} ₽`;
+			ui.amount.value = '';
+			presets.forEach((p) => p.classList.toggle('active', p.dataset.amount === '5000'));
+			render();
+			modal.hidden = false;
+		});
+	});
+
+	presets.forEach((p) => {
+		p.addEventListener('click', () => {
+			presets.forEach((x) => x.classList.toggle('active', x === p));
+			ui.amount.value = '';
+			render();
+		});
+	});
+	ui.amount.addEventListener('input', () => {
+		presets.forEach((x) => x.classList.remove('active'));
+		render();
+	});
+
+	ui.confirm.addEventListener('click', () => {
+		if (!asset) return;
+		const amount = getAmount();
+		if (amount < 100) { ui.error.textContent = 'Минимальная сумма — 100 ₽'; return; }
+		if (amount > getBalance()) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
+		const qty = fmt(amount / asset.price, 4);
+		closeModal(modal);
+		showSuccess(`Куплено ${qty} ${asset.unit} «${asset.name}» на ${fmt(amount)} ₽`);
+		portfolioNotifications.unshift({
+			type: 'neutral', title: `Покупка: ${asset.name}`, detail: `${qty} ${asset.unit} на ${fmt(amount)} ₽`,
+			time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+		});
+		portfolioNotifications.splice(20);
+		renderNotifications();
+	});
+})();
+
+(() => {
+	const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const $ = (id) => document.getElementById(id);
+
+	// ---------- «вспышка» цены и «прыжок» результата (работают и при reduce-motion только как класс, без движения не мешают) ----------
+	const price = $('crypto-price-label');
+	if (price && !reduce) {
+		let last = null;
+		new MutationObserver(() => {
+			const v = Number(price.textContent.replace(/[^\d,]/g, '').replace(',', '.'));
+			if (!v) { last = null; return; }
+			if (last !== null && v !== last) {
+				price.classList.remove('flash-up', 'flash-down');
+				void price.offsetWidth;
+				price.classList.add(v > last ? 'flash-up' : 'flash-down');
+			}
+			last = v;
+		}).observe(price, { childList: true, characterData: true, subtree: true });
+	}
+	const out = document.querySelector('.converter-output');
+	if (out && !reduce) {
+		new MutationObserver(() => {
+			out.classList.remove('bump');
+			void out.offsetWidth;
+			out.classList.add('bump');
+		}).observe(out, { childList: true, characterData: true, subtree: true });
+	}
+
+	if (reduce || !('IntersectionObserver' in window)) return;
+
+	// ---------- что появляется с анимацией ----------
+	const REVEAL = [
+		'.topbar', '.brand', '.nav a', '.sidebar-bottom',
+		'.wallet-bar', '.focus-card', '.stats-card', '.stat-row', '#converter .converter', '.course', '.section-heading',
+		'.crypto-terminal', '.alerts-card', '.crypto-news-feature', '.crypto-news-item', '.edu-progress', '.edu-card',
+		'.profile-hero', '.portfolio-card', '.portfolio-item', '.ledger-row',
+		'.settings-card', '.setting-item', '.insight-item', '.cg-card',
+	].join(',');
+
+	// какие числа «набегают»
+	const NUMS = '.wallet-balance strong, .stat-value, .course .rate-change, .portfolio-summary strong, .settings-summary strong, .portfolio-side span, .portfolio-side em, .ledger-row b';
+
+	const parse = (text) => {
+		const m = text.trim().match(/^([^\d]*)(\d[\d\s\u00a0\u202f]*(?:,\d+)?)([^\d]*)$/);
+		if (!m) return null;
+		const num = Number(m[2].replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
+		if (!Number.isFinite(num)) return null;
+		return { pre: m[1], suf: m[3], num, dec: m[2].includes(',') ? m[2].split(',')[1].length : 0 };
+	};
+
+	const runNum = (n) => {
+		cancelAnimationFrame(n._raf);
+		const d = n._fx;
+		const start = performance.now();
+		const step = (now) => {
+			const k = Math.min(1, (now - start) / 1000);
+			const v = d.num * (1 - Math.pow(1 - k, 3));
+			n.textContent = d.pre + v.toLocaleString('ru-RU', { minimumFractionDigits: d.dec, maximumFractionDigits: d.dec }) + d.suf;
+			if (k < 1) n._raf = requestAnimationFrame(step);
+			else n.textContent = n.dataset.fxFinal;
+		};
+		n._raf = requestAnimationFrame(step);
+	};
+	const resetNum = (n) => { cancelAnimationFrame(n._raf); n.textContent = n.dataset.fxFinal; };
+
+	const io = new IntersectionObserver((entries) => {
+		entries.forEach(({ target, isIntersecting }) => target.classList.toggle('in-view', isIntersecting));
+	}, { threshold: 0.12 });
+
+	const ioNum = new IntersectionObserver((entries) => {
+		entries.forEach(({ target, isIntersecting }) => (isIntersecting ? runNum(target) : resetNum(target)));
+	}, { threshold: 0.3 });
+
+	const tagged = new Set();
+	const numbers = new Set();
+
+	const scan = () => {
+		document.documentElement.classList.add('fx-ready');
+		const counts = new Map();
+		document.querySelectorAll(REVEAL).forEach((el) => {
+			if (tagged.has(el) || el.closest('.invest-card')) return;
+			tagged.add(el);
+			const parent = el.parentElement;
+			const i = counts.get(parent) || 0;
+			counts.set(parent, i + 1);
+			el.setAttribute('data-fx', '');
+			el.style.setProperty('--fx-i', Math.min(i, 9));
+			io.observe(el);
+		});
+		document.querySelectorAll(NUMS).forEach((n) => {
+			if (numbers.has(n) || n.children.length || n.closest('.invest-card')) return;
+			const d = parse(n.textContent);
+			if (!d) return;
+			numbers.add(n);
+			n._fx = d;
+			n.dataset.fxFinal = n.textContent;
+			ioNum.observe(n);
+		});
+	};
+
+	scan();
+
+	// новые карточки уроков (после прохождения урока список перерисовывается)
+	const eduGrid = $('edu-grid');
+	if (eduGrid) new MutationObserver(scan).observe(eduGrid, { childList: true });
+
+	// после входа в аккаунт запускаем анимации заново, чтобы они не прошли под окном входа
+	const gate = $('auth-gate');
+	if (gate) {
+		new MutationObserver(() => {
+			if (!gate.hidden) return;
+			tagged.forEach((el) => { el.classList.remove('in-view'); io.unobserve(el); });
+			numbers.forEach((n) => { resetNum(n); ioNum.unobserve(n); });
+			requestAnimationFrame(() => {
+				tagged.forEach((el) => io.observe(el));
+				numbers.forEach((n) => ioNum.observe(n));
+			});
+		}).observe(gate, { attributes: true, attributeFilter: ['hidden'] });
+	}
+})();
+
 if (window.lucide) {
 	lucide.createIcons();
 }
