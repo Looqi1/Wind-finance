@@ -896,7 +896,7 @@ appNavigation.forEach((link) => {
 
 	const frame = (ts) => {
 		if (!running) return;
-		if (document.body.dataset.view !== 'game') { finish(null); return; }
+		if (document.body.dataset.view !== 'game' || !stage.offsetParent) { finish(null); return; }
 		const dt = Math.min(0.04, (ts - last) / 1000 || 0);
 		last = ts;
 		update(dt);
@@ -1403,6 +1403,120 @@ if (cryptoChartElement && window.LightweightCharts) {
 }
 
 (() => {
+	const KEY = 'wind_wallet', HKEY = 'wind_wallet_history', START = 24500;
+	const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const r2 = (x) => Math.round(x * 100) / 100;
+	const fmt = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
+	const listeners = [];
+
+	let raw = null;
+	try { raw = localStorage.getItem(KEY); } catch (e) { raw = null; }
+	let balance = raw === null ? START : Number(raw);
+	if (!Number.isFinite(balance) || balance < 0) balance = START;
+
+	let history = [];
+	try { const h = JSON.parse(localStorage.getItem(HKEY) || '[]'); if (Array.isArray(h)) history = h; } catch (e) { history = []; }
+	history = history
+		.filter((x) => x && (x.type === 'in' || x.type === 'out') && Number(x.amount) > 0 && Number(x.ts) > 0)
+		.slice(0, 30)
+		.map((x) => ({ type: x.type, title: String(x.title || '').slice(0, 60), amount: Number(x.amount), ts: Number(x.ts) }));
+
+	const nodes = () => [
+		document.querySelector('.wallet-balance strong'),
+		document.querySelector('.settings-summary > div:last-child strong'),
+	].filter(Boolean);
+
+	const persist = () => {
+		try { localStorage.setItem(KEY, String(balance)); localStorage.setItem(HKEY, JSON.stringify(history)); } catch (e) { /* хранилище недоступно */ }
+	};
+
+	// показать баланс (с анимацией, если указано старое значение)
+	const paint = (from) => {
+		nodes().forEach((n) => {
+			cancelAnimationFrame(n._wraf);
+			const final = fmt(balance);
+			n.dataset.fxFinal = final;
+			if (n._fx) n._fx = { pre: '', suf: ' ₽', num: balance, dec: Number.isInteger(balance) ? 0 : 2 };
+			if (from == null || reduce || from === balance) { n.textContent = final; return; }
+			n.classList.remove('flash-up', 'flash-down');
+			void n.offsetWidth;
+			n.classList.add(balance > from ? 'flash-up' : 'flash-down');
+			const t0 = performance.now();
+			const step = (now) => {
+				const k = Math.min(1, (now - t0) / 700);
+				n.textContent = fmt(k < 1 ? Math.round(from + (balance - from) * (1 - Math.pow(1 - k, 3))) : balance);
+				if (k < 1) n._wraf = requestAnimationFrame(step);
+			};
+			n._wraf = requestAnimationFrame(step);
+		});
+	};
+
+	// последние операции в разделе «История»
+	const renderHistory = () => {
+		const list = document.querySelector('.ledger-list');
+		if (!list) return;
+		list.querySelectorAll('.wallet-tx').forEach((r) => r.remove());
+		const frag = document.createDocumentFragment();
+		history.slice(0, 6).forEach((h) => {
+			const row = document.createElement('div');
+			row.className = 'ledger-row wallet-tx';
+			const tag = document.createElement('span');
+			tag.className = `ledger-tag ${h.type === 'in' ? 'transfer' : 'sell'}`;
+			tag.textContent = h.type === 'in' ? 'Пополнение' : 'Списание';
+			const mid = document.createElement('div');
+			const s = document.createElement('strong');
+			s.textContent = h.title;
+			const sm = document.createElement('small');
+			sm.textContent = new Date(h.ts).toLocaleDateString('ru-RU');
+			mid.append(s, sm);
+			const b = document.createElement('b');
+			b.textContent = `${h.type === 'in' ? '+' : '−'}${fmt(h.amount)}`;
+			row.append(tag, mid, b);
+			frag.appendChild(row);
+		});
+		list.prepend(frag);
+	};
+
+	const change = (delta, type, title) => {
+		const from = balance;
+		balance = r2(balance + delta);
+		history.unshift({ type, title, amount: Math.abs(delta), ts: Date.now() });
+		history = history.slice(0, 30);
+		persist();
+		paint(from);
+		renderHistory();
+		listeners.forEach((fn) => fn(balance));
+	};
+
+	const Wallet = {
+		get: () => balance,
+		format: fmt,
+		add(amount, title) {
+			const a = r2(Number(amount));
+			if (!(a > 0)) return false;
+			change(a, 'in', title);
+			if (typeof portfolioNotifications !== 'undefined') {
+				portfolioNotifications.unshift({ type: 'neutral', title: 'Баланс пополнен', detail: `+${fmt(a)} · ${title}`, time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) });
+				portfolioNotifications.splice(20);
+				renderNotifications();
+			}
+			return true;
+		},
+		spend(amount, title) {
+			const a = r2(Number(amount));
+			if (!(a > 0) || a > balance) return false;
+			change(-a, 'out', title);
+			return true;
+		},
+		onChange: (fn) => listeners.push(fn),
+	};
+	window.Wallet = Wallet;
+
+	paint(null);
+	renderHistory();
+})();
+
+(() => {
 	const modal = document.getElementById('crypto-topup-modal');
 	const topup = document.getElementById('topup-modal');
 	if (!modal || !topup) return;
@@ -1562,9 +1676,17 @@ if (cryptoChartElement && window.LightweightCharts) {
 		});
 	});
 
+
 	ui.paid.addEventListener('click', () => {
+		const demo = !invoice || invoice.demo;
+		const amount = rub;
 		closeModal(modal);
-		showSuccess('Заявка создана. Баланс пополнится после подтверждений сети');
+		if (demo) {
+			Wallet.add(amount, 'Пополнение криптовалютой');
+			showSuccess(`Баланс пополнен на ${fmt(amount, 0)} ₽ (демо)`);
+		} else {
+			showSuccess('Заявка создана. Баланс пополнится после подтверждений сети');
+		}
 	});
 
 	new MutationObserver(() => { if (modal.hidden) clearInterval(timerId); })
@@ -2130,10 +2252,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	let asset = null;
 
 	const fmt = (n, d = 2) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: d });
-	const getBalance = () => {
-		const node = document.querySelector('.wallet-balance strong');
-		return Number((node?.dataset.fxFinal || node?.textContent || '').replace(/\D/g, '')) || 0;
-	};
+	const getBalance = () => Wallet.get();
 	const getAmount = () => {
 		const custom = Number(ui.amount.value || 0);
 		if (custom > 0) return custom;
@@ -2182,6 +2301,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 		const amount = getAmount();
 		if (amount < 100) { ui.error.textContent = 'Минимальная сумма — 100 ₽'; return; }
 		if (amount > getBalance()) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
+		if (!Wallet.spend(amount, `Покупка: ${asset.name}`)) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
 		const qty = fmt(amount / asset.price, 4);
 		closeModal(modal);
 		showSuccess(`Куплено ${qty} ${asset.unit} «${asset.name}» на ${fmt(amount)} ₽`);
@@ -2313,6 +2433,1347 @@ if (cryptoChartElement && window.LightweightCharts) {
 			});
 		}).observe(gate, { attributes: true, attributeFilter: ['hidden'] });
 	}
+})();
+
+(() => {
+	const modal = document.getElementById('pay-topup-modal');
+	const topup = document.getElementById('topup-modal');
+	const topupSubmit = document.getElementById('topup-submit');
+	if (!modal || !topup) return;
+	const $ = (id) => document.getElementById(id);
+
+	const cardPanel = $('pay-card-panel'), sbpPanel = $('pay-sbp-panel');
+	const f = { number: $('pay-number'), name: $('pay-name'), exp: $('pay-exp'), cvc: $('pay-cvc') };
+	const pv = { box: $('pay-card-visual'), number: $('pv-number'), name: $('pv-name'), exp: $('pv-exp'), cvc: $('pv-cvc'), brand: $('pv-brand') };
+	const submit = $('pay-submit'), submitLabel = $('pay-submit-label'), spin = $('pay-spin'), cardErr = $('pay-card-error');
+	const linkEl = $('pay-sbp-link'), timerEl = $('pay-sbp-timer'), sbpPaid = $('pay-sbp-paid'), sbpNote = $('pay-sbp-note');
+	const TITLES = { card: 'Оплата картой', sbp: 'Оплата через СБП' };
+	const fmt = (n) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+
+	let method = 'card', rub = 5000, busy = false, payTimeout = 0, sbpTimer = 0, sbpSeq = 0, sbpQr = null, sbpDemo = true;
+
+	const getRub = () => {
+		const custom = Number($('custom-topup-amount')?.value || 0);
+		if (custom > 0) return custom;
+		return Number(topup.querySelector('.amount-option.active')?.dataset.amount || 5000);
+	};
+
+	// ---------- карта: картинка ----------
+	const brandOf = (d) => {
+		if (/^4/.test(d)) return ['visa', 'VISA'];
+		if (/^(5[1-5]|222[1-9]|22[3-9]\d|2[3-6]\d\d|27[01]\d|2720)/.test(d)) return ['mc', 'MASTERCARD'];
+		if (/^220[0-4]/.test(d)) return ['mir', 'МИР'];
+		return ['card', 'CARD'];
+	};
+	const updateVisual = () => {
+		const d = f.number.value.replace(/\D/g, '');
+		pv.number.textContent = (d + '•'.repeat(Math.max(0, 16 - d.length))).replace(/(.{4})/g, '$1 ').trim();
+		pv.name.textContent = f.name.value.trim() || 'IVAN IVANOV';
+		pv.exp.textContent = f.exp.value || 'ММ/ГГ';
+		pv.cvc.textContent = '•'.repeat(f.cvc.value.length) || '•••';
+		const [key, label] = brandOf(d);
+		pv.box.dataset.brand = key;
+		pv.brand.textContent = label;
+	};
+
+	// ---------- карта: ошибки и проверки ----------
+	const wrap = (el) => el.closest('.pay-field');
+	const showErr = (el, msg) => {
+		const w = wrap(el);
+		el.setAttribute('aria-invalid', 'true');
+		w.querySelector('.pay-err').textContent = msg;
+		w.classList.remove('shake');
+		void w.offsetWidth;
+		w.classList.add('shake');
+	};
+	const clearErr = (el) => {
+		el.removeAttribute('aria-invalid');
+		wrap(el).querySelector('.pay-err').textContent = '';
+	};
+	const luhn = (n) => {
+		let sum = 0, alt = false;
+		for (let i = n.length - 1; i >= 0; i--) {
+			let x = Number(n[i]);
+			if (alt) { x *= 2; if (x > 9) x -= 9; }
+			sum += x;
+			alt = !alt;
+		}
+		return sum % 10 === 0;
+	};
+	const validators = {
+		number: () => {
+			const d = f.number.value.replace(/\D/g, '');
+			if (d.length < 13) return 'Введи номер карты полностью';
+			return luhn(d) ? '' : 'Проверь номер карты';
+		},
+		name: () => {
+			const v = f.name.value.trim();
+			return v.length >= 3 && v.includes(' ') ? '' : 'Имя и фамилия латиницей, как на карте';
+		},
+		exp: () => {
+			const v = f.exp.value;
+			if (!/^\d{2}\/\d{2}$/.test(v)) return 'Формат ММ/ГГ';
+			const m = Number(v.slice(0, 2)), y = 2000 + Number(v.slice(3));
+			if (m < 1 || m > 12) return 'Неверный месяц';
+			const now = new Date();
+			if (y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth() + 1)) return 'Срок действия истёк';
+			return '';
+		},
+		cvc: () => (f.cvc.value.length === 3 ? '' : 'Три цифры на обороте карты'),
+	};
+
+	// ---------- карта: ввод ----------
+	f.number.addEventListener('input', () => {
+		const d = f.number.value.replace(/\D/g, '').slice(0, 19);
+		f.number.value = d.replace(/(.{4})/g, '$1 ').trim();
+		clearErr(f.number);
+		updateVisual();
+	});
+	f.name.addEventListener('input', () => {
+		f.name.value = f.name.value.toUpperCase().replace(/[^A-Z .'-]/g, '');
+		clearErr(f.name);
+		updateVisual();
+	});
+	f.exp.addEventListener('input', () => {
+		let d = f.exp.value.replace(/\D/g, '').slice(0, 4);
+		if (d.length >= 3) d = `${d.slice(0, 2)}/${d.slice(2)}`;
+		f.exp.value = d;
+		clearErr(f.exp);
+		updateVisual();
+	});
+	f.cvc.addEventListener('input', () => {
+		f.cvc.value = f.cvc.value.replace(/\D/g, '').slice(0, 3);
+		clearErr(f.cvc);
+		updateVisual();
+	});
+	f.cvc.addEventListener('focus', () => pv.box.classList.add('flipped'));
+	f.cvc.addEventListener('blur', () => pv.box.classList.remove('flipped'));
+	Object.keys(f).forEach((k) => {
+		f[k].addEventListener('blur', () => {
+			if (!f[k].value) return;
+			const msg = validators[k]();
+			if (msg) showErr(f[k], msg);
+		});
+	});
+
+	const resetCard = () => {
+		cardPanel.reset();
+		Object.values(f).forEach(clearErr);
+		cardErr.textContent = '';
+		pv.box.classList.remove('flipped');
+		busy = false;
+		submit.disabled = false;
+		spin.hidden = true;
+		submitLabel.textContent = `Оплатить ${fmt(rub)} ₽`;
+		updateVisual();
+	};
+
+	cardPanel.addEventListener('submit', (e) => {
+		e.preventDefault();
+		if (busy) return;
+		let first = null;
+		Object.keys(validators).forEach((k) => {
+			const msg = validators[k]();
+			if (msg) { showErr(f[k], msg); first = first || f[k]; } else clearErr(f[k]);
+		});
+		if (first) { first.focus(); return; }
+		if (rub < 100) { cardErr.textContent = 'Минимальная сумма пополнения — 100 ₽. Нажми «Изменить» и увеличь сумму.'; return; }
+		cardErr.textContent = '';
+		busy = true;
+		submit.disabled = true;
+		spin.hidden = false;
+		submitLabel.textContent = 'Проверяем платёж…';
+		payTimeout = setTimeout(() => {
+			const amount = rub;
+			Wallet.add(amount, 'Пополнение картой');
+			closeModal(modal);
+			showSuccess(`Баланс пополнен на ${fmt(amount)} ₽ картой`);
+		}, 1600);
+	});
+
+	// ---------- СБП ----------
+	const demoSbpUrl = () => `https://sbp.demo.invalid/pay/${Math.random().toString(36).slice(2, 12).toUpperCase()}?sum=${rub}`;
+	// В настоящей версии QR и ссылку выдаёт сервер (провайдер платежей): POST /payments/sbp -> { pay_url }
+	const createSbp = async () => {
+		try {
+			const token = localStorage.getItem('wind_access_token');
+			const r = await fetch(`${apiBase}/payments/sbp`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+				body: JSON.stringify({ amount_rub: rub }),
+			});
+			if (!r.ok) throw new Error('no api');
+			const d = await r.json();
+			if (typeof d.pay_url !== 'string' || !/^https:\/\//i.test(d.pay_url)) throw new Error('bad url');
+			return { url: d.pay_url, demo: false };
+		} catch (e) {
+			return { url: demoSbpUrl(), demo: true };
+		}
+	};
+	const drawSbpQr = (text) => {
+		const box = $('pay-sbp-qr');
+		if (!window.QRCode) { box.textContent = 'QR недоступен: не загрузилась библиотека'; return; }
+		if (!sbpQr) {
+			box.textContent = '';
+			sbpQr = new QRCode(box, { text, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+		} else {
+			sbpQr.clear();
+			sbpQr.makeCode(text);
+		}
+	};
+	const runTimer = (ms) => {
+		clearInterval(sbpTimer);
+		const end = Date.now() + ms;
+		sbpPaid.disabled = false;
+		const tick = () => {
+			const left = Math.max(0, end - Date.now());
+			timerEl.textContent = `${String(Math.floor(left / 60000)).padStart(2, '0')}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
+			if (!left) { clearInterval(sbpTimer); timerEl.textContent = 'время вышло'; sbpPaid.disabled = true; }
+		};
+		tick();
+		sbpTimer = setInterval(tick, 1000);
+	};
+	const stopSbp = () => { clearInterval(sbpTimer); sbpSeq++; };
+	const startSbp = async () => {
+		const id = ++sbpSeq;
+		clearInterval(sbpTimer);
+		linkEl.removeAttribute('href');
+		sbpPaid.disabled = true;
+		if (rub < 100) {
+			linkEl.textContent = 'Минимальная сумма — 100 ₽. Нажми «Изменить».';
+			timerEl.textContent = '—';
+			return;
+		}
+		linkEl.textContent = 'Создаём QR…';
+		const inv = await createSbp();
+		if (id !== sbpSeq || method !== 'sbp' || modal.hidden) return; // пока ждали, пользователь ушёл
+		sbpDemo = inv.demo;
+		linkEl.textContent = inv.url;
+		if (!inv.demo) linkEl.href = inv.url;
+		sbpNote.hidden = !inv.demo;
+		drawSbpQr(inv.url);
+		runTimer(10 * 60 * 1000);
+	};
+
+	sbpPaid.addEventListener('click', () => {
+		const amount = rub;
+		closeModal(modal);
+		if (sbpDemo) {
+			Wallet.add(amount, 'Пополнение через СБП');
+			showSuccess(`Баланс пополнен на ${fmt(amount)} ₽ (демо)`);
+		} else {
+			showSuccess('Платёж обрабатывается. Баланс пополнится после подтверждения банка');
+		}
+	});
+
+	modal.querySelectorAll('[data-copy]').forEach((btn) => {
+		btn.addEventListener('click', async () => {
+			try {
+				await navigator.clipboard.writeText($(btn.dataset.copy).textContent);
+				btn.textContent = 'Скопировано';
+			} catch (e) {
+				btn.textContent = 'Выдели вручную';
+			}
+			setTimeout(() => { btn.textContent = 'Копировать'; }, 1800);
+		});
+	});
+
+	// ---------- переключение способов ----------
+	const setMethod = (m) => {
+		if (m === 'crypto') {
+			closeModal(modal);
+			topup.querySelector('.payment-option[data-payment="crypto"]')?.click();
+			return;
+		}
+		method = m;
+		$('pay-title').textContent = TITLES[m];
+		modal.querySelectorAll('[data-pay-tab]').forEach((b) => b.classList.toggle('active', b.dataset.payTab === m));
+		topup.querySelectorAll('.payment-option').forEach((o) => o.classList.toggle('active', o.dataset.payment === m));
+		const show = m === 'card' ? cardPanel : sbpPanel;
+		(m === 'card' ? sbpPanel : cardPanel).hidden = true;
+		show.hidden = false;
+		show.classList.remove('show');
+		void show.offsetWidth;
+		show.classList.add('show');
+		if (m === 'sbp') startSbp();
+		else {
+			stopSbp();
+			if (window.matchMedia('(hover: hover)').matches) setTimeout(() => f.number.focus(), 350);
+		}
+	};
+
+	const open = (m) => {
+		rub = getRub();
+		$('pay-sum').textContent = `${fmt(rub)} ₽`;
+		submitLabel.textContent = `Оплатить ${fmt(rub)} ₽`;
+		modal.hidden = false;
+		setMethod(m);
+	};
+
+	modal.querySelectorAll('[data-pay-tab]').forEach((b) => b.addEventListener('click', () => setMethod(b.dataset.payTab)));
+	$('pay-change').addEventListener('click', () => { closeModal(modal); topup.hidden = false; });
+
+	// выбор «Карта» или «СБП» в окне пополнения сразу открывает форму
+	topup.querySelectorAll('.payment-option[data-payment="card"], .payment-option[data-payment="sbp"]').forEach((opt) => {
+		opt.addEventListener('click', () => { closeModal(topup); open(opt.dataset.payment); });
+	});
+	// кнопка «Пополнить» открывает форму выбранного способа
+	topupSubmit?.addEventListener('click', () => {
+		const m = topup.querySelector('.payment-option.active')?.dataset.payment;
+		if (m === 'card' || m === 'sbp') { closeModal(topup); open(m); }
+	});
+
+	// при закрытии окна чистим данные, таймеры и запросы
+	new MutationObserver(() => {
+		if (!modal.hidden) return;
+		clearTimeout(payTimeout);
+		stopSbp();
+		resetCard();
+	}).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+
+	updateVisual();
+})();
+
+
+
+(() => {
+	const modal = document.getElementById('subscription-modal');
+	if (!modal) return;
+	const $ = (id) => document.getElementById(id);
+	const KEY = 'wind_plus';
+	const PLANS = { month: { price: '199 ₽ / мес', days: 30, cost: 199 }, year: { price: '1 790 ₽ / год', days: 365, cost: 1790 } };
+	const TF = { 15: '15 минут', 60: '1 час', 240: '4 часа', D: '1 день' };
+	const COIN = (s) => s.slice(0, -4);
+	const nowTime = () => new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+	const fmtPrice = (p) => Number(p).toLocaleString('ru-RU', { maximumFractionDigits: p >= 1000 ? 2 : p >= 1 ? 4 : 6 });
+	const pct = (v, d = 1) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d })}%`;
+	const fmtVol = (v) => (v >= 1e9 ? `${(v / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млрд $` : `${Math.round(v / 1e6).toLocaleString('ru-RU')} млн $`);
+	const avg = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+	const mk = (tag, cls, text) => {
+		const n = document.createElement(tag);
+		if (cls) n.className = cls;
+		if (text != null) n.textContent = text;
+		return n;
+	};
+	const icon = (name) => { const i = document.createElement('i'); i.setAttribute('data-lucide', name); return i; };
+	const icons = () => { if (window.lucide) window.lucide.createIcons(); };
+	const notify = (type, title, detail) => {
+		portfolioNotifications.unshift({ type, title, detail, time: nowTime() });
+		portfolioNotifications.splice(20);
+		renderNotifications();
+	};
+	const readJSON = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? fb : v; } catch (e) { return fb; } };
+	const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* хранилище недоступно */ } };
+
+	// ---------- состояние подписки ----------
+	const readState = () => {
+		const s = readJSON(KEY, null);
+		return s && PLANS[s.plan] && Number(s.until) > Date.now() ? { plan: s.plan, until: Number(s.until) } : null;
+	};
+	let state = readState();
+	let plan = 'month';
+	const isPlus = () => !!state && state.until > Date.now();
+
+	const m = { sub: $('plus-subscribe'), status: $('plus-status'), cancel: $('plus-cancel'), plans: modal.querySelectorAll('[data-plan]') };
+		const renderModal = () => {
+		const on = isPlus();
+		m.plans.forEach((b) => { b.classList.toggle('active', b.dataset.plan === (on ? state.plan : plan)); b.disabled = on; });
+		const cost = PLANS[plan].cost;
+		const short = !on && Wallet.get() < cost;
+		m.sub.disabled = on;
+		m.sub.textContent = on ? 'Подписка активна ✓' : short ? `Пополнить баланс (не хватает ${Wallet.format(cost - Wallet.get())})` : `Оплатить ${Wallet.format(cost)} с баланса →`;
+		m.status.textContent = on ? `Активна до ${new Date(state.until).toLocaleDateString('ru-RU')}` : `На балансе: ${Wallet.format(Wallet.get())}`;
+		m.status.classList.toggle('warn', short);
+		m.cancel.hidden = !on;
+	};
+	const applyPlan = () => {
+		const on = isPlus();
+		const name = on ? 'Wind Plus' : 'Free';
+		document.body.classList.toggle('plus-active', on);
+		document.querySelectorAll('.profile-meta').forEach((n) => { n.textContent = name; });
+		document.querySelectorAll('.dropdown-user div span').forEach((n) => { n.textContent = `${name} · личный аккаунт`; });
+		const sum = document.querySelector('.settings-summary > div:first-child strong');
+		if (sum) sum.textContent = name;
+		renderModal();
+		document.dispatchEvent(new Event('wind-plus-change'));
+	};
+
+	m.plans.forEach((b) => b.addEventListener('click', () => { if (!isPlus()) { plan = b.dataset.plan; renderModal(); } }));
+	m.sub.addEventListener('click', () => {
+		if (isPlus()) return;
+		const cost = PLANS[plan].cost;
+		if (Wallet.get() < cost) {
+			closeModal(modal);
+			const input = document.getElementById('custom-topup-amount');
+			if (input) { input.value = String(Math.ceil((cost - Wallet.get()) / 100) * 100); input.dispatchEvent(new Event('input')); }
+			document.getElementById('topup-modal').hidden = false;
+			return;
+		}
+		if (!Wallet.spend(cost, `Подписка Wind Plus · ${plan === 'year' ? 'год' : 'месяц'}`)) return;
+		state = { plan, until: Date.now() + PLANS[plan].days * 864e5 };
+		writeJSON(KEY, state);
+		applyPlan();
+		closeModal(modal);
+		notify('positive', 'Wind Plus активирован', `Списано ${Wallet.format(cost)}. Анализ, радар и листинги доступны`);
+		showSuccess(`Wind Plus активирован. Списано ${Wallet.format(cost)}`);
+	});
+	m.cancel.addEventListener('click', () => {
+		state = null;
+		try { localStorage.removeItem(KEY); } catch (e) { /* хранилище недоступно */ }
+		applyPlan();
+		showSuccess('Подписка отключена');
+	});
+
+	// ---------- заглушка «скелетон» для закрытых блоков ----------
+	const skeleton = (box, n) => {
+		box.textContent = '';
+		for (let i = 0; i < n; i++) box.appendChild(mk('div', 'plus-skel'));
+	};
+	const message = (box, text) => { box.textContent = ''; box.appendChild(mk('div', 'alert-empty', text)); };
+
+	// =====================================================
+	//  АНАЛИЗ РЫНКА
+	// =====================================================
+	const an = { body: $('an-body'), sym: 'BTCUSDT', tf: '60', seq: 0, last: 0 };
+
+	const ema = (arr, n) => {
+		const k = 2 / (n + 1);
+		const out = [arr[0]];
+		for (let i = 1; i < arr.length; i++) out.push(arr[i] * k + out[i - 1] * (1 - k));
+		return out;
+	};
+	const rsi = (c, n = 14) => {
+		let g = 0, l = 0;
+		for (let i = 1; i <= n; i++) { const d = c[i] - c[i - 1]; if (d >= 0) g += d; else l -= d; }
+		let ag = g / n, al = l / n;
+		for (let i = n + 1; i < c.length; i++) {
+			const d = c[i] - c[i - 1];
+			ag = (ag * (n - 1) + Math.max(d, 0)) / n;
+			al = (al * (n - 1) + Math.max(-d, 0)) / n;
+		}
+		return al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+	};
+	const sd = (a) => { const mean = avg(a); return Math.sqrt(avg(a.map((x) => (x - mean) * (x - mean)))); };
+
+	const analyze = (cs) => {
+		const closes = cs.map((c) => c.c);
+		const n = closes.length;
+		const last = closes[n - 1];
+		const s20 = avg(closes.slice(-20)), s50 = avg(closes.slice(-50));
+		const trend = last > s50 && s20 > s50 ? 1 : last < s50 && s20 < s50 ? -1 : 0;
+		const e12 = ema(closes, 12), e26 = ema(closes, 26);
+		const macdLine = e12.map((v, i) => v - e26[i]);
+		const signal = ema(macdLine, 9);
+		const hist = macdLine[n - 1] - signal[n - 1];
+		const macd = Math.abs(hist) < last * 0.00003 ? 0 : hist > 0 ? 1 : -1;
+		const r = rsi(closes);
+		const rsiSig = r >= 70 ? -1 : r <= 30 ? 1 : 0;
+		const mom = (last / closes[n - 25] - 1) * 100;
+		const momSig = mom > 1 ? 1 : mom < -1 ? -1 : 0;
+		const v50 = avg(cs.slice(-50).map((c) => c.v));
+		const volRatio = v50 ? avg(cs.slice(-5).map((c) => c.v)) / v50 : 1;
+		const rets = closes.slice(1).map((c, i) => Math.log(c / closes[i]));
+		const volat = sd(rets.slice(-20)) / (sd(rets.slice(-100)) || 1);
+		const support = Math.min(...cs.slice(-50).map((c) => c.l));
+		const resistance = Math.max(...cs.slice(-50).map((c) => c.h));
+		const sum = trend + macd + rsiSig + momSig;
+		return { last, s20, s50, trend, macd, hist, r, rsiSig, mom, momSig, volRatio, volat, support, resistance, score: 50 + sum * 12.5 };
+	};
+
+	const renderAnalysis = (a) => {
+		const body = an.body;
+		body.textContent = '';
+		const [verdict, vcls] = a.score >= 62 ? ['Бычий уклон', 'pos'] : a.score <= 38 ? ['Медвежий уклон', 'neg'] : ['Нейтрально', 'neu'];
+
+		const head = mk('div', 'an-verdict');
+		head.append(mk('strong', vcls, verdict), mk('span', '', `${COIN(an.sym)}/USDT · ${TF[an.tf]} · оценка ${Math.round(a.score)} из 100`));
+		const track = mk('div', 'an-track');
+		const marker = mk('span', 'an-marker');
+		track.appendChild(marker);
+		const scale = mk('div', 'an-scale');
+		scale.append(mk('span', '', 'Медвежий'), mk('span', '', 'Нейтральный'), mk('span', '', 'Бычий'));
+
+		const chip = (sig) => mk('span', `an-chip ${sig > 0 ? 'pos' : sig < 0 ? 'neg' : 'neu'}`, sig > 0 ? 'Позитив' : sig < 0 ? 'Негатив' : 'Нейтрально');
+		const info = () => mk('span', 'an-chip neu', 'Инфо');
+		const ind = (name, value, chipEl, text) => {
+			const box = mk('div', 'an-ind');
+			const top = mk('div', 'an-ind-top');
+			top.append(mk('span', '', name), chipEl);
+			box.append(top, mk('strong', '', value), mk('p', '', text));
+			return box;
+		};
+		const grid = mk('div', 'an-grid');
+		grid.append(
+			ind('Тренд (SMA 20/50)', `${pct((a.last / a.s50 - 1) * 100)} к SMA50`, chip(a.trend),
+				a.trend > 0 ? 'Цена выше средней за 50 свечей, короткая средняя выше длинной: восходящий тренд.' : a.trend < 0 ? 'Цена ниже средней за 50 свечей, короткая средняя ниже длинной: нисходящий тренд.' : 'Сигналы средних противоречат друг другу: чёткого тренда нет.'),
+			ind('MACD', a.macd > 0 ? 'Бычий' : a.macd < 0 ? 'Медвежий' : 'Нейтральный', chip(a.macd),
+				a.macd > 0 ? 'Гистограмма выше нуля: импульс на стороне покупателей.' : a.macd < 0 ? 'Гистограмма ниже нуля: импульс на стороне продавцов.' : 'Гистограмма около нуля: импульса нет.'),
+			ind('RSI (14)', a.r.toFixed(0), chip(a.rsiSig),
+				a.r >= 70 ? 'Зона перекупленности: после сильного роста возможна коррекция.' : a.r <= 30 ? 'Зона перепроданности: после сильного падения возможен отскок.' : 'Нейтральная зона: ни перекупленности, ни перепроданности.'),
+			ind('Импульс, 24 свечи', pct(a.mom), chip(a.momSig),
+				a.momSig > 0 ? 'Цена заметно выросла за последние 24 свечи.' : a.momSig < 0 ? 'Цена заметно снизилась за последние 24 свечи.' : 'Изменение за 24 свечи небольшое.'),
+			ind('Объём торгов', `×${a.volRatio.toFixed(1)}`, info(),
+				a.volRatio > 1.5 ? 'Объём последних 5 свечей заметно выше среднего: интерес к движению вырос.' : a.volRatio < 0.7 ? 'Объём ниже среднего: рынок затих.' : 'Объём близок к среднему за 50 свечей.'),
+			ind('Волатильность', `×${a.volat.toFixed(1)}`, info(),
+				a.volat > 1.3 ? 'Колебания сильнее обычного: движения резче, риск выше.' : a.volat < 0.8 ? 'Колебания слабее обычного: рынок спокоен.' : 'Колебания в пределах нормы.'),
+		);
+
+		const level = (title, value, note) => {
+			const b = mk('div', 'an-level');
+			b.append(mk('small', '', title), mk('strong', '', fmtPrice(value)), mk('span', '', note));
+			return b;
+		};
+		const levels = mk('div', 'an-levels');
+		levels.append(
+			level('Поддержка (50 свечей)', a.support, pct((a.support / a.last - 1) * 100) + ' от цены'),
+			level('Сейчас', a.last, 'USDT'),
+			level('Сопротивление (50 свечей)', a.resistance, pct((a.resistance / a.last - 1) * 100) + ' от цены'),
+		);
+
+		const parts = [`${COIN(an.sym)} на таймфрейме «${TF[an.tf]}»: ${verdict.toLowerCase()}.`];
+		parts.push(a.trend > 0 ? 'Тренд восходящий.' : a.trend < 0 ? 'Тренд нисходящий.' : 'Чёткого тренда нет.');
+		if (a.rsiSig < 0) parts.push('RSI в зоне перекупленности, при росте стоит быть осторожнее.');
+		if (a.rsiSig > 0) parts.push('RSI в зоне перепроданности, возможен отскок.');
+		parts.push(`До поддержки около ${Math.abs((a.support / a.last - 1) * 100).toFixed(1)}%, до сопротивления около ${((a.resistance / a.last - 1) * 100).toFixed(1)}%.`);
+		const summary = mk('p', 'an-summary', parts.join(' '));
+		const note = mk('p', 'an-note', 'Расчёт по индикаторам, а не прогноз и не инвестиционная рекомендация.');
+
+		body.append(head, track, scale, grid, levels, summary, note);
+		requestAnimationFrame(() => requestAnimationFrame(() => { marker.style.left = `${a.score}%`; }));
+	};
+
+	const loadAnalysis = async () => {
+		if (!isPlus() || !an.body) return;
+		const id = ++an.seq;
+		an.last = Date.now();
+		try {
+			const r = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${an.sym}&interval=${an.tf}&limit=200`);
+			const j = await r.json();
+			if (j.retCode !== 0) throw new Error(j.retMsg);
+			if (id !== an.seq) return;
+			const cs = j.result.list.slice().reverse().map(([, , h, l, c, v]) => ({ h: Number(h), l: Number(l), c: Number(c), v: Number(v) }));
+			if (cs.length < 60) throw new Error('few candles');
+			renderAnalysis(analyze(cs));
+		} catch (e) {
+			if (id === an.seq) message(an.body, 'Не удалось получить данные. Проверь соединение.');
+		}
+	};
+
+	document.querySelectorAll('#an-coins .alert-coin').forEach((b) => b.addEventListener('click', () => {
+		an.sym = b.dataset.symbol;
+		document.querySelectorAll('#an-coins .alert-coin').forEach((x) => x.classList.toggle('active', x === b));
+		loadAnalysis();
+	}));
+	document.querySelectorAll('#an-tf button').forEach((b) => b.addEventListener('click', () => {
+		an.tf = b.dataset.tf;
+		document.querySelectorAll('#an-tf button').forEach((x) => x.classList.toggle('active', x === b));
+		loadAnalysis();
+	}));
+
+	// =====================================================
+	//  РАДАР КРИПТОРЫНКА И НОВЫЕ ЛИСТИНГИ
+	// =====================================================
+	const rd = { body: $('radar-body'), tab: 'up', liquid: [], seq: 0, last: 0 };
+	const KNOWN = 'wind_known_symbols', LIST = 'wind_new_listings';
+	let known = readJSON(KNOWN, null);
+	if (!Array.isArray(known)) known = null; else known = known.filter((s) => typeof s === 'string');
+	let listings = readJSON(LIST, []);
+	listings = (Array.isArray(listings) ? listings : [])
+		.filter((x) => x && /^[A-Z0-9]{2,20}USDT$/.test(x.symbol) && Number(x.ts) > 0)
+		.map((x) => ({ symbol: x.symbol, price: Number(x.price) || 0, ts: Number(x.ts) }));
+
+	const detect = (all) => {
+		if (all.length < 100) return; // неполный ответ биржи не учитываем
+		if (!known) { known = all.map((t) => t.symbol); writeJSON(KNOWN, known); return; }
+		const set = new Set(known);
+		const fresh = all.filter((t) => !set.has(t.symbol));
+		if (!fresh.length) return;
+		known = known.concat(fresh.map((t) => t.symbol));
+		writeJSON(KNOWN, known);
+		if (fresh.length > 30) return; // скорее всего, первый список был неполным
+		fresh.forEach((t) => listings.unshift({ symbol: t.symbol, price: t.price, ts: Date.now() }));
+		listings = listings.slice(0, 20);
+		writeJSON(LIST, listings);
+		const title = `Новый листинг: ${COIN(fresh[0].symbol)}/USDT${fresh.length > 1 ? ` и ещё ${fresh.length - 1}` : ''}`;
+		notify('positive', title, 'Пара появилась на Bybit Spot');
+		showSuccess(title);
+	};
+
+	const renderRadar = () => {
+		const body = rd.body;
+		if (!body) return;
+		body.textContent = '';
+		const list = mk('div', 'rd-list');
+		if (rd.tab === 'new') {
+			const fresh = listings.filter((x) => Date.now() - x.ts < 7 * 864e5);
+			if (!fresh.length) {
+				message(body, known ? `Радар следит за ${known.length} парами. Новая пара появится здесь и в уведомлениях, как только её добавит Bybit.` : 'Радар запоминает список пар. Новые листинги появятся здесь при следующих проверках.');
+				return;
+			}
+			fresh.forEach((x, i) => {
+				const row = mk('div', 'rd-row');
+				row.style.setProperty('--i', i);
+				const name = mk('div', 'rd-name');
+				name.append(mk('strong', '', `${COIN(x.symbol)}/USDT`), mk('small', '', `Обнаружена ${new Date(x.ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`));
+				const badge = mk('span', 'asset-badge badge-new');
+				badge.append(icon('sparkles'), document.createTextNode(' Новое'));
+				row.append(mk('span', 'rd-ava', COIN(x.symbol).slice(0, 3)), name, mk('div', 'rd-price', x.price ? fmtPrice(x.price) : '—'), badge);
+				list.appendChild(row);
+			});
+			body.appendChild(list);
+			icons();
+			return;
+		}
+		if (!rd.liquid.length) { skeleton(body, 5); return; }
+		rd.liquid.slice().sort((a, b) => (rd.tab === 'up' ? b.pct - a.pct : a.pct - b.pct)).slice(0, 6).forEach((t, i) => {
+			const row = mk('div', 'rd-row');
+			row.style.setProperty('--i', i);
+			const name = mk('div', 'rd-name');
+			name.append(mk('strong', '', `${COIN(t.symbol)}/USDT`), mk('small', '', `Объём 24ч: ${fmtVol(t.turnover)}`));
+			const pill = mk('span', `change-pill ${t.pct >= 0 ? 'up' : 'down'}`, `${t.pct >= 0 ? '▲' : '▼'} ${Math.abs(t.pct).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
+			row.append(mk('span', 'rd-ava', COIN(t.symbol).slice(0, 3)), name, mk('div', 'rd-price', fmtPrice(t.price)), pill);
+			list.appendChild(row);
+		});
+		body.appendChild(list);
+	};
+
+	const loadRadar = async () => {
+		if (!isPlus() || !rd.body) return;
+		const id = ++rd.seq;
+		rd.last = Date.now();
+		try {
+			const r = await fetch('https://api.bybit.com/v5/market/tickers?category=spot');
+			const j = await r.json();
+			if (j.retCode !== 0) throw new Error(j.retMsg);
+			if (id !== rd.seq) return;
+			const all = j.result.list
+				.filter((t) => /^[A-Z0-9]+USDT$/.test(t.symbol))
+				.map((t) => ({ symbol: t.symbol, price: Number(t.lastPrice), pct: Number(t.price24hPcnt) * 100, turnover: Number(t.turnover24h) }))
+				.filter((t) => t.price > 0 && Number.isFinite(t.pct));
+			detect(all);
+			rd.liquid = all.filter((t) => t.turnover >= 1e6);
+			renderRadar();
+		} catch (e) {
+			if (id === rd.seq && !rd.liquid.length && rd.tab !== 'new') message(rd.body, 'Не удалось получить данные. Проверь соединение.');
+		}
+	};
+
+	document.querySelectorAll('[data-radar-tab]').forEach((b) => b.addEventListener('click', () => {
+		rd.tab = b.dataset.radarTab;
+		document.querySelectorAll('[data-radar-tab]').forEach((x) => x.classList.toggle('active', x === b));
+		renderRadar();
+	}));
+
+	// =====================================================
+	//  РАДАР НОВЫХ ИНВЕСТИЦИЙ (демо-данные)
+	// =====================================================
+	const NEW_ITEMS = [
+		{ id: 'etf-tech', icon: 'cpu', name: 'БПИФ на технологические компании', type: 'ETF', risk: 'mid', term: 'от 1 года', min: 1000, note: 'Фонд на акции российских технологических компаний' },
+		{ id: 'ofz-float', icon: 'landmark', name: 'ОФЗ с плавающим купоном', type: 'Облигации', risk: 'low', term: '3–5 лет', min: 1000, note: 'Купон привязан к ключевой ставке' },
+		{ id: 'green-bond', icon: 'leaf', name: 'Зелёные облигации', type: 'Облигации', risk: 'low', term: '2–4 года', min: 1000, note: 'Выпуск для финансирования экологических проектов' },
+		{ id: 'ipo', icon: 'rocket', name: 'Первичное размещение акций (IPO)', type: 'IPO', risk: 'high', term: 'от 1 года', min: 5000, note: 'Участие в размещении акций новой компании' },
+		{ id: 'crypto-index', icon: 'bitcoin', name: 'Индекс крупнейших криптовалют', type: 'Крипто', risk: 'high', term: 'от 1 года', min: 3000, note: 'Корзина из нескольких крупных монет' },
+	];
+	const RISK = { low: 'Риск: низкий', mid: 'Риск: средний', high: 'Риск: высокий' };
+	let followed = readJSON('wind_followed', []);
+	followed = (Array.isArray(followed) ? followed : []).filter((id) => NEW_ITEMS.some((x) => x.id === id));
+
+	const renderNew = () => {
+		const list = $('ni-list');
+		if (!list) return;
+		list.textContent = '';
+		NEW_ITEMS.forEach((it) => {
+			const on = followed.includes(it.id);
+			const row = mk('div', 'ni-row');
+			const ico = mk('span', 'ni-icon');
+			ico.appendChild(icon(it.icon));
+			const top = mk('div', 'ni-top');
+			const badge = mk('span', 'asset-badge badge-new');
+			badge.append(icon('sparkles'), document.createTextNode(' Новое'));
+			top.append(mk('strong', '', it.name), badge);
+			const chips = mk('div', 'ni-chips');
+			chips.append(mk('span', 'ni-chip', it.type), mk('span', `ni-chip risk-${it.risk}`, RISK[it.risk]), mk('span', 'ni-chip', `Срок: ${it.term}`), mk('span', 'ni-chip', `От ${it.min.toLocaleString('ru-RU')} ₽`));
+			const main = mk('div', 'ni-main');
+			main.append(top, mk('p', '', it.note), chips);
+			const btn = mk('button', `ni-follow${on ? ' on' : ''}`, on ? 'Отслеживается ✓' : 'Следить');
+			btn.type = 'button';
+			btn.addEventListener('click', () => {
+				if (!isPlus()) return;
+				followed = on ? followed.filter((x) => x !== it.id) : followed.concat(it.id);
+				writeJSON('wind_followed', followed);
+				if (!on) notify('neutral', `Следим: ${it.name}`, 'Сообщим о новых выпусках и размещениях');
+				showSuccess(on ? `Отслеживание отключено: ${it.name}` : `Следим: ${it.name}`);
+				renderNew();
+			});
+			row.append(ico, main, btn);
+			list.appendChild(row);
+		});
+		icons();
+	};
+
+	// =====================================================
+	//  ЗАГРУЗКА / ОБНОВЛЕНИЕ
+	// =====================================================
+	const tick = () => {
+		if (!isPlus()) return;
+		const onCrypto = document.body.dataset.view === 'crypto';
+		if (onCrypto && Date.now() - an.last > 60000) loadAnalysis();
+		if (Date.now() - rd.last > (onCrypto ? 30000 : 300000)) loadRadar();
+	};
+
+	document.addEventListener('wind-plus-change', () => {
+		if (isPlus()) {
+			if (an.body) message(an.body, 'Загружаем анализ…');
+			an.last = 0; rd.last = 0;
+			tick();
+		} else {
+			an.seq++; rd.seq++;
+			if (an.body) skeleton(an.body, 4);
+			if (rd.body) skeleton(rd.body, 5);
+		}
+		renderNew();
+	});
+	new MutationObserver(tick).observe(document.body, { attributes: true, attributeFilter: ['data-view'] });
+	setInterval(tick, 5000);
+	Wallet.onChange(renderModal);
+	applyPlan();
+})();
+
+(() => {
+	const tabs = document.querySelectorAll('[data-game-tab]');
+	if (!tabs.length) return;
+	const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	// ---------- общие помощники ----------
+	const mk = (tag, cls, text) => {
+		const n = document.createElement(tag);
+		if (cls) n.className = cls;
+		if (text != null) n.textContent = text;
+		return n;
+	};
+	const icon = (name) => { const i = document.createElement('i'); i.setAttribute('data-lucide', name); return i; };
+	const icons = () => { if (window.lucide) window.lucide.createIcons(); };
+	const btn = (cls, text, onClick) => { const b = mk('button', cls, text); b.type = 'button'; if (onClick) b.addEventListener('click', onClick); return b; };
+	const shuffle = (a) => { const x = a.slice(); for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; } return x; };
+	const money = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('ru-RU')}`;
+	const fit = (cv) => {
+		const r = cv.getBoundingClientRect();
+		const dpr = window.devicePixelRatio || 1;
+		cv.width = Math.max(1, Math.round(r.width * dpr));
+		cv.height = Math.max(1, Math.round(r.height * dpr));
+		return dpr;
+	};
+	const tween = (node, from, to, ms, fmt) => {
+		const t0 = performance.now();
+		const step = (now) => {
+			const k = reduce ? 1 : Math.min(1, (now - t0) / ms);
+			node.textContent = fmt(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+			if (k < 1) requestAnimationFrame(step);
+		};
+		requestAnimationFrame(step);
+	};
+
+	// ---------- звёзды ----------
+	const SKEY = 'wind_game_stars';
+	let stars = {};
+	try { const v = JSON.parse(localStorage.getItem(SKEY) || '{}'); if (v && typeof v === 'object' && !Array.isArray(v)) stars = v; } catch (e) { stars = {}; }
+	const getStars = (id) => { const n = Number(stars[id]); return Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0; };
+	const paintStars = () => document.querySelectorAll('[data-stars]').forEach((e) => {
+		const n = getStars(e.dataset.stars);
+		e.textContent = '★'.repeat(n) + '☆'.repeat(3 - n);
+	});
+	const setStars = (id, n) => {
+		if (n > getStars(id)) {
+			stars[id] = n;
+			try { localStorage.setItem(SKEY, JSON.stringify(stars)); } catch (e) { /* хранилище недоступно */ }
+		}
+		paintStars();
+	};
+
+	const confetti = (host) => {
+		if (reduce) return;
+		const wrap = mk('div', 'confetti');
+		const colors = ['#2d9b6f', '#f4c95d', '#ed8069', '#7b83d9', '#77d5a7'];
+		for (let i = 0; i < 36; i++) {
+			const p = mk('i');
+			p.style.setProperty('--x', `${Math.random() * 100}%`);
+			p.style.setProperty('--dx', `${(Math.random() - 0.5) * 160}px`);
+			p.style.setProperty('--r', `${Math.random() * 720 - 360}deg`);
+			p.style.setProperty('--d', `${1.6 + Math.random() * 1.4}s`);
+			p.style.setProperty('--w', `${Math.random() * 0.5}s`);
+			p.style.background = colors[i % colors.length];
+			wrap.appendChild(p);
+		}
+		host.appendChild(wrap);
+		setTimeout(() => wrap.remove(), 3400);
+	};
+
+	// ---------- экраны: сцена, вступление, итоги ----------
+	const scene = (root, kicker, title, text) => {
+		root.textContent = '';
+		const story = mk('div', 'cg-story');
+		const ch = mk('div', 'cg-chapter');
+		ch.append(mk('span', '', kicker), mk('strong', '', title));
+		story.append(ch, mk('p', '', text));
+		const stage = mk('div', 'gm-stage');
+		root.append(story, stage);
+		return stage;
+	};
+	const intro = (stage, { ico, heading, lines, label, onStart }) => {
+		const box = mk('div', 'gm-intro');
+		const ic = mk('span', 'gm-intro-icon');
+		ic.appendChild(icon(ico));
+		const ul = mk('ul', 'gm-rules');
+		lines.forEach((t) => ul.appendChild(mk('li', '', t)));
+		box.append(ic, mk('strong', '', heading), ul, btn('button', label, onStart));
+		stage.appendChild(box);
+		icons();
+	};
+	const result = (root, id, o) => {
+		const stage = scene(root, o.kicker, o.title, o.text);
+		const box = mk('div', 'gm-result');
+		const ic = mk('span', `gm-intro-icon${o.win ? '' : ' lose'}`);
+		ic.appendChild(icon(o.win ? 'trophy' : 'frown'));
+		const row = mk('div', 'gm-stars');
+		for (let i = 0; i < 3; i++) {
+			const s = mk('span', i < o.stars ? 'on' : '', '★');
+			s.style.setProperty('--i', i);
+			row.appendChild(s);
+		}
+		const list = mk('div', 'gm-stats-list');
+		o.rows.forEach(([k, v]) => {
+			const r = mk('div');
+			r.append(mk('span', '', k), mk('strong', '', v));
+			list.appendChild(r);
+		});
+		box.append(ic, mk('strong', 'gm-result-title', o.heading), row, list);
+		if (o.extra) box.appendChild(o.extra);
+		box.append(mk('p', 'gm-tip', o.tip), btn('button', 'Сыграть ещё раз', o.again));
+		stage.appendChild(box);
+		setStars(id, o.stars);
+		if (o.stars >= 2) confetti(root);
+		icons();
+	};
+
+	// =====================================================
+	//  ИГРА 1. ДЕТЕКТИВ СВЕЧЕЙ
+	// =====================================================
+	const initCandles = (root) => {
+		const cd = (o, c, up, dn) => ({ o, c, h: Math.max(o, c) + up, l: Math.min(o, c) - dn });
+		const PATTERNS = [
+			{ name: 'Молот', dir: -1, make: (p) => [cd(p - 0.4, p + 1.2, 0.3, 6)], text: 'Маленькое тело вверху и длинная нижняя тень после падения. Продавцы давили цену вниз, но покупатели выкупили её обратно. Часто это сигнал возможного разворота вверх.' },
+			{ name: 'Падающая звезда', dir: 1, make: (p) => [cd(p + 0.4, p - 1.2, 6, 0.3)], text: 'Длинная верхняя тень и маленькое тело после роста. Покупатели пытались поднять цену, но продавцы вернули её вниз. Возможен разворот вниз.' },
+			{ name: 'Бычье поглощение', dir: -1, inc: 1, make: (p, prev) => [cd(prev.c - 0.8, prev.o + 2, 0.6, 0.6)], text: 'Зелёная свеча полностью перекрывает тело предыдущей красной. Покупатели перехватили инициативу у продавцов. Возможен разворот вверх.' },
+			{ name: 'Медвежье поглощение', dir: 1, inc: 1, make: (p, prev) => [cd(prev.c + 0.8, prev.o - 2, 0.6, 0.6)], text: 'Красная свеча полностью перекрывает тело предыдущей зелёной. Продавцы перехватили инициативу. Возможен разворот вниз.' },
+			{ name: 'Доджи', dir: 1, make: (p) => [cd(p, p + 0.15, 5, 5)], text: 'Цена открытия и закрытия почти совпали, а тени длинные. Рынок не может определиться. После сильного движения доджи часто предупреждает об остановке или развороте.' },
+			{ name: 'Три белых солдата', dir: -1, make: (p) => { const a = cd(p - 0.3, p + 4, 0.5, 0.4); const b = cd(a.c - 0.5, a.c + 4, 0.5, 0.4); const c = cd(b.c - 0.5, b.c + 4, 0.5, 0.4); return [a, b, c]; }, text: 'Три подряд уверенные зелёные свечи с небольшими тенями после падения. Покупатели берут рынок под контроль. Это сильный сигнал разворота вверх.' },
+		];
+		const TITLES = ['Тихий разворот', 'Тень над рынком', 'Перехват инициативы', 'Падение с высоты', 'Минута молчания', 'Марш на север'];
+		let raf = 0;
+		const stop = () => cancelAnimationFrame(raf);
+
+		const trend = (n, start, dir) => {
+			const out = [];
+			let p = start;
+			for (let i = 0; i < n; i++) {
+				let step = dir * (2 + Math.random() * 2);
+				if (i < n - 1 && Math.random() < 0.2) step = -step * 0.4;
+				out.push(cd(p, p + step, Math.random() * 1.2, Math.random() * 1.2));
+				p += step;
+			}
+			return out;
+		};
+		const makeCase = (pat) => {
+			const tr = trend(9, pat.dir < 0 ? 80 : 30, pat.dir);
+			const last = tr[tr.length - 1];
+			return { cs: tr.concat(pat.make(last.c, last)), hi: tr.length - (pat.inc || 0), pat };
+		};
+
+		const drawChart = (cv, a) => {
+			const ctx = cv.getContext('2d');
+			const w = cv.width / a.dpr, h = cv.height / a.dpr;
+			ctx.setTransform(a.dpr, 0, 0, a.dpr, 0, 0);
+			ctx.clearRect(0, 0, w, h);
+			const lo = Math.min(...a.cs.map((c) => c.l)), hi = Math.max(...a.cs.map((c) => c.h));
+			const span = hi - lo || 1;
+			const min = lo - span * 0.08, max = hi + span * 0.3;
+			const y = (v) => h - ((v - min) / (max - min)) * h;
+			ctx.strokeStyle = 'rgba(120,140,130,.2)';
+			ctx.lineWidth = 1;
+			for (let k = 1; k < 5; k++) { ctx.beginPath(); ctx.moveTo(0, (h / 5) * k); ctx.lineTo(w, (h / 5) * k); ctx.stroke(); }
+			const cw = w / (a.cs.length + 1);
+			a.cs.forEach((c, i) => {
+				const al = Math.max(0, Math.min(1, a.reveal - i));
+				if (al <= 0) return;
+				const x = (i + 1) * cw;
+				const col = c.c >= c.o ? '#2d9b6f' : '#d97867';
+				ctx.globalAlpha = al;
+				ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+				ctx.beginPath(); ctx.moveTo(x, y(c.h)); ctx.lineTo(x, y(c.l)); ctx.stroke();
+				ctx.fillRect(x - cw * 0.28, y(Math.max(c.o, c.c)), cw * 0.56, Math.max(2, Math.abs(y(c.o) - y(c.c))));
+			});
+			ctx.globalAlpha = 1;
+			if (a.mark) {
+				const x0 = (a.hi + 1) * cw - cw * 0.6, x1 = a.cs.length * cw + cw * 0.6;
+				const pts = a.cs.slice(a.hi);
+				const yT = y(Math.max(...pts.map((c) => c.h))) - 8, yB = y(Math.min(...pts.map((c) => c.l))) + 8;
+				ctx.save();
+				ctx.shadowColor = '#f4c95d'; ctx.shadowBlur = 10 + 8 * Math.sin(a.t * 5);
+				ctx.strokeStyle = '#e0a82e'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+				ctx.strokeRect(x0, yT, x1 - x0, yB - yT);
+				ctx.restore();
+				ctx.fillStyle = '#e0a82e';
+				ctx.font = '700 14px "Space Grotesk", sans-serif';
+				ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+				ctx.fillText(a.pat.name, Math.min(w - 70, Math.max(70, (x0 + x1) / 2)), Math.max(16, yT - 4));
+			}
+		};
+
+		let score = 0;
+		const showCase = (order, idx) => {
+			stop();
+			const c = makeCase(order[idx]);
+			const stage = scene(root, `Дело №${idx + 1} из ${order.length}`, TITLES[idx], 'Изучи свечи на графике и назови паттерн, который формируют последние свечи.');
+			const bar = mk('div', 'gm-progress');
+			const barFill = mk('span');
+			barFill.style.width = `${(idx / order.length) * 100}%`;
+			bar.appendChild(barFill);
+			const box = mk('div', 'gm-chart-box');
+			const cv = mk('canvas', 'gm-canvas');
+			const stamp = mk('div', 'gm-stamp');
+			stamp.hidden = true;
+			box.append(cv, stamp);
+			const opts = mk('div', 'gm-options');
+			const fb = mk('div', 'gm-feedback');
+			fb.hidden = true;
+			stage.append(bar, box, mk('p', 'gm-question', 'Какой это паттерн?'), opts, fb);
+
+			const a = { cs: c.cs, hi: c.hi, pat: c.pat, reveal: 0, mark: false, t: 0, dpr: fit(cv) };
+			new ResizeObserver(() => { a.dpr = fit(cv); }).observe(cv);
+			let last = performance.now();
+			const loop = (now) => {
+				const dt = Math.min(0.05, (now - last) / 1000);
+				last = now;
+				if (root.offsetParent) {
+					a.t += dt;
+					if (a.reveal < a.cs.length) a.reveal = Math.min(a.cs.length, a.reveal + dt * (reduce ? 100 : 9));
+					drawChart(cv, a);
+				}
+				raf = requestAnimationFrame(loop);
+			};
+			raf = requestAnimationFrame(loop);
+
+			const names = shuffle([c.pat.name].concat(shuffle(PATTERNS.filter((p) => p !== c.pat)).slice(0, 2).map((p) => p.name)));
+			names.forEach((n) => {
+				const b = btn('gm-option', n, () => {
+					const ok = n === c.pat.name;
+					if (ok) score++;
+					opts.querySelectorAll('button').forEach((x) => {
+						x.disabled = true;
+						if (x.textContent === c.pat.name) x.classList.add('correct');
+						else if (x === b) x.classList.add('wrong');
+					});
+					a.mark = true;
+					a.reveal = a.cs.length;
+					stamp.hidden = false;
+					stamp.className = `gm-stamp ${ok ? 'ok' : 'bad'}`;
+					stamp.textContent = ok ? 'РАСКРЫТО' : 'УЛИКА УПУЩЕНА';
+					fb.hidden = false;
+					fb.className = `gm-feedback ${ok ? 'good' : 'bad'}`;
+					fb.append(mk('strong', '', ok ? `Верно: ${c.pat.name}` : `Это было: ${c.pat.name}`), mk('p', '', c.pat.text));
+					const last = idx + 1 >= order.length;
+					fb.appendChild(btn('button', last ? 'Закрыть дело →' : 'Следующее дело →', () => (last ? finish(order.length) : showCase(order, idx + 1))));
+				});
+				opts.appendChild(b);
+			});
+		};
+
+		const finish = (n) => {
+			stop();
+			const st = score >= 5 ? 3 : score >= 4 ? 2 : score >= 2 ? 1 : 0;
+			result(root, 'candles', {
+				kicker: 'Дело закрыто', title: 'Детектив свечей', text: 'Агентство «Свеча» подводит итоги расследования.',
+				win: st >= 1, stars: st,
+				heading: st === 3 ? 'Лучший детектив города' : st === 2 ? 'Опытный следователь' : st === 1 ? 'Стажёр с потенциалом' : 'Улики ускользнули',
+				rows: [['Раскрыто дел', `${score} из ${n}`]],
+				tip: 'Свечной паттерн это подсказка, а не прогноз. Подтверждай сигнал уровнями, объёмом и индикаторами (их считает раздел «Анализ рынка» в Wind Plus).',
+				again: open,
+			});
+		};
+
+		const open = () => {
+			stop();
+			score = 0;
+			const stage = scene(root, 'Дело о фальшивых сигналах', 'Детектив свечей', 'В Wind Finance кто-то подбрасывает ложные сигналы. Ты младший аналитик агентства «Свеча». Улики спрятаны в графиках: узнавай паттерны, пока вор не ушёл.');
+			intro(stage, {
+				ico: 'search', heading: 'Готов к расследованию?',
+				lines: ['6 дел, в каждом график с одним свечным паттерном', 'Выбери верное название из трёх вариантов', 'После ответа узнаешь, что паттерн значит на практике'],
+				label: 'Начать расследование', onStart: () => showCase(shuffle(PATTERNS), 0),
+			});
+		};
+		open();
+	};
+
+	// =====================================================
+	//  ИГРА 2. РИСК-КАПИТАН
+	// =====================================================
+	const initRisk = (root) => {
+		const START = 10000;
+		const SEQ = ['L', 'L', 'L', 'L', 'W', 'L', 'W', 'L', 'W', 'W'];
+		const RISKS = [1, 5, 20, 50];
+		const STORY = [
+			'Утро. Громкий твит двигает рынок. Первая сделка рейса.',
+			'Новости о регуляторах. Волны крепчают.',
+			'Крупный игрок продаёт позицию. Паруса дрожат.',
+			'Ложный пробой: рынок обманул всех.',
+			'Макроданные вышли лучше ожиданий.',
+			'Боковик: цена мечется между уровнями.',
+			'Пробой уровня на высоком объёме.',
+			'Эхо вчерашней паники ещё не стихло.',
+			'Рынок успокаивается, тренд набирает силу.',
+			'Финальный рывок: порт уже виден.',
+		];
+		let raf = 0;
+		const stop = () => cancelAnimationFrame(raf);
+		const st = { cap: START, peak: START, dd: 0, i: 0, ruined: false };
+
+		const sim = (r) => {
+			let cap = START, peak = START, dd = 0, ruined = false;
+			for (const s of SEQ) {
+				cap *= s === 'W' ? 1 + (2 * r) / 100 : 1 - r / 100;
+				peak = Math.max(peak, cap);
+				dd = Math.max(dd, 1 - cap / peak);
+				if (cap < START * 0.1) { ruined = true; break; }
+			}
+			return { cap, dd, ruined };
+		};
+
+		const makePath = (win) => {
+			const N = 70, end = win ? 2 : -1;
+			const ph = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
+			const pts = [];
+			for (let k = 0; k <= N; k++) {
+				const t = k / N;
+				const base = end * (t * t * (3 - 2 * t) * 0.6 + t * 0.4);
+				const noise = (Math.sin(t * 9 + ph[0]) * 0.22 + Math.sin(t * 17 + ph[1]) * 0.12 + Math.sin(t * 31 + ph[2]) * 0.05) * Math.sin(Math.PI * t);
+				pts.push(Math.max(-0.92, Math.min(1.92, base + noise)));
+			}
+			pts[N] = end;
+			return pts;
+		};
+
+		const drawPath = (cv, a) => {
+			const ctx = cv.getContext('2d');
+			const w = cv.width / a.dpr, h = cv.height / a.dpr;
+			ctx.setTransform(a.dpr, 0, 0, a.dpr, 0, 0);
+			ctx.clearRect(0, 0, w, h);
+			const Y = (v) => h - ((v + 1.3) / 3.7) * h;
+			const line = (v, col, label) => {
+				ctx.setLineDash([6, 5]); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+				ctx.beginPath(); ctx.moveTo(0, Y(v)); ctx.lineTo(w, Y(v)); ctx.stroke();
+				ctx.setLineDash([]);
+				ctx.fillStyle = col; ctx.font = '700 11px "DM Sans", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+				ctx.fillText(label, 8, Y(v) - 3);
+			};
+			line(2, '#2d9b6f', 'ЦЕЛЬ'); line(-1, '#d97867', 'СТОП'); line(0, 'rgba(120,140,130,.8)', 'ВХОД');
+			if (!a.pts) return;
+			const n = a.pts.length - 1, upto = a.p * n;
+			const X = (k) => 8 + (k / n) * (w - 16);
+			const color = a.p >= 1 ? (a.win ? '#2d9b6f' : '#d97867') : '#e0a82e';
+			ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+			ctx.beginPath(); ctx.moveTo(X(0), Y(a.pts[0]));
+			for (let k = 1; k <= Math.floor(upto); k++) ctx.lineTo(X(k), Y(a.pts[k]));
+			let hx = X(Math.floor(upto)), hy = Y(a.pts[Math.floor(upto)]);
+			if (Math.floor(upto) < n) {
+				const f = upto - Math.floor(upto), k = Math.floor(upto);
+				hx = X(k + f); hy = Y(a.pts[k] + (a.pts[k + 1] - a.pts[k]) * f);
+				ctx.lineTo(hx, hy);
+			}
+			ctx.stroke();
+			ctx.save();
+			ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.fillStyle = color;
+			ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.fill();
+			ctx.restore();
+		};
+
+		const round = () => {
+			stop();
+			const win = SEQ[st.i] === 'W';
+			const stopPct = [1.5, 2, 2.5, 3][Math.floor(Math.random() * 4)];
+			const entry = 20 + Math.random() * 380;
+			const fix = (v) => v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+			const stage = scene(root, `Сделка ${st.i + 1} из ${SEQ.length}`, 'Штормовое море', STORY[st.i]);
+
+			const capEl = mk('strong', '', money(st.cap));
+			const ddEl = mk('strong', '', `${Math.round(st.dd * 100)}%`);
+			const stat = (label, node) => { const d = mk('div'); d.append(mk('span', '', label), node); return d; };
+			const stats = mk('div', 'gm-stat-row');
+			stats.append(stat('Капитал', capEl), stat('Просадка', ddEl), stat('Сделка', mk('strong', '', `${st.i + 1}/${SEQ.length}`)));
+			const hull = mk('div', 'rk-hull');
+			const hullBar = mk('span');
+			hull.appendChild(hullBar);
+			const paintHull = () => {
+				const p = Math.max(0, Math.min(100, (st.cap / START) * 100));
+				hullBar.style.width = `${p}%`;
+				hull.dataset.level = p > 70 ? 'ok' : p > 40 ? 'warn' : 'bad';
+			};
+			paintHull();
+
+			const setup = mk('div', 'rk-setup');
+			[['Вход', fix(entry), ''], ['Стоп', fix(entry * (1 - stopPct / 100)), `−${stopPct}%`], ['Цель', fix(entry * (1 + (2 * stopPct) / 100)), `+${2 * stopPct}%`]].forEach(([k, v, s]) => {
+				const d = mk('div');
+				const strong = mk('strong', '', v);
+				if (s) strong.appendChild(mk('small', '', s));
+				d.append(mk('span', '', k), strong);
+				setup.appendChild(d);
+			});
+
+			const box = mk('div', 'gm-chart-box rk-chart');
+			const cv = mk('canvas', 'gm-canvas');
+			box.appendChild(cv);
+			const grid = mk('div', 'rk-risks');
+			const banner = mk('div', 'rk-banner');
+			banner.hidden = true;
+			stage.append(stats, hull, setup, box, mk('p', 'gm-question', 'Какую долю капитала ты ставишь на риск? Цель приносит вдвое больше, чем стоп отнимает.'), grid, banner);
+
+			const a = { pts: null, p: 0, win, dpr: fit(cv) };
+			drawPath(cv, a);
+			new ResizeObserver(() => { a.dpr = fit(cv); drawPath(cv, a); }).observe(cv);
+
+			const end = (risk) => {
+				const delta = win ? risk * 2 : -risk;
+				const from = st.cap;
+				st.cap = Math.max(0, st.cap + delta);
+				st.peak = Math.max(st.peak, st.cap);
+				st.dd = Math.max(st.dd, 1 - st.cap / st.peak);
+				st.ruined = st.cap < START * 0.1;
+				tween(capEl, from, st.cap, 700, money);
+				ddEl.textContent = `${Math.round(st.dd * 100)}%`;
+				paintHull();
+				box.classList.add(win ? 'win' : 'loss');
+				banner.hidden = false;
+				banner.className = `rk-banner ${win ? 'win' : 'loss'}`;
+				banner.append(
+					mk('strong', '', win ? `Цель достигнута: +${money(risk * 2)}` : `Стоп сработал: −${money(risk)}`),
+					btn('button', st.ruined ? 'Margin call →' : st.i + 1 >= SEQ.length ? 'К итогам →' : 'Следующая сделка →', () => {
+						st.i++;
+						if (st.ruined || st.i >= SEQ.length) finish(); else round();
+					}),
+				);
+			};
+
+			RISKS.forEach((r) => {
+				const b = btn('rk-risk', '', () => {
+					grid.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+					b.classList.add('picked');
+					a.pts = makePath(win);
+					const risk = (st.cap * r) / 100;
+					const t0 = performance.now(), DUR = reduce ? 1 : 1900;
+					const loop = (now) => {
+						a.p = Math.min(1, (now - t0) / DUR);
+						drawPath(cv, a);
+						if (a.p < 1) raf = requestAnimationFrame(loop); else end(risk);
+					};
+					raf = requestAnimationFrame(loop);
+				});
+				b.append(mk('strong', '', `${r}%`), mk('small', '', `рискуешь ${money((st.cap * r) / 100)}`));
+				grid.appendChild(b);
+			});
+		};
+
+		const finish = () => {
+			stop();
+			const table = mk('div', 'gm-table');
+			const row = (cls, a, b, c) => { const d = mk('div', cls); d.append(mk('span', '', a), mk('span', '', b), mk('span', '', c)); table.appendChild(d); };
+			row('head', 'Стратегия', 'Итог', 'Просадка');
+			row('you', 'Ты', money(st.cap), `−${Math.round(st.dd * 100)}%`);
+			RISKS.forEach((r) => { const s = sim(r); row('', `${r}% на сделку`, s.ruined ? 'Margin call' : money(s.cap), `−${Math.round(s.dd * 100)}%`); });
+			const s = st.ruined ? 0 : st.dd <= 0.12 ? 3 : st.dd <= 0.35 ? 2 : 1;
+			result(root, 'risk', {
+				kicker: 'Порт', title: 'Риск-капитан', text: 'Рейс завершён. Сравни свой результат с ровной стратегией на тех же сделках.',
+				win: !st.ruined, stars: s,
+				heading: st.ruined ? 'Margin call: корабль затонул' : s === 3 ? 'Капитан года' : s === 2 ? 'Дошёл до порта' : 'Еле выбрался из шторма',
+				rows: [['Итоговый капитал', money(st.cap)], ['Максимальная просадка', `−${Math.round(st.dd * 100)}%`]],
+				extra: table,
+				tip: 'Чем глубже убыток, тем больше нужно, чтобы вернуться: после −50% требуется +100%. Серия из 4 убытков при риске 1% стоит около 4%, при 20% уже около 59%, при 50% почти 94% капитала. Поэтому профессионалы рискуют 1–2% на сделку.',
+				again: open,
+			});
+		};
+
+		const open = () => {
+			stop();
+			Object.assign(st, { cap: START, peak: START, dd: 0, i: 0, ruined: false });
+			const stage = scene(root, 'Шторм волатильности', 'Риск-капитан', 'Ураган накрыл рынок. Тебя назначили капитаном фонда «Wind Capital» с капиталом $10 000. Перед каждой сделкой решай, какую долю капитала поставить под удар.');
+			intro(stage, {
+				ico: 'anchor', heading: 'Выведи корабль в порт',
+				lines: ['10 сделок: убыток равен выбранному %, прибыль вдвое больше', 'Исход заранее неизвестен: серии убытков случаются', 'Упадёт капитал ниже $1 000 и будет margin call'],
+				label: 'Выйти в море', onStart: round,
+			});
+		};
+		open();
+	};
+
+	// =====================================================
+	//  ИГРА 3. ОХОТА НА МОШЕННИКОВ
+	// =====================================================
+	const initScam = (root) => {
+		const TIME = 14000;
+		const MSGS = [
+			{ from: 'Поддержка Wind', via: 'Telegram', ava: 'W', scam: true, text: 'Ваш аккаунт временно заблокирован. Чтобы вернуть доступ, отправьте в ответ seed-фразу от кошелька. Это займёт минуту.', marks: ['seed-фразу'], flags: ['Seed-фразу не просит никто и никогда: с ней забирают все средства', 'Выдуманная «блокировка» нужна, чтобы напугать'] },
+			{ from: 'Wind Finance', via: 'SMS', ava: 'W', scam: false, text: 'Код подтверждения входа: 482913. Никому не сообщайте код. Если вы не входили в аккаунт, смените пароль в настройках.', why: 'Это обычный код после твоего входа: в нём нет просьб и ссылок, и он сам предупреждает не передавать код.' },
+			{ from: 'Крипто-гуру', via: 'Чат', ava: 'К', scam: true, text: 'Гарантирую +300% за неделю! Переведи 0.1 BTC, через 7 дней верну 0.4 BTC. Осталось 2 места, только сегодня!', marks: ['Гарантирую +300% за неделю', 'только сегодня'], flags: ['Гарантированной доходности не бывает', 'Давление срочностью: «только сегодня», «осталось 2 места»', 'Просьба перевести деньги незнакомцу'] },
+			{ from: 'Wind Finance', via: 'Уведомление', ava: 'W', scam: false, text: 'Платёж на 5 000 ₽ по карте успешно зачислен на баланс. Если это были не вы, смените пароль в настройках.', why: 'Сообщение сообщает о понятной операции и не просит ни переходить по ссылкам, ни вводить данные.' },
+			{ from: 'Служба безопасности', via: 'Почта', ava: 'С', scam: true, text: 'Подозрительный вход! Подтвердите личность в течение 10 минут: wind-finance-secure-login.top/verify', marks: ['wind-finance-secure-login.top/verify', 'в течение 10 минут'], flags: ['Адрес сайта поддельный: официальный домен другой', 'Страх и спешка: «10 минут»', 'Ссылки из писем не открывают, а заходят через приложение или закладку'] },
+			{ from: 'Конкурс Wind', via: 'SMS', ava: 'К', scam: true, text: 'Поздравляем! Вы выиграли iPhone. Оплатите доставку 990 ₽ по ссылке, и приз ваш.', marks: ['Оплатите доставку 990 ₽'], flags: ['Приз в конкурсе, в котором ты не участвовал', 'Просят заплатить вперёд: так воруют данные карты'] },
+			{ from: 'Wind Finance', via: 'Уведомление', ava: 'W', scam: false, text: 'Ценовое уведомление сработало: BTC/USDT достиг 70 000 USDT. Посмотреть график можно в разделе «Крипто».', why: 'Это уведомление, которое ты настроил сам. Ссылок на сторонние сайты и просьб в нём нет.' },
+			{ from: 'Помощник биржи', via: 'Telegram', ava: 'П', scam: true, text: 'Я из поддержки биржи. Чтобы вернуть ваши деньги, установите программу AnyDesk и сообщите мне код доступа.', marks: ['установите программу AnyDesk', 'сообщите мне код доступа'], flags: ['Удалённый доступ даёт полный контроль над твоими счетами', 'Настоящая поддержка не просит ставить программы и называть коды'] },
+			{ from: 'Wind Finance', via: 'Уведомление', ava: 'W', scam: false, text: 'Вышло обновление приложения: новые уроки и улучшенный анализ рынка. Подробности в разделе «Настройки».', why: 'Обычная новость без ссылок на сторонние сайты и без просьб что-то отправить.' },
+			{ from: 'Саша (друг)', via: 'Мессенджер', ava: 'С', scam: true, text: 'Привет, это Саша, мой аккаунт взломали, пишу с нового. Срочно займи 5 000 ₽ до завтра, переведи на карту 2200 0000 0000 0000.', marks: ['Срочно займи 5 000 ₽', 'пишу с нового'], flags: ['Просьба о деньгах от «друга» с нового аккаунта: сначала позвони ему', 'Срочность и просьба перевести на карту'] },
+		];
+		let timer = 0, typing = 0;
+		const clear = () => { clearTimeout(timer); clearTimeout(typing); };
+		const st = { order: [], i: 0, lives: 3, ok: 0, streak: 0, best: 0 };
+
+		const fillText = (el, text, marks = []) => {
+			el.textContent = '';
+			const spots = marks.map((m) => [text.indexOf(m), m]).filter(([i]) => i >= 0).sort((a, b) => a[0] - b[0]);
+			let pos = 0;
+			spots.forEach(([i, m]) => {
+				if (i < pos) return;
+				el.appendChild(document.createTextNode(text.slice(pos, i)));
+				el.appendChild(mk('mark', '', m));
+				pos = i + m.length;
+			});
+			el.appendChild(document.createTextNode(text.slice(pos)));
+		};
+		const hearts = () => '♥'.repeat(Math.max(0, st.lives)) + '♡'.repeat(3 - Math.max(0, st.lives));
+
+		const show = () => {
+			clear();
+			const m = st.order[st.i];
+			const stage = scene(root, `Сообщение ${st.i + 1} из ${st.order.length}`, 'Центр безопасности', 'Реши до конца таймера: это мошенник или безопасное сообщение?');
+			const livesEl = mk('strong', 'sc-lives', hearts());
+			const streakEl = mk('strong', '', `×${st.streak}`);
+			const okEl = mk('strong', '', String(st.ok));
+			const stat = (label, node) => { const d = mk('div'); d.append(mk('span', '', label), node); return d; };
+			const stats = mk('div', 'gm-stat-row');
+			stats.append(stat('Репутация', livesEl), stat('Серия', streakEl), stat('Верно', okEl));
+			const bar = mk('div', 'gm-progress');
+			const barFill = mk('span');
+			barFill.style.width = `${(st.i / st.order.length) * 100}%`;
+			bar.appendChild(barFill);
+
+			const phone = mk('div', 'sc-phone');
+			const head = mk('div', 'sc-head');
+			const who = mk('div');
+			who.append(mk('strong', '', m.from), mk('small', '', m.via));
+			head.append(mk('span', 'sc-ava', m.ava), who);
+			const body = mk('div', 'sc-body');
+			const bubble = mk('div', 'sc-bubble typing');
+			bubble.append(mk('i'), mk('i'), mk('i'));
+			body.appendChild(bubble);
+			const track = mk('div', 'sc-timer');
+			const tbar = mk('span');
+			track.appendChild(tbar);
+			phone.append(head, body, track);
+
+			const actions = mk('div', 'sc-actions');
+			const bScam = btn('sc-btn scam', 'Мошенник');
+			const bSafe = btn('sc-btn safe', 'Безопасно');
+			bScam.disabled = true; bSafe.disabled = true;
+			actions.append(bScam, bSafe);
+			const fb = mk('div', 'gm-feedback');
+			fb.hidden = true;
+			stage.append(stats, bar, phone, actions, fb);
+
+			let done = false;
+			const resolve = (said) => {
+				if (done) return;
+				done = true;
+				clearTimeout(timer);
+				const tw = track.getBoundingClientRect().width || 1;
+				tbar.style.transition = 'none';
+				tbar.style.width = `${(tbar.getBoundingClientRect().width / tw) * 100}%`;
+				bScam.disabled = true; bSafe.disabled = true;
+				const ok = said === m.scam;
+				if (ok) { st.ok++; st.streak++; st.best = Math.max(st.best, st.streak); }
+				else { st.lives--; st.streak = 0; livesEl.classList.add('hit'); }
+				livesEl.textContent = hearts();
+				streakEl.textContent = `×${st.streak}`;
+				okEl.textContent = String(st.ok);
+
+				fb.hidden = false;
+				fb.className = `gm-feedback ${ok ? 'good' : 'bad'}`;
+				fb.append(mk('strong', '', ok ? 'Верно!' : said === null ? 'Время вышло' : 'Ошибка'));
+				if (m.scam) {
+					fillText(bubble, m.text, m.marks);
+					const ul = mk('ul', 'sc-flags');
+					m.flags.forEach((f) => ul.appendChild(mk('li', '', f)));
+					fb.append(mk('p', '', ok ? 'Это мошенничество. Признаки:' : 'Это было мошенничество, и клиент потерял деньги. Признаки:'), ul);
+				} else {
+					fb.append(mk('p', '', ok ? m.why : `Это было безопасное сообщение, и ты зря напугал клиента. ${m.why}`));
+				}
+				const last = st.i + 1 >= st.order.length;
+				const dead = st.lives <= 0;
+				fb.appendChild(btn('button', dead || last ? 'К итогам →' : 'Следующее сообщение →', () => {
+					st.i++;
+					if (dead || last) finish(dead); else show();
+				}));
+			};
+			bScam.addEventListener('click', () => resolve(true));
+			bSafe.addEventListener('click', () => resolve(false));
+
+			typing = setTimeout(() => {
+				bubble.classList.remove('typing');
+				fillText(bubble, m.text);
+				bScam.disabled = false; bSafe.disabled = false;
+				tbar.style.transition = 'none';
+				tbar.style.width = '100%';
+				void tbar.offsetWidth;
+				tbar.style.transition = `width ${TIME}ms linear`;
+				tbar.style.width = '0%';
+				timer = setTimeout(() => resolve(null), TIME);
+			}, reduce ? 50 : 900);
+		};
+
+		const finish = (dead) => {
+			clear();
+			const n = st.order.length;
+			const s = dead ? 0 : st.ok >= 9 ? 3 : st.ok >= 7 ? 2 : 1;
+			result(root, 'scam', {
+				kicker: 'Смена окончена', title: 'Охота на мошенников', text: 'Центр безопасности Wind Finance подводит итоги смены.',
+				win: !dead, stars: s,
+				heading: dead ? 'Репутация уничтожена' : s === 3 ? 'Непробиваемая защита' : s === 2 ? 'Надёжный страж' : 'Смена прошла, но есть над чем поработать',
+				rows: [['Верных ответов', `${st.ok} из ${Math.min(st.i, n)}`], ['Лучшая серия', `×${st.best}`], ['Репутация', dead ? 'потеряна' : hearts()]],
+				tip: 'Золотые правила: никому не сообщай seed-фразу, пароли и коды. Настоящая поддержка не просит удалённый доступ. «Гарантированная доходность» и «только сегодня» это признаки обмана. Всегда проверяй адрес сайта.',
+				again: open,
+			});
+		};
+
+		const open = () => {
+			clear();
+			Object.assign(st, { order: shuffle(MSGS), i: 0, lives: 3, ok: 0, streak: 0, best: 0 });
+			const stage = scene(root, 'Ночная смена', 'Охота на мошенников', 'Ты дежурный в центре безопасности Wind Finance. Сообщения приходят одно за другим, и у тебя мало времени. Пропустишь мошенника или ошибочно заблокируешь клиента, потеряешь репутацию.');
+			intro(stage, {
+				ico: 'shield-alert', heading: 'Защити клиентов',
+				lines: ['10 сообщений: часть от мошенников, часть настоящие', 'На каждое 14 секунд, ошибка стоит одно сердце репутации', 'После ответа покажем красные флаги прямо в тексте'],
+				label: 'Начать смену', onStart: show,
+			});
+		};
+		open();
+	};
+
+	// ---------- запуск и вкладки ----------
+	initCandles(document.getElementById('gm-candles'));
+	initRisk(document.getElementById('gm-risk'));
+	initScam(document.getElementById('gm-scam'));
+	paintStars();
+
+	tabs.forEach((b) => b.addEventListener('click', () => {
+		const id = b.dataset.gameTab;
+		tabs.forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', String(x === b)); });
+		document.querySelectorAll('[data-game-panel]').forEach((p) => { p.hidden = p.dataset.gamePanel !== id; });
+	}));
 })();
 
 if (window.lucide) {

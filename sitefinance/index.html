@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=13">
+	<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 	<div class="app">
@@ -243,6 +243,24 @@
 						<button class="buy-asset-button" type="button" data-buy-asset><i data-lucide="shopping-bag"></i><span>Купить</span></button>
 					</article>
 				</div>
+
+				<article class="card plus-card" id="newinv-card">
+					<div class="plus-head">
+						<div class="plus-title">
+							<span class="plus-badge"><i data-lucide="sparkles"></i> Plus</span>
+							<div><h3>Радар новых инвестиций</h3><p>Новые инструменты и размещения <span class="crypto-demo-tag">ДЕМО</span></p></div>
+						</div>
+					</div>
+					<div class="plus-wrap">
+						<div class="plus-body"><div class="ni-list" id="ni-list"></div></div>
+						<div class="plus-lock">
+							<span class="plus-lock-icon"><i data-lucide="lock"></i></span>
+							<strong>Доступно в Wind Plus</strong>
+							<p>Следи за новыми ETF, облигациями и размещениями</p>
+							<button class="button" type="button" data-modal="subscription-modal">Открыть Plus <span>→</span></button>
+						</div>
+					</div>
+				</article>
 			</section>
 
 			<section class="investment-profile" id="investment-profile">
@@ -330,6 +348,60 @@
 					<div class="alert-list" id="alert-list"></div>
 				</article>
 
+				<article class="card plus-card" id="analysis-card">
+					<div class="plus-head">
+						<div class="plus-title">
+							<span class="plus-badge"><i data-lucide="sparkles"></i> Plus</span>
+							<div><h3>Анализ рынка</h3><p>Индикаторы по свечам Bybit и вывод простым языком</p></div>
+						</div>
+						<div class="plus-tools">
+							<div class="alert-coins" id="an-coins" role="group" aria-label="Монета">
+								<button type="button" class="alert-coin active" data-symbol="BTCUSDT">BTC</button>
+								<button type="button" class="alert-coin" data-symbol="ETHUSDT">ETH</button>
+								<button type="button" class="alert-coin" data-symbol="SOLUSDT">SOL</button>
+							</div>
+							<div class="timeframes" id="an-tf" role="group" aria-label="Таймфрейм">
+								<button type="button" data-tf="15">15м</button>
+								<button type="button" class="active" data-tf="60">1ч</button>
+								<button type="button" data-tf="240">4ч</button>
+								<button type="button" data-tf="D">1д</button>
+							</div>
+						</div>
+					</div>
+					<div class="plus-wrap">
+						<div class="plus-body" id="an-body"></div>
+						<div class="plus-lock">
+							<span class="plus-lock-icon"><i data-lucide="lock"></i></span>
+							<strong>Доступно в Wind Plus</strong>
+							<p>Индикаторы, уровни и вывод по BTC, ETH и SOL</p>
+							<button class="button" type="button" data-modal="subscription-modal">Открыть Plus <span>→</span></button>
+						</div>
+					</div>
+				</article>
+
+				<article class="card plus-card" id="radar-card">
+					<div class="plus-head">
+						<div class="plus-title">
+							<span class="plus-badge"><i data-lucide="sparkles"></i> Plus</span>
+							<div><h3>Радар крипторынка</h3><p>Лидеры за 24 часа и новые листинги на Bybit Spot</p></div>
+						</div>
+						<div class="learn-tabs" role="tablist" aria-label="Радар">
+							<button type="button" class="active" role="tab" data-radar-tab="up">Рост</button>
+							<button type="button" role="tab" data-radar-tab="down">Падение</button>
+							<button type="button" role="tab" data-radar-tab="new">Новые</button>
+						</div>
+					</div>
+					<div class="plus-wrap">
+						<div class="plus-body" id="radar-body"></div>
+						<div class="plus-lock">
+							<span class="plus-lock-icon"><i data-lucide="lock"></i></span>
+							<strong>Доступно в Wind Plus</strong>
+							<p>Лидеры роста и падения и уведомления о новых листингах</p>
+							<button class="button" type="button" data-modal="subscription-modal">Открыть Plus <span>→</span></button>
+						</div>
+					</div>
+				</article>
+
 
 				<div class="crypto-news-heading section-heading">
 					<div><h3 id="learn-title">Новости рынка</h3><p id="learn-sub">Коротко о том, что двигает криптовалюты</p></div>
@@ -359,7 +431,14 @@
 			</section>
 
 			<section class="market-section" id="game">
-				<div class="section-heading"><div><p class="eyebrow">Сюжет · 3 главы</p><h2>Crypto Drop</h2><p>Лови ящики с активами и берегись рагпуллов</p></div><span class="live-badge"><i></i> ИГРА</span></div>
+				<div class="section-heading"><div><p class="eyebrow">Играй и учись</p><h2>Игровая зона</h2><p>Четыре игры с сюжетом: ловить, читать графики, считать риск и не попадаться мошенникам</p></div><span class="live-badge"><i></i> ИГРЫ</span></div>
+				<div class="game-tabs" id="game-tabs" role="tablist" aria-label="Игры">
+					<button type="button" class="active" role="tab" data-game-tab="drop"><i data-lucide="package"></i><span>Crypto Drop</span><em class="gt-stars"></em></button>
+					<button type="button" role="tab" data-game-tab="candles"><i data-lucide="search"></i><span>Детектив свечей</span><em class="gt-stars" data-stars="candles"></em></button>
+					<button type="button" role="tab" data-game-tab="risk"><i data-lucide="anchor"></i><span>Риск-капитан</span><em class="gt-stars" data-stars="risk"></em></button>
+					<button type="button" role="tab" data-game-tab="scam"><i data-lucide="shield-alert"></i><span>Охота на мошенников</span><em class="gt-stars" data-stars="scam"></em></button>
+				</div>
+				<div class="game-panel" data-game-panel="drop">
 				<article class="card cg-card">
 					<div class="cg-story">
 						<div class="cg-chapter"><span id="cg-chapter-label">Глава 1</span><strong id="cg-chapter-title">Первый депозит</strong></div>
@@ -386,6 +465,10 @@
 						<button type="button" id="cg-right" aria-label="Вправо">›</button>
 					</div>
 				</article>
+				</div>
+				<div class="game-panel" data-game-panel="candles" hidden><article class="card gm-card" id="gm-candles"></article></div>
+				<div class="game-panel" data-game-panel="risk" hidden><article class="card gm-card" id="gm-risk"></article></div>
+				<div class="game-panel" data-game-panel="scam" hidden><article class="card gm-card" id="gm-scam"></article></div>
 			</section>
 
 			<section class="settings-page" id="settings">
@@ -527,12 +610,37 @@
 			<button id="confirm-payment" class="button modal-submit" type="button" data-success="Покупка подтверждена, средства зарезервированы">Подтвердить оплату <span>→</span></button>
 		</div>
 	</div>
-	<div class="modal" id="subscription-modal" hidden>
-		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
+	<div class="modal" id="subscription-modal" hidden>	
+		<div class="modal-card plus-modal" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Wind Finance Plus</p><h2 id="subscription-title">Подписка на ветер</h2><p class="modal-copy">Уведомления о движении валют и расширенная история курсов.</p>
-			<div class="subscription-plan"><span class="plan-icon"><i data-lucide="wind"></i></span><div><strong>Plus на месяц</strong><small>199 ₽ / месяц</small></div><span class="plan-check"><i data-lucide="check"></i></span></div>
-			<button class="button modal-submit" type="button" data-success="Подписка Wind Finance Plus активирована">Оформить подписку <span>→</span></button>
+			<div class="plus-hero">
+				<span class="plus-hero-icon"><i data-lucide="wind"></i></span>
+				<div><p class="eyebrow">Wind Plus</p><h2 id="subscription-title">Больше данных, меньше догадок</h2></div>
+			</div>
+			<p class="modal-copy">Анализ рынка, радар новых инвестиций и отслеживание криптовалют в одной подписке.</p>
+			<ul class="plus-features">
+				<li><span><i data-lucide="activity"></i></span><div><strong>Анализ рынка</strong><small>RSI, MACD, тренд, уровни поддержки и сопротивления и вывод простым языком по BTC, ETH и SOL</small></div></li>
+				<li><span><i data-lucide="radar"></i></span><div><strong>Радар крипторынка</strong><small>Лидеры роста и падения за 24 часа, обновление каждые 30 секунд</small></div></li>
+				<li><span><i data-lucide="sparkles"></i></span><div><strong>Новые листинги</strong><small>Узнаешь сразу, когда на бирже появляется новая пара</small></div></li>
+				<li><span><i data-lucide="rocket"></i></span><div><strong>Радар новых инвестиций</strong><small>Новые ETF, облигации и размещения с риском и сроком, за ними можно следить</small></div></li>
+				<li><span><i data-lucide="bell-ring"></i></span><div><strong>До 30 ценовых уведомлений</strong><small>В бесплатном тарифе их три</small></div></li>
+			</ul>
+			<div class="plus-compare" role="table">
+				<div class="plus-compare-row head"><span>Возможности</span><span>Free</span><span>Plus</span></div>
+				<div class="plus-compare-row"><span>Курсы, графики, конвертер, обучение</span><span>✓</span><span>✓</span></div>
+				<div class="plus-compare-row"><span>Ценовые уведомления</span><span>3</span><span>30</span></div>
+				<div class="plus-compare-row"><span>Анализ рынка</span><span>—</span><span>✓</span></div>
+				<div class="plus-compare-row"><span>Радар крипторынка и листинги</span><span>—</span><span>✓</span></div>
+				<div class="plus-compare-row"><span>Радар новых инвестиций</span><span>—</span><span>✓</span></div>
+			</div>
+			<div class="plus-plans" id="plus-plans" role="group" aria-label="Тариф">
+				<button type="button" class="active" data-plan="month"><strong>199 ₽</strong><small>в месяц</small></button>
+				<button type="button" data-plan="year"><span class="plus-save">−25%</span><strong>1 790 ₽</strong><small>в год · ≈149 ₽ / мес</small></button>
+			</div>
+			<button class="button modal-submit" id="plus-subscribe" type="button">Оформить Plus →</button>
+			<p class="plus-status" id="plus-status"></p>
+			<button class="plus-link" id="plus-cancel" type="button" hidden>Отключить подписку</button>
+			<p class="article-note">Демо-режим: стоимость списывается с баланса приложения, платёж не настоящий. При отключении подписки деньги не возвращаются. Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
 		</div>
 	</div>
 	<div class="modal" id="add-asset-modal" hidden>
@@ -644,9 +752,83 @@
 			<button class="button modal-submit" id="buy-asset-confirm" type="button">Подтвердить покупку <span>→</span></button>
 		</div>
 	</div>
+
+	<div class="modal" id="pay-topup-modal" hidden>
+		<div class="modal-card pay-card-modal" role="dialog" aria-modal="true" aria-labelledby="pay-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Пополнение баланса</p>
+			<h2 id="pay-title">Оплата картой</h2>
+			<div class="pay-tabs" role="group" aria-label="Способ оплаты">
+				<button type="button" class="active" data-pay-tab="card"><i data-lucide="credit-card"></i> Карта</button>
+				<button type="button" data-pay-tab="sbp"><i data-lucide="qr-code"></i> СБП</button>
+				<button type="button" data-pay-tab="crypto"><i data-lucide="coins"></i> Крипто</button>
+			</div>
+			<div class="pay-sum"><span>Сумма пополнения</span><strong id="pay-sum">5 000 ₽</strong><button type="button" id="pay-change" class="pay-link">Изменить</button></div>
+
+			<form class="pay-panel" id="pay-card-panel" novalidate>
+				<div class="pay-card" id="pay-card-visual" data-brand="card">
+					<div class="pay-card-inner">
+						<div class="pay-card-face front">
+							<div class="pay-card-top"><span class="pay-chip"></span><span class="pay-brand" id="pv-brand">CARD</span></div>
+							<div class="pay-card-number" id="pv-number">•••• •••• •••• ••••</div>
+							<div class="pay-card-bottom">
+								<div><small>Держатель</small><strong id="pv-name">IVAN IVANOV</strong></div>
+								<div><small>Срок</small><strong id="pv-exp">ММ/ГГ</strong></div>
+							</div>
+						</div>
+						<div class="pay-card-face back">
+							<div class="pay-stripe"></div>
+							<div class="pay-cvc"><small>CVC</small><strong id="pv-cvc">•••</strong></div>
+						</div>
+					</div>
+				</div>
+				<label class="pay-field">Номер карты
+					<input id="pay-number" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23">
+					<small class="pay-err"></small>
+				</label>
+				<label class="pay-field">Имя на карте (латиницей)
+					<input id="pay-name" autocomplete="cc-name" placeholder="IVAN IVANOV" maxlength="26" autocapitalize="characters">
+					<small class="pay-err"></small>
+				</label>
+				<div class="pay-row2">
+					<label class="pay-field">Срок действия
+						<input id="pay-exp" inputmode="numeric" autocomplete="cc-exp" placeholder="ММ/ГГ" maxlength="5">
+						<small class="pay-err"></small>
+					</label>
+					<label class="pay-field">CVC
+						<input id="pay-cvc" type="password" inputmode="numeric" autocomplete="cc-csc" placeholder="•••" maxlength="3">
+						<small class="pay-err"></small>
+					</label>
+				</div>
+				<p class="pay-demo-note"><span class="crypto-demo-tag">ДЕМО</span><span>Данные карты никуда не отправляются. Не вводи настоящие. Для проверки: 4242 4242 4242 4242, любой будущий срок, любой CVC.</span></p>
+				<p class="pay-form-error" id="pay-card-error" role="alert"></p>
+				<button class="button modal-submit pay-submit" id="pay-submit" type="submit"><span class="pay-spin" id="pay-spin" hidden></span><span id="pay-submit-label">Оплатить 5 000 ₽</span></button>
+			</form>
+
+			<div class="pay-panel" id="pay-sbp-panel" hidden>
+				<div class="pay-sbp-head"><span class="pay-sbp-logo">СБП</span><span>Оплата по QR через приложение банка</span></div>
+				<div class="crypto-qr-box"><div id="pay-sbp-qr"></div></div>
+				<ol class="pay-steps">
+					<li>Открой приложение своего банка</li>
+					<li>Выбери «Оплата по QR» и наведи камеру на код</li>
+					<li>Подтверди платёж, деньги придут мгновенно</li>
+				</ol>
+				<div class="crypto-address-box">
+					<small>Ссылка на оплату</small>
+					<div class="crypto-address-row">
+						<a id="pay-sbp-link" class="crypto-link" target="_blank" rel="noopener noreferrer">—</a>
+						<button type="button" class="crypto-copy" data-copy="pay-sbp-link">Копировать</button>
+					</div>
+				</div>
+				<div class="pay-wait"><span class="pay-dots"><i></i><i></i><i></i></span><span>Ждём оплату</span><b id="pay-sbp-timer">10:00</b></div>
+				<p class="pay-demo-note" id="pay-sbp-note"><span class="crypto-demo-tag">ДЕМО</span><span>Ссылка и QR демонстрационные, платить по ним нельзя.</span></p>
+				<button class="button modal-submit" id="pay-sbp-paid" type="button">Я оплатил <span>→</span></button>
+			</div>
+		</div>
+	</div>
 	<script src="https://unpkg.com/lucide@latest"></script>
 	<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-	<script src="script.js?v=13"></script>
+	<script src="script.js?v=16"></script>
 </body>
 </html>
