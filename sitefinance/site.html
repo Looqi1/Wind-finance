@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=16">
+	<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 	<div class="app">
@@ -26,6 +26,7 @@
 		</aside>
 
 		<main id="dashboard">
+			<div class="sim-banner" id="sim-banner"><span><b>Учебный симулятор.</b> Баланс, активы и покупки виртуальные и не имеют денежной стоимости. Приложение не оказывает брокерских услуг и не даёт инвестиционных рекомендаций.</span><button id="sim-ok" type="button">Понятно</button></div>
 			<header class="topbar">
 				<div><p class="eyebrow">Рынок в реальном времени</p><h1>Курсы валют</h1><p class="subline">Следи за изменениями рынка в одном месте.</p></div>
 				<div class="topbar-actions">
@@ -464,6 +465,11 @@
 						<span id="cg-message">Три главы. Один шанс удержать портфель.</span>
 						<button type="button" id="cg-right" aria-label="Вправо">›</button>
 					</div>
+					<div class="lb" id="lb">
+						<div class="lb-head"><strong>Топ недели</strong><span id="lb-week"></span></div>
+						<ol class="lb-list" id="lb-list"></ol>
+						<button class="button" id="lb-claim" type="button" hidden></button>
+					</div>
 				</article>
 				</div>
 				<div class="game-panel" data-game-panel="candles" hidden><article class="card gm-card" id="gm-candles"></article></div>
@@ -500,7 +506,7 @@
 							<div class="setting-item"><div><strong>Основная валюта</strong><small>Российский рубль</small></div><span class="setting-tag">RUB</span></div>
 							<div class="setting-item"><div><strong>Уведомления</strong><small>О росте и падении активов</small></div><span class="toggle-pill active">Вкл</span></div>
 							<div class="setting-item"><div><strong>Темная тема</strong><small>Ночной режим для мини-приложения</small></div><span class="toggle-pill active">On</span></div>
-							<div class="setting-item"><div><strong>Безопасность</strong><small>Двухфакторная защита</small></div><span class="setting-tag soft">2FA</span></div>
+							<div class="setting-item"><div><strong>Безопасность</strong><small>Двухфакторная защита</small></div><button class="twofa-btn" id="twofa-btn" type="button">Настроить</button></div>
 						</div>
 					</div>
 
@@ -514,6 +520,14 @@
 					</div>
 				</div>
 			</section>
+			<footer class="site-footer">
+				<p><strong>Wind Finance учебный симулятор.</strong> Мы не брокер, не биржа и не платёжный сервис, не принимаем реальные деньги на торговлю и не даём индивидуальных инвестиционных рекомендаций. Котировки и аналитика носят информационный характер и могут содержать задержки и ошибки.</p>
+				<div class="site-footer-links">
+					<button type="button" data-legal="terms">Условия</button>
+					<button type="button" data-legal="privacy">Конфиденциальность</button>
+					<button type="button" id="open-feedback">Сообщить об ошибке</button>
+				</div>
+			</footer>
 		</main>
 	</div>
 	<div class="auth-gate" id="auth-gate">
@@ -527,6 +541,8 @@
 				<label class="register-only" hidden>Имя пользователя<input id="auth-username" type="text" minlength="2" maxlength="50" autocomplete="username"></label>
 				<label>Email<input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
 				<label>Пароль<input id="auth-password" type="password" required minlength="8" autocomplete="current-password" placeholder="Минимум 8 символов"></label>
+				<label class="totp-only" hidden>Код из приложения-аутентификатора<input id="auth-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
+				<label class="auth-consent" hidden><input id="auth-consent" type="checkbox"><span>Я принимаю <button type="button" class="legal-link" data-legal="terms">условия</button> и <button type="button" class="legal-link" data-legal="privacy">политику конфиденциальности</button> и понимаю, что Wind Finance это учебный симулятор без реальных торгов</span></label>
 				<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span><i data-lucide="arrow-right"></i></button>
 			</form>
 			<button class="button secondary-button demo-login-button" id="demo-login-button" type="button">Войти как demo</button>
@@ -826,9 +842,47 @@
 			</div>
 		</div>
 	</div>
+	<div class="modal" id="legal-modal" hidden>
+		<div class="modal-card article-card" role="dialog" aria-modal="true" aria-labelledby="legal-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<h2 id="legal-title"></h2>
+			<div class="article-body" id="legal-body"></div>
+		</div>
+	</div>
+
+	<div class="modal" id="feedback-modal" hidden>
+		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Обратная связь</p>
+			<h2 id="feedback-title">Сообщить об ошибке</h2>
+			<p class="modal-copy">Опиши, что пошло не так или что улучшить. Раздел приложения добавится автоматически.</p>
+			<label class="pay-field">Сообщение<textarea id="fb-message" rows="5" maxlength="2000" placeholder="Что случилось?"></textarea></label>
+			<label class="pay-field" style="margin-top:10px">Контакт для ответа (необязательно)<input id="fb-contact" maxlength="120" placeholder="email или @telegram"></label>
+			<p class="pay-form-error" id="fb-status" role="alert"></p>
+			<button class="button modal-submit" id="fb-send" type="button">Отправить</button>
+		</div>
+	</div>
+
+	<div class="modal" id="twofa-modal" hidden>
+		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="twofa-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Безопасность</p>
+			<h2 id="twofa-title">Двухфакторная защита</h2>
+			<p class="modal-copy" id="twofa-intro"></p>
+			<div class="pay-panel" id="twofa-setup" hidden>
+				<div class="crypto-qr-box" style="justify-self:center"><div id="twofa-qr"></div></div>
+				<small class="alert-hint" style="text-align:center">Нет камеры? Введи ключ вручную: <code id="twofa-secret"></code></small>
+			</div>
+			<label class="pay-field" style="margin-top:12px">Код из приложения<input id="twofa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
+			<p class="pay-form-error" id="twofa-status" role="alert"></p>
+			<button class="button modal-submit" id="twofa-confirm" type="button">Подтвердить</button>
+		</div>
+	</div>
+	<script>window.WIND_REGION = 'RU';</script>
+	<script src="https://telegram.org/js/telegram-web-app.js"></script>
 	<script src="https://unpkg.com/lucide@latest"></script>
 	<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-	<script src="script.js?v=16"></script>
+	<script src="script.js?v=17"></script>
 </body>
 </html>
