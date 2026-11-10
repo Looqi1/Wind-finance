@@ -5,13 +5,12 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=17">
+	<link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
 	<div class="app">
 		<aside class="sidebar">
 			<div class="brand"><span class="brand-mark"><i data-lucide="wind"></i></span> wind finance</div>
-			<p class="nav-label">Мониторинг</p>
 			<nav class="nav" aria-label="Основная навигация">
 				<a class="active" href="#dashboard"><span class="nav-icon"><i data-lucide="layout-dashboard"></i></span> Обзор</a>
 				<a href="#investments"><span class="nav-icon"><i data-lucide="chart-no-axes-combined"></i></span> Инвестиции</a>
@@ -19,16 +18,17 @@
 				<a href="#converter"><span class="nav-icon"><i data-lucide="repeat-2"></i></span> Конвертер</a>
 				<a href="#game"><span class="nav-icon"><i data-lucide="gamepad-2"></i></span> Игра</a>
 			</nav>
-			<div class="sidebar-bottom">
-				<p><strong>Последнее обновление</strong><br>Сегодня, 12:42 по Москве</p>
-				<div class="sync-status"><span></span> Данные актуальны</div>
-			</div>
+			<div class="sidebar-bottom"><div class="sync-status"><span></span> Данные актуальны</div></div>
 		</aside>
 
+		<button class="agent-pet" type="button" data-agent-toggle aria-expanded="false" aria-controls="news">
+			<span class="agent-pet-aura"></span><span class="agent-pet-face"><i data-lucide="brain-circuit"></i><b></b></span><span class="agent-pet-label">Wind рядом</span><span class="agent-pet-dot"></span>
+		</button>
+		<button class="agent-backdrop" type="button" data-agent-toggle aria-label="Закрыть панель агента"></button>
 		<main id="dashboard">
-			<div class="sim-banner" id="sim-banner"><span><b>Учебный симулятор.</b> Баланс, активы и покупки виртуальные и не имеют денежной стоимости. Приложение не оказывает брокерских услуг и не даёт инвестиционных рекомендаций.</span><button id="sim-ok" type="button">Понятно</button></div>
+			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Сделки в инвестиционном разделе виртуальные и не списывают деньги. Пополнение баланса проходит отдельно через подтверждённый платёж.</span><button id="sim-ok" type="button">Понятно</button></div>
 			<header class="topbar">
-				<div><p class="eyebrow">Рынок в реальном времени</p><h1>Курсы валют</h1><p class="subline">Следи за изменениями рынка в одном месте.</p></div>
+				<div><p class="eyebrow">Wind Finance</p><h1>Ваши финансы</h1></div>
 				<div class="topbar-actions">
 					<div class="notification-menu">
 						<button class="icon-button notification-button" type="button" aria-label="Уведомления" aria-expanded="false" aria-controls="notification-panel">
@@ -48,7 +48,7 @@
 							<span class="avatar wind-avatar"><i data-lucide="wind"></i></span><span class="profile-copy"><span class="profile-name">Алексей</span><span class="profile-meta">Wind Plus</span></span><span class="profile-chevron"><i data-lucide="chevron-down"></i></span>
 						</button>
 						<div class="profile-dropdown" id="profile-dropdown" hidden>
-							<div class="dropdown-user"><span class="avatar wind-avatar small"><i data-lucide="wind"></i></span><div><strong>Алексей</strong><span>Wind Plus · личный аккаунт</span></div></div>
+							<div class="dropdown-user"><span class="avatar wind-avatar small"><i data-lucide="wind"></i></span><div><strong>Алексей</strong><span>Wind Plus · личный аккаунт</span><small data-profile-id>ID пользователя: —</small></div></div>
 							<div class="dropdown-divider"></div>
 							<a href="#settings"><span><i data-lucide="settings-2"></i></span> Настройки</a>
 							<a href="#currency"><span><i data-lucide="wallet-cards"></i></span> Основная валюта <b>RUB</b></a>
@@ -61,7 +61,7 @@
 			</header>
 
 			<section class="wallet-bar card">
-				<div class="wallet-balance"><span class="wallet-label">Доступный баланс</span><strong>24 500 ₽</strong><span class="wallet-caption">Обновлено только что</span></div>
+				<div class="wallet-balance"><span class="wallet-label">Доступно на балансе</span><strong>24 500 ₽</strong><span class="wallet-caption">Обновлено только что</span></div>
 				<div class="wallet-actions"><button class="button button-light" type="button" data-modal="topup-modal">+ Пополнить</button><button class="button" type="button" data-modal="subscription-modal">Подписка <span>→</span></button></div>
 			</section>
 
@@ -69,12 +69,12 @@
 				<article class="card focus-card">
 					<span class="focus-tag">Избранная пара · USD / RUB</span>
 					<h2>92,48 ₽ <span class="unit">за 1 доллар</span></h2>
-					<p class="positive">▲ 0,34 ₽ &nbsp; +0,37% за сегодня</p>
+					<p class="positive">▲ 0,34 ₽ · +0,37% за сегодня</p>
 					<div class="chart" aria-label="График изменения курса доллара"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 					<div class="chart-labels"><span>09:00</span><span>12:00</span><span>сейчас</span></div>
 				</article>
 				<article class="card stats-card">
-					<h3>Рынок сегодня</h3><p>Изменение к предыдущему закрытию</p>
+					<h3>Рынок сегодня</h3>
 					<div class="stat-row"><span class="stat-label">Доллар США</span><strong class="stat-value positive">+0,37%</strong></div>
 					<div class="stat-row"><span class="stat-label">Евро</span><strong class="stat-value negative">−0,12%</strong></div>
 					<div class="stat-row"><span class="stat-label">Юань</span><strong class="stat-value positive">+0,08%</strong></div>
@@ -116,7 +116,6 @@
 					</div>
 					<div class="converter-actions-row">
 						<button class="swap-currency" type="button" id="swap-currencies" aria-label="Поменять валюты"><i data-lucide="arrow-left-right"></i></button>
-						<button class="all-currency-button" type="button" data-modal="currency-modal">Все валюты</button>
 					</div>
 					<button class="converter-submit" type="button" aria-label="Обменять валюту">
 						<span class="converter-submit-wave" aria-hidden="true"></span>
@@ -309,11 +308,11 @@
 			</section>
 
 			<section class="market-section" id="crypto">
-				<div class="section-heading"><div><h2>Криптовалюты</h2><p>Живые свечи из Bybit · спотовый рынок</p></div><span class="live-badge"><i></i> LIVE</span></div>
+				<div class="section-heading"><div><h2>Криптовалюты</h2><p>Котировки и свечи с Bybit · спотовый рынок</p></div><span class="live-badge"><i></i> В СЕТИ</span></div>
 				<article class="card crypto-terminal">
 					<div class="chart-toolbar"><div class="chart-symbol"><span class="asset-icon orange"><i data-lucide="bitcoin"></i></span><div><strong id="crypto-symbol-label">BTC / USDT</strong><span id="crypto-price-label">Загрузка цены...</span></div></div><div class="chart-controls"><select id="crypto-pair" aria-label="Выбрать криптовалютную пару"><option value="BTCUSDT">BTC / USDT</option><option value="ETHUSDT">ETH / USDT</option><option value="SOLUSDT">SOL / USDT</option></select><div class="timeframes" role="group" aria-label="Таймфрейм"><button type="button" data-interval="15">15м</button><button type="button" class="active" data-interval="60">1ч</button><button type="button" data-interval="240">4ч</button><button type="button" data-interval="D">1д</button></div></div></div>
 					<div id="crypto-chart" aria-label="Свечной график криптовалюты"></div>
-					<div class="chart-source"><span><i></i> Bybit Spot</span><span id="crypto-updated">Обновление...</span></div>
+					<div class="chart-source"><span><i></i> Bybit · спот</span><span id="crypto-updated">Обновление...</span></div>
 					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy"><i data-lucide="arrow-up-right"></i> Купить</button><button class="trade-button sell-button" type="button" data-trade="sell"><i data-lucide="arrow-down-right"></i> Продать</button></div>
 				</article>
 
@@ -384,7 +383,7 @@
 					<div class="plus-head">
 						<div class="plus-title">
 							<span class="plus-badge"><i data-lucide="sparkles"></i> Plus</span>
-							<div><h3>Радар крипторынка</h3><p>Лидеры за 24 часа и новые листинги на Bybit Spot</p></div>
+							<div><h3>Радар крипторынка</h3><p>Лидеры за 24 часа и новые листинги на спотовом рынке Bybit</p></div>
 						</div>
 						<div class="learn-tabs" role="tablist" aria-label="Радар">
 							<button type="button" class="active" role="tab" data-radar-tab="up">Рост</button>
@@ -403,32 +402,20 @@
 					</div>
 				</article>
 
+			</section>
 
-				<div class="crypto-news-heading section-heading">
-					<div><h3 id="learn-title">Новости рынка</h3><p id="learn-sub">Коротко о том, что двигает криптовалюты</p></div>
-					<div class="learn-tabs" role="tablist" aria-label="Новости и обучение">
-						<button type="button" class="active" role="tab" data-learn-tab="news">Новости</button>
-						<button type="button" role="tab" data-learn-tab="edu">Обучение</button>
-					</div>
+			<section class="market-section news-page" id="news">
+				<button class="agent-drawer-close" type="button" data-agent-toggle aria-label="Закрыть агента"><i data-lucide="x"></i></button>
+				<div class="agent-intro">
+					<div class="agent-character"><span class="agent-character-glow"></span><span class="agent-character-body"><i data-lucide="brain-circuit"></i><b></b></span><span class="agent-character-spark spark-one">✦</span><span class="agent-character-spark spark-two">✦</span></div>
+					<div class="agent-speech"><span class="agent-kicker">Винд · аналитик</span><h2>Я посмотрел рынок<br>за тебя.</h2><p>Собрал главное по американским акциям и решениям ФРС. Начнём?</p><div class="agent-speech-meta"><span><i></i> На связи</span><span id="agent-last-scan">Данные загружаются</span></div></div>
 				</div>
-
+				<div class="agent-controls"><div><h3 id="learn-title">Американский рынок сегодня</h3><p id="learn-sub">S&amp;P 500 · Nasdaq · Dow Jones · ФРС</p></div><button class="agent-refresh" type="button" id="news-refresh" aria-label="Обновить аналитику"><i data-lucide="rotate-cw"></i></button></div>
 				<div class="crypto-news-grid" id="learn-news">
-					<article class="crypto-news-feature card news-clickable" data-news="btc" tabindex="0" role="button" aria-label="Читать новость про биткоин">
-						<div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin">₿</span><span class="news-feature-label">Главное</span></div>
-						<div class="news-feature-copy"><div class="news-meta"><span class="news-tag positive-tag">BTC</span><time>12 мин назад</time></div><h3>Биткоин удерживает уровень после резкого роста объёмов</h3><p>Покупатели сохраняют инициативу, но рынок ждёт подтверждения движения выше локального сопротивления.</p><div class="news-footer"><span><i data-lucide="trending-up"></i> Позитивно</span><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button></div></div>
-					</article>
-					<div class="crypto-news-list">
-						<article class="crypto-news-item card news-clickable" data-news="eth" tabindex="0" role="button" aria-label="Читать новость про Ethereum">
-						<article class="crypto-news-item card news-clickable" data-news="volume" tabindex="0" role="button" aria-label="Читать новость про объёмы торгов">
-						<article class="crypto-news-item card news-clickable" data-news="reserves" tabindex="0" role="button" aria-label="Читать новость про резервы">
-					</div>
+					<article class="crypto-news-feature card news-clickable" data-news="global" tabindex="0" role="button" aria-label="Открыть анализ американского рынка"><div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin">$</span><span class="news-feature-label">Главное</span></div><div class="news-feature-copy"><div class="news-meta"><span class="news-tag amber-tag">США</span><time>Сегодня</time></div><h3>Американский рынок: главное за сегодня</h3><p>Динамика индексов, решения ФРС, отчёты компаний и ожидания инвесторов.</p><div class="news-footer"><span><i data-lucide="line-chart"></i> Аналитика</span><button type="button" aria-label="Открыть анализ"><i data-lucide="arrow-up-right"></i></button></div></div></article>
+					<div class="crypto-news-list"><article class="crypto-news-item card news-clickable" data-news="macro" tabindex="0" role="button"><span class="news-icon purple"><i data-lucide="landmark"></i></span><div><div class="news-meta"><span class="news-tag purple-tag">Экономика</span><time>Сегодня</time></div><h3>Ставки, инфляция и решения центральных банков</h3></div><button type="button" aria-label="Открыть анализ"><i data-lucide="arrow-up-right"></i></button></article><article class="crypto-news-item card news-clickable" data-news="stocks" tabindex="0" role="button"><span class="news-icon amber"><i data-lucide="chart-no-axes-combined"></i></span><div><div class="news-meta"><span class="news-tag positive-tag">Акции</span><time>Сегодня</time></div><h3>Индексы, акции и ожидания инвесторов</h3></div><button type="button" aria-label="Открыть анализ"><i data-lucide="arrow-up-right"></i></button></article><article class="crypto-news-item card news-clickable" data-news="commodities" tabindex="0" role="button"><span class="news-icon teal"><i data-lucide="bitcoin"></i></span><div><div class="news-meta"><span class="news-tag teal-tag">Крипто</span><time>Сегодня</time></div><h3>Криптоактивы и движение цифрового рынка</h3></div><button type="button" aria-label="Открыть анализ"><i data-lucide="arrow-up-right"></i></button></article></div>
 				</div>
-
-				<div class="edu-panel" id="learn-edu" hidden>
-					<div class="edu-progress"><span id="edu-progress-text">Пройдено 0 из 6</span><div class="edu-bar"><span id="edu-progress-bar"></span></div></div>
-					<div class="edu-grid" id="edu-grid"></div>
-				</div>
-
+				<div class="edu-panel" id="learn-edu" hidden><div class="edu-progress"><span id="edu-progress-text">Пройдено 0 из 6</span><div class="edu-bar"><span id="edu-progress-bar"></span></div></div><div class="edu-grid" id="edu-grid"></div></div>
 			</section>
 
 			<section class="market-section" id="game">
@@ -503,9 +490,9 @@
 					<div class="card settings-card">
 						<div class="section-heading compact"><div><h3>Личный кабинет</h3><p>Управление аккаунтом</p></div></div>
 						<div class="settings-list">
-							<div class="setting-item"><div><strong>Основная валюта</strong><small>Российский рубль</small></div><span class="setting-tag">RUB</span></div>
-							<div class="setting-item"><div><strong>Уведомления</strong><small>О росте и падении активов</small></div><span class="toggle-pill active">Вкл</span></div>
-							<div class="setting-item"><div><strong>Темная тема</strong><small>Ночной режим для мини-приложения</small></div><span class="toggle-pill active">On</span></div>
+							<button class="setting-item setting-action" type="button" data-setting-currency><div><strong>Основная валюта</strong><small data-setting-currency-label>Российский рубль</small></div><span class="setting-tag" data-setting-currency-value>RUB</span></button>
+							<button class="setting-item setting-action" type="button" data-setting-notifications><div><strong>Уведомления</strong><small>О росте и падении активов</small></div><span class="toggle-pill active" data-setting-notifications-value>Вкл</span></button>
+							<button class="setting-item setting-action" type="button" data-setting-theme><div><strong>Темная тема</strong><small>Ночной режим для мини-приложения</small></div><span class="toggle-pill" data-setting-theme-value>Выкл</span></button>
 							<div class="setting-item"><div><strong>Безопасность</strong><small>Двухфакторная защита</small></div><button class="twofa-btn" id="twofa-btn" type="button">Настроить</button></div>
 						</div>
 					</div>
@@ -521,7 +508,7 @@
 				</div>
 			</section>
 			<footer class="site-footer">
-				<p><strong>Wind Finance учебный симулятор.</strong> Мы не брокер, не биржа и не платёжный сервис, не принимаем реальные деньги на торговлю и не даём индивидуальных инвестиционных рекомендаций. Котировки и аналитика носят информационный характер и могут содержать задержки и ошибки.</p>
+				<p><strong>Wind Finance.</strong> Мы не брокер и не биржа: инвестиционные активы и сделки в приложении виртуальные. Пополнения проходят через платёжного провайдера и зачисляются только после подтверждения. Котировки и аналитика носят информационный характер.</p>
 				<div class="site-footer-links">
 					<button type="button" data-legal="terms">Условия</button>
 					<button type="button" data-legal="privacy">Конфиденциальность</button>
@@ -532,21 +519,48 @@
 	</div>
 	<div class="auth-gate" id="auth-gate">
 		<div class="auth-card">
-			<div class="auth-brand"><span class="brand-mark"><i data-lucide="wind"></i></span><strong>wind finance</strong></div>
-			<p class="eyebrow">Личный финансовый ветер</p>
-			<h2 id="auth-title">Войти в аккаунт</h2>
-			<p class="auth-copy">Сохраняй портфель, избранные валюты и историю операций.</p>
-			<div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Войти</button><button type="button" data-auth-mode="register">Регистрация</button></div>
-			<form id="auth-form">
-				<label class="register-only" hidden>Имя пользователя<input id="auth-username" type="text" minlength="2" maxlength="50" autocomplete="username"></label>
-				<label>Email<input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-				<label>Пароль<input id="auth-password" type="password" required minlength="8" autocomplete="current-password" placeholder="Минимум 8 символов"></label>
-				<label class="totp-only" hidden>Код из приложения-аутентификатора<input id="auth-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
-				<label class="auth-consent" hidden><input id="auth-consent" type="checkbox"><span>Я принимаю <button type="button" class="legal-link" data-legal="terms">условия</button> и <button type="button" class="legal-link" data-legal="privacy">политику конфиденциальности</button> и понимаю, что Wind Finance это учебный симулятор без реальных торгов</span></label>
-				<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span><i data-lucide="arrow-right"></i></button>
-			</form>
-			<button class="button secondary-button demo-login-button" id="demo-login-button" type="button">Войти как demo</button>
-			<p class="auth-error" id="auth-error" role="alert"></p>
+			<section class="auth-showcase" aria-label="Возможности Wind Finance">
+				<div class="auth-showcase-top">
+					<div class="auth-brand"><span class="brand-mark"><i data-lucide="wind"></i></span><strong>wind finance</strong></div>
+					<span class="auth-live"><i></i> РЫНОК ОТКРЫТ</span>
+				</div>
+				<div class="auth-showcase-copy">
+					<p class="eyebrow">Личный финансовый ветер</p>
+					<h1>Портфель, который<br><em>движется с тобой.</em></h1>
+					<p>Курсы, активы и история операций — в одном спокойном пространстве.</p>
+				</div>
+				<div class="auth-mini-portfolio">
+					<div class="auth-mini-head"><span>Общая стоимость</span><i data-lucide="more-horizontal"></i></div>
+					<strong>146 720 ₽</strong>
+					<span class="auth-mini-gain"><i data-lucide="trending-up"></i> +14,4% за период</span>
+					<div class="auth-sparkline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+					<div class="auth-mini-assets"><span><i class="teal"></i> Валюты</span><b>42%</b><span><i class="orange"></i> ETF</span><b>58%</b></div>
+				</div>
+				<button class="auth-market-chip" type="button" data-auth-tip="Подсказка: после входа ты увидишь реальные данные аккаунта, а не эту демонстрационную карточку."><span class="auth-chip-pulse"></span><span>Рынок открыт</span><strong>USD/RUB 92,48</strong><i data-lucide="arrow-up-right"></i></button>
+				<div class="auth-showcase-foot"><span><i data-lucide="shield-check"></i> Данные под контролем</span><span><i data-lucide="arrow-up-right"></i> Решения яснее</span></div>
+			</section>
+			<section class="auth-form-panel">
+				<div class="auth-form-intro">
+					<span class="auth-mobile-mark"><i data-lucide="wind"></i></span>
+					<p class="eyebrow">Добро пожаловать</p>
+					<h2 id="auth-title">Войти в аккаунт</h2>
+					<p class="auth-copy">Сохраняй портфель, избранные валюты и историю операций.</p>
+				</div>
+				<div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Войти</button><button type="button" data-auth-mode="register">Регистрация</button></div>
+				<form id="auth-form">
+					<label class="register-only" hidden>Имя пользователя<input id="auth-username" type="text" minlength="2" maxlength="50" autocomplete="username" placeholder="Как к тебе обращаться"></label>
+					<label>Email<input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+					<label>Пароль<input id="auth-password" type="password" required minlength="8" autocomplete="current-password" placeholder="Минимум 8 символов"></label>
+					<div class="password-meter" id="password-meter" hidden><div class="password-meter-top"><span>Надёжность пароля</span><b id="password-meter-label">Добавь символы</b></div><div class="password-meter-track"><i id="password-meter-bar"></i></div></div>
+					<label class="totp-only" hidden>Код из приложения-аутентификатора<input id="auth-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
+					<label class="auth-consent" hidden><input id="auth-consent" type="checkbox"><span>Я принимаю <button type="button" class="legal-link" data-legal="terms">условия</button> и <button type="button" class="legal-link" data-legal="privacy">политику конфиденциальности</button> и понимаю, что инвестиционный раздел — симулятор.</span></label>
+					<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span><i data-lucide="arrow-right"></i></button>
+				</form>
+				<button class="button secondary-button demo-login-button" id="demo-login-button" type="button">Войти как demo</button>
+				<p class="auth-error" id="auth-error" role="alert"></p>
+				<p class="auth-security"><i data-lucide="lock-keyhole"></i> Защищённый вход · Wind Finance</p>
+				<div class="auth-helper" id="auth-helper"><span class="auth-helper-avatar"><i data-lucide="sparkles"></i></span><p><strong>Wind подсказывает</strong><span id="auth-helper-text">Войди, чтобы продолжить спокойный обзор портфеля.</span></p><button type="button" id="auth-helper-close" aria-label="Скрыть подсказку">×</button></div>
+			</section>
 		</div>
 	</div>
 	<div class="wind-burst" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
@@ -609,19 +623,19 @@
 	<div class="modal" id="checkout-modal" hidden>
 		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Оплата</p>
+			<p class="eyebrow">Bybit Spot</p>
 			<h2 id="checkout-title">Подтверждение оплаты</h2>
 			<p class="modal-copy">Покупка будет выполнена безопасно внутри мини-приложения.</p>
 			<div class="crypto-order-fields">
 				<label>Количество<input id="crypto-buy-quantity" type="number" min="0.00000001" step="0.00000001" value="0.01" inputmode="decimal"></label>
-				<label>Цена за монету<input id="crypto-buy-price" type="number" min="0" step="0.01" inputmode="decimal"></label>
+				<label>Цена за монету<input id="crypto-buy-price" type="number" min="0" step="0.01" inputmode="decimal" readonly></label>
 			</div>
 			<div class="checkout-summary">
 				<div class="checkout-row"><span>Актив</span><strong id="checkout-asset">BTC / USDT</strong></div>
 				<div class="checkout-row"><span>Количество</span><strong id="checkout-quantity">0,01</strong></div>
 				<div class="checkout-row"><span>Цена</span><strong id="checkout-price">0 USDT</strong></div>
 				<div class="checkout-row"><span>Сумма</span><strong id="checkout-amount">0 ₽</strong></div>
-				<div class="checkout-row"><span>Метод</span><strong id="checkout-method">Карта</strong></div>
+				<div class="checkout-row"><span>Исполнение</span><strong id="checkout-method">Bybit Spot</strong></div>
 			</div>
 			<button id="confirm-payment" class="button modal-submit" type="button" data-success="Покупка подтверждена, средства зарезервированы">Подтвердить оплату <span>→</span></button>
 		</div>
@@ -642,7 +656,7 @@
 				<li><span><i data-lucide="bell-ring"></i></span><div><strong>До 30 ценовых уведомлений</strong><small>В бесплатном тарифе их три</small></div></li>
 			</ul>
 			<div class="plus-compare" role="table">
-				<div class="plus-compare-row head"><span>Возможности</span><span>Free</span><span>Plus</span></div>
+				<div class="plus-compare-row head"><span>Возможности</span><span>Базовый</span><span>Plus</span></div>
 				<div class="plus-compare-row"><span>Курсы, графики, конвертер, обучение</span><span>✓</span><span>✓</span></div>
 				<div class="plus-compare-row"><span>Ценовые уведомления</span><span>3</span><span>30</span></div>
 				<div class="plus-compare-row"><span>Анализ рынка</span><span>—</span><span>✓</span></div>
@@ -656,7 +670,7 @@
 			<button class="button modal-submit" id="plus-subscribe" type="button">Оформить Plus →</button>
 			<p class="plus-status" id="plus-status"></p>
 			<button class="plus-link" id="plus-cancel" type="button" hidden>Отключить подписку</button>
-			<p class="article-note">Демо-режим: стоимость списывается с баланса приложения, платёж не настоящий. При отключении подписки деньги не возвращаются. Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
+			<p class="article-note">Стоимость списывается с подтверждённого баланса приложения. При отключении подписки деньги не возвращаются. Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
 		</div>
 	</div>
 	<div class="modal" id="add-asset-modal" hidden>
@@ -816,7 +830,7 @@
 						<small class="pay-err"></small>
 					</label>
 				</div>
-				<p class="pay-demo-note"><span class="crypto-demo-tag">ДЕМО</span><span>Данные карты никуда не отправляются. Не вводи настоящие. Для проверки: 4242 4242 4242 4242, любой будущий срок, любой CVC.</span></p>
+				<p class="pay-demo-note"><span>После продолжения откроется защищённая форма платёжного провайдера. Данные карты не вводятся на сайте Wind Finance.</span></p>
 				<p class="pay-form-error" id="pay-card-error" role="alert"></p>
 				<button class="button modal-submit pay-submit" id="pay-submit" type="submit"><span class="pay-spin" id="pay-spin" hidden></span><span id="pay-submit-label">Оплатить 5 000 ₽</span></button>
 			</form>
@@ -837,7 +851,7 @@
 					</div>
 				</div>
 				<div class="pay-wait"><span class="pay-dots"><i></i><i></i><i></i></span><span>Ждём оплату</span><b id="pay-sbp-timer">10:00</b></div>
-				<p class="pay-demo-note" id="pay-sbp-note"><span class="crypto-demo-tag">ДЕМО</span><span>Ссылка и QR демонстрационные, платить по ним нельзя.</span></p>
+				<p class="pay-demo-note" id="pay-sbp-note"><span>QR и ссылка создаются платёжным провайдером. Баланс изменится только после подтверждения платежа.</span></p>
 				<button class="button modal-submit" id="pay-sbp-paid" type="button">Я оплатил <span>→</span></button>
 			</div>
 		</div>
@@ -883,6 +897,7 @@
 	<script src="https://unpkg.com/lucide@latest"></script>
 	<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-	<script src="script.js?v=17"></script>
+	<script src="config.js"></script>
+	<script src="script.js?v=28"></script>
 </body>
 </html>
