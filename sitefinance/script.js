@@ -1355,6 +1355,14 @@ const authHelper = document.querySelector('#auth-helper');
 const authHelperText = document.querySelector('#auth-helper-text');
 let authMode = 'login';
 let needTotp = false;
+const DEMO_PREVIEW_KEY = 'wind_demo_preview';
+const demoPreviewUser = {
+	id: 0,
+	username: 'Демо-просмотр',
+	balance: 24500,
+	plus: false,
+	totp_enabled: false,
+};
 
 // единая точка обращения к серверу: токен подставляется сам
 const api = async (path, { method = 'GET', body, timeoutMs = 10000 } = {}) => {
@@ -1460,13 +1468,14 @@ document.querySelector('.auth-showcase')?.addEventListener('pointerleave', (even
 });
 
 demoLoginButton?.addEventListener('click', () => {
-	setAuthMode('login');
-	emailField.value = demoCredentials.email;
-	passwordField.value = demoCredentials.password;
-	authForm.requestSubmit();
+	sessionStorage.setItem(DEMO_PREVIEW_KEY, '1');
+	updateProfile(demoPreviewUser);
+	authGate.hidden = true;
+	authForm.reset();
 });
 
 const showAuth = () => { authGate.hidden = false; setAuthMode('login'); };
+const isDemoPreview = () => sessionStorage.getItem(DEMO_PREVIEW_KEY) === '1';
 
 // вход через Telegram Mini App
 const tg = window.Telegram && window.Telegram.WebApp;
@@ -1484,6 +1493,11 @@ const tgLogin = async () => {
 };
 
 const checkSession = async () => {
+	if (isDemoPreview()) {
+		updateProfile(demoPreviewUser);
+		authGate.hidden = true;
+		return;
+	}
 	if (localStorage.getItem('wind_access_token')) {
 		try {
 			updateProfile(await api('/auth/me', { timeoutMs: 8000 }));
@@ -1549,6 +1563,7 @@ authForm.addEventListener('submit', async (event) => {
 
 document.querySelector('.logout')?.addEventListener('click', (event) => {
 	event.preventDefault();
+	sessionStorage.removeItem(DEMO_PREVIEW_KEY);
 	localStorage.removeItem('wind_access_token');
 	window.dispatchEvent(new Event('wind-logout'));
 	showAuth();
