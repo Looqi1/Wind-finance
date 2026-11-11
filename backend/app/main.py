@@ -1,11 +1,17 @@
 import hashlib
+import base64
+import html
 import hmac
 import json
 import os
 import secrets
 import time
+import uuid
+import re
+import xml.etree.ElementTree as ET
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qsl
@@ -19,8 +25,9 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pwdlib import PasswordHash
+from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, create_engine, desc, func, select, update
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, desc, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -32,25 +39,70 @@ ENV = os.getenv("WINDFINANCE_ENV", "dev")
 SECRET_KEY = os.getenv("WINDFINANCE_SECRET_KEY") or ("dev-only-change-this-secret" if ENV == "dev" else "")
 if not SECRET_KEY:
     raise RuntimeError("Задай переменную окружения WINDFINANCE_SECRET_KEY")
+if ENV == "prod" and len(SECRET_KEY) < 32:
+    raise RuntimeError("WINDFINANCE_SECRET_KEY должен содержать минимум 32 символа")
 TG_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-SIMULATOR = os.getenv("WINDFINANCE_SIMULATOR", "1") == "1"   # виртуальные деньги
+SIMULATOR = os.getenv("WINDFINANCE_SIMULATOR", "0") == "1"
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
+BYBIT_API_BASE_URL = os.getenv("BYBIT_API_BASE_URL", "https://api-testnet.bybit.com").rstrip("/")
+BYBIT_LIVE_TRADING = os.getenv("WINDFINANCE_LIVE_TRADING", "0") == "1"
+BYBIT_ADMIN_USER_IDS = {
+    int(value.strip()) for value in os.getenv("BYBIT_ADMIN_USER_IDS", "").split(",")
+    if value.strip().isdigit()
+}
+BYBIT_ALLOWED_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT"}
+BYBIT_MAX_NOTIONAL_USDT = Decimal(os.getenv("BYBIT_MAX_NOTIONAL_USDT", "100"))
+ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in os.getenv("WINDFINANCE_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+NEWS_RSS_URL = os.getenv(
+    "NEWS_RSS_URL",
+    "https://news.google.com/rss/search?q=%28S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones%20OR%20%D0%A4%D0%A0%D0%A1%20OR%20%D0%B0%D0%BC%D0%B5%D1%80%D0%B8%D0%BA%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B5%20%D0%B0%D0%BA%D1%86%D0%B8%D0%B8%20OR%20%D1%84%D0%BE%D0%BD%D0%B4%D0%BE%D0%B2%D1%8B%D0%B9%20%D1%80%D1%8B%D0%BD%D0%BE%D0%BA%29%20%28%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D0%B7%20OR%20%D0%BE%D0%B1%D0%B7%D0%BE%D1%80%20OR%20%D0%BF%D1%80%D0%BE%D0%B3%D0%BD%D0%BE%D0%B7%29%20-%D1%81%D0%BC%D0%B0%D1%80%D1%82%D1%84%D0%BE%D0%BD%20-%D1%82%D0%B5%D1%85%D0%BD%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D0%B8&hl=ru&gl=RU&ceid=RU:ru",
+)
 TRUST_PROXY = os.getenv("TRUST_PROXY", "0") == "1"           # включи за nginx/Cloudflare
 TOKEN_EXPIRE_DAYS = 7
-START_BALANCE_KOP = 2_450_000
-DAILY_TOPUP_LIMIT_KOP = 10_000_000
+START_BALANCE_KOP = 2_450_000 if SIMULATOR else 0
 PLANS = {"month": (19_900, 30), "year": (179_000, 365)}      # цена в копейках, дней
 BONUS_RUB = [5000, 3000, 2000] + [1000] * 7                  # бонус за места 1..10
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
+if ENV == "prod" and DATABASE_URL.startswith("sqlite"):
+    raise RuntimeError("В production нужен PostgreSQL, SQLite запрещён")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 password_hash = PasswordHash.recommended()
 DUMMY_HASH = password_hash.hash("dummy-password-for-timing")
 bearer_scheme = HTTPBearer(auto_error=False)
+_totp_cipher = Fernet(base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest()))
 
 
 def now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def protect_totp_secret(secret: str) -> str:
+    return "enc:" + _totp_cipher.encrypt(secret.encode()).decode()
+
+
+def reveal_totp_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    if not value.startswith("enc:"):
+        return value
+    try:
+        return _totp_cipher.decrypt(value[4:].encode()).decode()
+    except InvalidToken:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Не удалось открыть ключ 2FA")
+
+
+def ensure_protected_totp_secret(user: User, db: Session) -> str | None:
+    secret = reveal_totp_secret(user.totp_secret)
+    if secret and user.totp_secret and not user.totp_secret.startswith("enc:"):
+        user.totp_secret = protect_totp_secret(secret)
+        db.flush()
+    return secret
 
 
 def iso(dt: datetime | None) -> str | None:
@@ -77,7 +129,7 @@ class User(Base):
     balance_kop: Mapped[int] = mapped_column(Integer, default=START_BALANCE_KOP)
     plus_plan: Mapped[str | None] = mapped_column(String(10), nullable=True)
     plus_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)  # в проде шифруй
+    totp_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
     tg_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
 
@@ -90,6 +142,54 @@ class Transaction(Base):
     title: Mapped[str] = mapped_column(String(80))
     amount_kop: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, index=True)
+
+
+class AssetBalance(Base):
+    __tablename__ = "asset_balances"
+    __table_args__ = (UniqueConstraint("user_id", "asset", name="uq_asset_balance_user_asset"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    asset: Mapped[str] = mapped_column(String(12))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 12), default=Decimal("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, onupdate=now_naive)
+
+
+class RateSnapshot(Base):
+    __tablename__ = "rate_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset: Mapped[str] = mapped_column(String(12), index=True)
+    rub_rate: Mapped[Decimal] = mapped_column(Numeric(28, 12))
+    source: Mapped[str] = mapped_column(String(80))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, index=True)
+
+
+class TradeOrder(Base):
+    __tablename__ = "trade_orders"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(20), default="bybit")
+    provider_order_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    client_order_id: Mapped[str] = mapped_column(String(36), unique=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    side: Mapped[str] = mapped_column(String(4))
+    order_type: Mapped[str] = mapped_column(String(10), default="Market")
+    qty: Mapped[Decimal] = mapped_column(Numeric(28, 12))
+    status: Mapped[str] = mapped_column(String(20), default="created", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, onupdate=now_naive)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_kop: Mapped[int] = mapped_column(Integer)
+    method: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class GameScore(Base):
@@ -112,7 +212,8 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
 
 
-Base.metadata.create_all(bind=engine)
+if ENV in {"dev", "test"} and os.getenv("ALEMBIC_RUNNING") != "1":
+    Base.metadata.create_all(bind=engine)
 
 
 # ---------------- вспомогательное ----------------
@@ -230,6 +331,85 @@ def wallet_out(db: Session, user_id: int) -> dict:
     }
 
 
+ASSET_RATES_RUB = {
+    "RUB": Decimal("1"),
+    "USD": Decimal("92.48"),
+    "EUR": Decimal("100.21"),
+    "CNY": Decimal("12.86"),
+    "GBP": Decimal("109.40"),
+    "AED": Decimal("25.20"),
+}
+
+
+def normalize_asset(asset: str) -> str:
+    return asset.strip().upper()
+
+
+def ensure_asset(db: Session, user_id: int, asset: str, initial: Decimal = Decimal("0")) -> AssetBalance:
+    row = db.scalar(select(AssetBalance).where(AssetBalance.user_id == user_id, AssetBalance.asset == asset))
+    if row is None:
+        row = AssetBalance(user_id=user_id, asset=asset, quantity=initial)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def seed_user_assets(db: Session, user: User) -> None:
+    ensure_asset(db, user.id, "RUB", Decimal(user.balance_kop) / 100)
+    for asset in ASSET_RATES_RUB:
+        if asset != "RUB":
+            ensure_asset(db, user.id, asset)
+
+
+def assets_out(db: Session, user_id: int) -> dict:
+    user_balance = db.scalar(select(User.balance_kop).where(User.id == user_id)) or 0
+    rub = ensure_asset(db, user_id, "RUB", Decimal(user_balance) / 100)
+    if rub.quantity != Decimal(user_balance) / 100:
+        rub.quantity = Decimal(user_balance) / 100
+    rows = db.scalars(select(AssetBalance).where(AssetBalance.user_id == user_id).order_by(AssetBalance.asset)).all()
+    db.commit()
+    return {"assets": {row.asset: str(row.quantity) for row in rows}}
+
+
+def exchange_assets(db: Session, user_id: int, request: ExchangeRequest) -> dict:
+    source = normalize_asset(request.from_asset)
+    target = normalize_asset(request.to_asset)
+    if source == target:
+        raise HTTPException(400, "Активы должны отличаться")
+    rates = dict(ASSET_RATES_RUB)
+    for asset in (source, target):
+        snapshot = db.scalar(select(RateSnapshot).where(RateSnapshot.asset == asset).order_by(desc(RateSnapshot.fetched_at)))
+        if snapshot:
+            rates[asset] = Decimal(snapshot.rub_rate)
+    if source not in rates or target not in rates:
+        raise HTTPException(400, "Этот актив пока не поддерживается")
+    amount = request.amount
+    source_row = ensure_asset(db, user_id, source)
+    target_row = ensure_asset(db, user_id, target)
+    if source == "RUB":
+        user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+        available = Decimal(user.balance_kop) / 100
+    else:
+        available = Decimal(source_row.quantity or 0)
+    if available < amount:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Недостаточно средств")
+    result = (amount * rates[source] / rates[target]).quantize(Decimal("0.00000001"))
+    if source == "RUB":
+        charge(db, user_id, int(amount * 100), f"Обмен RUB → {target}")
+        source_row.quantity = available - amount
+    else:
+        source_row.quantity = Decimal(source_row.quantity) - amount
+    if target == "RUB":
+        credit(db, user_id, int(result * 100), f"Обмен {source} → RUB")
+        target_row.quantity = result
+    else:
+        target_row.quantity = Decimal(target_row.quantity) + result
+    if source != "RUB":
+        db.add(Transaction(user_id=user_id, kind="out", title=f"Обмен {source} → {target}", amount_kop=int(amount * rates[source] * 100)))
+    db.commit()
+    return assets_out(db, user_id)
+
+
 # ---------------- схемы ----------------
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=2, max_length=50)
@@ -265,6 +445,28 @@ class MoneyRequest(BaseModel):
     title: str = Field(default="", max_length=80)
 
 
+class ExchangeRequest(BaseModel):
+    from_asset: str = Field(min_length=3, max_length=12, pattern=r"^[A-Z0-9]+$")
+    to_asset: str = Field(min_length=3, max_length=12, pattern=r"^[A-Z0-9]+$")
+    amount: Decimal = Field(gt=Decimal("0"), max_digits=28, decimal_places=12)
+
+
+class PaymentRequest(BaseModel):
+    amount: float = Field(gt=0, le=10_000_000)
+    method: Literal["card", "sbp"]
+
+
+class PaymentWebhook(BaseModel):
+    event: str
+    object: dict
+
+
+class TradeOrderRequest(BaseModel):
+    symbol: Literal["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    side: Literal["Buy", "Sell"]
+    qty: Decimal = Field(gt=Decimal("0"), max_digits=28, decimal_places=12)
+
+
 class PlanRequest(BaseModel):
     plan: Literal["month", "year"]
 
@@ -283,11 +485,13 @@ class FeedbackRequest(BaseModel):
 # ---------------- приложение ----------------
 app = FastAPI(title="Wind Finance API", version="0.2.0")
 
-if ENV == "dev":  # в проде фронтенд отдаётся с того же адреса, CORS не нужен
+if ENV == "dev" or ALLOWED_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$",
-        allow_methods=["*"], allow_headers=["*"],
+        allow_origins=ALLOWED_ORIGINS if ENV != "dev" else [],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?$" if ENV == "dev" else None,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
 
@@ -296,6 +500,10 @@ async def security_headers(request: Request, call_next):
     resp = await call_next(request)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if ENV == "prod":
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
@@ -323,6 +531,8 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "Email или имя пользователя уже заняты")
     db.refresh(user)
+    seed_user_assets(db, user)
+    db.commit()
     return token_out(user)
 
 
@@ -338,7 +548,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     if user.totp_enabled:
         if not payload.totp_code:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "2fa_required")
-        if not pyotp.TOTP(user.totp_secret).verify(payload.totp_code.strip(), valid_window=1):
+        secret = reveal_totp_secret(user.totp_secret)
+        if not secret or not pyotp.TOTP(secret).verify(payload.totp_code.strip(), valid_window=1):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный код 2FA")
     return token_out(user)
 
@@ -380,6 +591,8 @@ def auth_telegram(payload: TelegramRequest, request: Request, db: Session = Depe
         db.add(user)
         db.commit()
         db.refresh(user)
+        seed_user_assets(db, user)
+        db.commit()
     return token_out(user)
 
 
@@ -392,18 +605,20 @@ def me(user: User = Depends(get_current_user)):
 def twofa_setup(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user.totp_enabled:
         raise HTTPException(409, "2FA уже включена")
-    user.totp_secret = pyotp.random_base32()
+    secret = pyotp.random_base32()
+    user.totp_secret = protect_totp_secret(secret)
     db.commit()
-    uri = pyotp.TOTP(user.totp_secret).provisioning_uri(name=user.email, issuer_name="Wind Finance")
-    return {"secret": user.totp_secret, "uri": uri}
+    uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="Wind Finance")
+    return {"secret": secret, "uri": uri}
 
 
 @app.post("/auth/2fa/enable")
 def twofa_enable(payload: CodeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     limiter.check(f"2fa:{user.id}", 10, 300)
-    if not user.totp_secret:
+    secret = ensure_protected_totp_secret(user, db)
+    if not secret:
         raise HTTPException(400, "Сначала запроси ключ")
-    if not pyotp.TOTP(user.totp_secret).verify(payload.code.strip(), valid_window=1):
+    if not pyotp.TOTP(secret).verify(payload.code.strip(), valid_window=1):
         raise HTTPException(400, "Неверный код")
     user.totp_enabled = True
     db.commit()
@@ -413,7 +628,8 @@ def twofa_enable(payload: CodeRequest, user: User = Depends(get_current_user), d
 @app.post("/auth/2fa/disable")
 def twofa_disable(payload: CodeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     limiter.check(f"2fa:{user.id}", 10, 300)
-    if not user.totp_enabled or not pyotp.TOTP(user.totp_secret).verify(payload.code.strip(), valid_window=1):
+    secret = ensure_protected_totp_secret(user, db)
+    if not user.totp_enabled or not secret or not pyotp.TOTP(secret).verify(payload.code.strip(), valid_window=1):
         raise HTTPException(400, "Неверный код")
     user.totp_enabled = False
     user.totp_secret = None
@@ -427,21 +643,289 @@ def wallet(user: User = Depends(get_current_user), db: Session = Depends(get_db)
     return wallet_out(db, user.id)
 
 
-@app.post("/wallet/demo-topup")
-def demo_topup(payload: MoneyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Демо-пополнение виртуального баланса. Работает только в режиме симулятора."""
-    if not SIMULATOR:
-        raise HTTPException(403, "Демо-пополнение отключено")
-    kop = to_kop(payload.amount)
-    day_start = now_naive().replace(hour=0, minute=0, second=0, microsecond=0)
-    today = db.scalar(select(func.coalesce(func.sum(Transaction.amount_kop), 0)).where(
-        Transaction.user_id == user.id, Transaction.kind == "in",
-        Transaction.title.like("Пополнение (демо)%"), Transaction.created_at >= day_start)) or 0
-    if today + kop > DAILY_TOPUP_LIMIT_KOP:
-        raise HTTPException(429, "Дневной лимит демо-пополнения исчерпан")
-    credit(db, user.id, kop, f"Пополнение (демо): {payload.title}"[:80])
+@app.get("/wallet/assets")
+def wallet_assets(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return assets_out(db, user.id)
+
+
+@app.post("/wallet/exchange")
+def wallet_exchange(payload: ExchangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return exchange_assets(db, user.id, payload)
+
+
+def require_yookassa() -> None:
+    if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY or not PUBLIC_BASE_URL:
+        raise HTTPException(503, "Платежи пока не настроены")
+
+
+def require_bybit_admin(user: User) -> None:
+    if user.id not in BYBIT_ADMIN_USER_IDS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Торговый контур доступен только администратору")
+    if not BYBIT_LIVE_TRADING:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Реальная торговля отключена")
+    if not BYBIT_API_KEY or not BYBIT_API_SECRET:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "API Bybit не настроен")
+
+
+async def bybit_request(method: str, path: str, body: dict | None = None, query: str = "") -> dict:
+    timestamp = str(int(time.time() * 1000))
+    recv_window = "5000"
+    payload = json.dumps(body or {}, separators=(",", ":"), ensure_ascii=False) if method == "POST" else query
+    signature = hmac.new(
+        BYBIT_API_SECRET.encode(),
+        f"{timestamp}{BYBIT_API_KEY}{recv_window}{payload}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    headers = {
+        "X-BAPI-API-KEY": BYBIT_API_KEY,
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window,
+        "X-BAPI-SIGN": signature,
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.request(
+                method,
+                f"{BYBIT_API_BASE_URL}{path}",
+                headers=headers,
+                content=payload.encode() if method == "POST" else None,
+                params=query if method != "POST" else None,
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Bybit не ответил вовремя")
+    except httpx.RequestError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Bybit недоступен")
+    if response.status_code >= 400:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Bybit недоступен")
+    try:
+        data = response.json()
+    except ValueError:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Bybit вернул некорректный ответ")
+    if data.get("retCode") != 0:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Bybit: {data.get('retMsg', 'ошибка запроса')}")
+    return data
+
+
+def trade_order_out(order: TradeOrder) -> dict:
+    return {
+        "id": order.id,
+        "symbol": order.symbol,
+        "side": order.side,
+        "qty": str(order.qty),
+        "status": order.status,
+        "provider_order_id": order.provider_order_id,
+        "client_order_id": order.client_order_id,
+        "error": order.error,
+        "created_at": iso(order.created_at),
+        "updated_at": iso(order.updated_at),
+    }
+
+
+@app.get("/trading/status")
+def trading_status(user: User = Depends(get_current_user)):
+    if user.id not in BYBIT_ADMIN_USER_IDS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Торговый контур доступен только администратору")
+    return {
+        "provider": "bybit",
+        "market": "spot",
+        "enabled": BYBIT_LIVE_TRADING and bool(BYBIT_API_KEY and BYBIT_API_SECRET),
+        "testnet": "testnet" in BYBIT_API_BASE_URL,
+        "allowed_symbols": sorted(BYBIT_ALLOWED_SYMBOLS),
+        "max_notional_usdt": str(BYBIT_MAX_NOTIONAL_USDT),
+    }
+
+
+@app.post("/trading/orders")
+async def create_trade_order(
+    payload: TradeOrderRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_bybit_admin(user)
+    if payload.symbol not in BYBIT_ALLOWED_SYMBOLS:
+        raise HTTPException(400, "Торговая пара запрещена")
+    ticker = await bybit_request(
+        "GET", "/v5/market/tickers", query=f"category=spot&symbol={payload.symbol}"
+    )
+    ticker_row = (ticker.get("result", {}).get("list") or [{}])[0]
+    last_price = Decimal(str(ticker_row.get("lastPrice", "0")))
+    notional = payload.qty * last_price
+    if last_price <= 0 or notional > BYBIT_MAX_NOTIONAL_USDT:
+        raise HTTPException(400, "Ордер превышает разрешённый лимит")
+    client_order_id = str(uuid.uuid4())
+    order = TradeOrder(
+        user_id=user.id, client_order_id=client_order_id,
+        symbol=payload.symbol, side=payload.side, qty=payload.qty, status="submitting",
+    )
+    db.add(order)
+    db.flush()
+    try:
+        result = await bybit_request("POST", "/v5/order/create", body={
+            "category": "spot",
+            "symbol": payload.symbol,
+            "side": payload.side,
+            "orderType": "Market",
+            "qty": str(payload.qty),
+            "timeInForce": "IOC",
+            "orderLinkId": client_order_id,
+            "isLeverage": 0,
+            "orderFilter": "Order",
+        })
+        result_data = result.get("result", {})
+        order.provider_order_id = result_data.get("orderId")
+        order.status = "submitted"
+        db.commit()
+        return {
+            "id": order.id, "client_order_id": client_order_id,
+            "provider_order_id": order.provider_order_id, "status": order.status,
+        }
+    except HTTPException as error:
+        order.status = "rejected"
+        order.error = str(error.detail)[:500]
+        db.commit()
+        raise
+
+
+@app.get("/trading/orders")
+def list_trade_orders(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_bybit_admin(user)
+    rows = db.scalars(select(TradeOrder).where(TradeOrder.user_id == user.id).order_by(desc(TradeOrder.id)).limit(50)).all()
+    return {"orders": [trade_order_out(row) for row in rows]}
+
+
+@app.get("/trading/orders/{order_id}")
+async def get_trade_order(order_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_bybit_admin(user)
+    order = db.scalar(select(TradeOrder).where(TradeOrder.id == order_id, TradeOrder.user_id == user.id))
+    if order is None:
+        raise HTTPException(404, "Ордер не найден")
+    if order.provider_order_id:
+        result = await bybit_request(
+            "GET", "/v5/order/realtime",
+            query=f"category=spot&symbol={order.symbol}&orderId={order.provider_order_id}",
+        )
+        remote = (result.get("result", {}).get("list") or [{}])[0]
+        if remote.get("orderStatus"):
+            order.status = str(remote["orderStatus"]).lower()
+            db.commit()
+    return trade_order_out(order)
+
+
+@app.delete("/trading/orders/{order_id}")
+async def cancel_trade_order(order_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_bybit_admin(user)
+    order = db.scalar(select(TradeOrder).where(TradeOrder.id == order_id, TradeOrder.user_id == user.id))
+    if order is None:
+        raise HTTPException(404, "Ордер не найден")
+    if not order.provider_order_id:
+        raise HTTPException(409, "У ордера нет идентификатора Bybit")
+    await bybit_request("POST", "/v5/order/cancel", body={
+        "category": "spot", "symbol": order.symbol, "orderId": order.provider_order_id,
+    })
+    order.status = "cancel_requested"
     db.commit()
-    return wallet_out(db, user.id)
+    return trade_order_out(order)
+
+
+@app.post("/trading/reconcile")
+async def reconcile_trading_account(user: User = Depends(get_current_user)):
+    require_bybit_admin(user)
+    result = await bybit_request(
+        "GET", "/v5/account/wallet-balance", query="accountType=UNIFIED&coin=USDT,BTC,ETH,SOL",
+    )
+    account = (result.get("result", {}).get("list") or [{}])[0]
+    coins = account.get("coin") or []
+    return {
+        "provider": "bybit",
+        "account_type": "UNIFIED",
+        "balances": {
+            coin.get("coin"): {
+                "wallet_balance": coin.get("walletBalance"),
+                "available_to_withdraw": coin.get("availableToWithdraw"),
+                "equity": coin.get("equity"),
+            }
+            for coin in coins if coin.get("coin")
+        },
+        "checked_at": iso(now_naive()),
+    }
+
+
+@app.post("/payments/create")
+async def create_payment(payload: PaymentRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_yookassa()
+    kop = to_kop(payload.amount)
+    payment_key = str(uuid.uuid4())
+    return_url = f"{PUBLIC_BASE_URL}/?payment=return"
+    confirmation = {"type": "redirect", "return_url": return_url}
+    request_body = {
+        "amount": {"value": f"{kop / 100:.2f}", "currency": "RUB"},
+        "capture": True,
+        "confirmation": confirmation,
+        "description": f"Пополнение Wind Finance · пользователь {user.id}",
+        "metadata": {"user_id": str(user.id), "payment_key": payment_key},
+    }
+    request_body["payment_method_data"] = {
+        "type": "sbp" if payload.method == "sbp" else "bank_card"
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(
+            "https://api.yookassa.ru/v3/payments",
+            auth=(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY),
+            headers={"Idempotence-Key": payment_key},
+            json=request_body,
+        )
+    if response.status_code >= 400:
+        raise HTTPException(502, "Платёжный сервис не создал счёт")
+    payment = response.json()
+    confirmation_url = payment.get("confirmation", {}).get("confirmation_url")
+    provider_id = payment.get("id")
+    if not provider_id or not confirmation_url:
+        raise HTTPException(502, "Платёжный сервис вернул неполный ответ")
+    db.add(Payment(provider_id=provider_id, user_id=user.id, amount_kop=kop, method=payload.method))
+    db.commit()
+    return {"payment_id": provider_id, "status": payment.get("status"), "confirmation_url": confirmation_url}
+
+
+@app.get("/payments/{provider_id}")
+def payment_status(provider_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    payment = db.scalar(select(Payment).where(Payment.provider_id == provider_id, Payment.user_id == user.id))
+    if payment is None:
+        raise HTTPException(404, "Платёж не найден")
+    return {"payment_id": payment.provider_id, "status": payment.status, "balance": wallet_out(db, user.id)["balance"]}
+
+
+@app.post("/payments/yookassa/webhook")
+async def yookassa_webhook(payload: PaymentWebhook, db: Session = Depends(get_db)):
+    if payload.event != "payment.succeeded":
+        return {"ok": True}
+    provider_id = payload.object.get("id")
+    if not provider_id:
+        raise HTTPException(400, "Нет идентификатора платежа")
+    require_yookassa()
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"https://api.yookassa.ru/v3/payments/{provider_id}",
+            auth=(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY),
+        )
+    if response.status_code >= 400:
+        raise HTTPException(502, "Не удалось проверить платёж")
+    verified = response.json()
+    if verified.get("status") != "succeeded" or not verified.get("paid"):
+        raise HTTPException(400, "Платёж не подтверждён")
+    payment = db.scalar(select(Payment).where(Payment.provider_id == provider_id).with_for_update())
+    if payment is None:
+        raise HTTPException(404, "Платёж не найден")
+    amount = verified.get("amount", {})
+    if amount.get("currency") != "RUB" or int(round(float(amount.get("value", 0)) * 100)) != payment.amount_kop:
+        raise HTTPException(400, "Сумма платежа не совпадает")
+    if payment.status == "succeeded":
+        return {"ok": True, "duplicate": True}
+    payment.status = "succeeded"
+    payment.paid_at = now_naive()
+    credit(db, payment.user_id, payment.amount_kop, f"Пополнение {payment.method}")
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/wallet/spend")
@@ -562,6 +1046,14 @@ async def fetch_rates() -> dict:
         v = j["Valute"].get(code)
         if v:
             out[code] = {"value": v["Value"] / v["Nominal"], "prev": v["Previous"] / v["Nominal"]}
+    if out:
+        db = SessionLocal()
+        try:
+            for asset, quote in out.items():
+                db.add(RateSnapshot(asset=asset, rub_rate=Decimal(str(quote["value"])), source="cbr-xml-daily.ru"))
+            db.commit()
+        finally:
+            db.close()
     return {"rates": out, "date": j.get("Date")}
 
 
@@ -584,6 +1076,59 @@ async def fetch_stocks() -> dict:
             "IMOEX": {"price": i.get("CURRENTVALUE"), "pct": i.get("LASTCHANGEPRCNT")}}
 
 
+def clean_news_text(value: str, limit: int) -> str:
+    value = html.unescape(re.sub(r"<[^>]+>", " ", value or ""))
+    value = re.sub(r"&(?:amp;)?nbsp;?", " ", value, flags=re.IGNORECASE)
+    value = value.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", value).strip()[:limit]
+
+
+async def fetch_news() -> dict:
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        response = await client.get(NEWS_RSS_URL, headers={"User-Agent": "WindFinance/1.0"})
+        response.raise_for_status()
+    root = ET.fromstring(response.content)
+    items = root.findall("./channel/item")[:12]
+    news = []
+    for index, item in enumerate(items):
+        title = clean_news_text(item.findtext("title", ""), 180)
+        summary = clean_news_text(item.findtext("description", ""), 360)
+        link = (item.findtext("link") or "").strip()
+        published = (item.findtext("pubDate") or "").strip()
+        if not title or not link or not re.search(r"[А-Яа-яЁё]", title):
+            continue
+        lowered = f"{title} {summary}".lower()
+        relevance = (
+            "рынок", "инвести", "акци", "облигац", "валют", "форекс", "курс",
+            "рубл", "доллар", "евро", "битко", "крипт", "эфир", "бирж",
+            "индекс", "ставк", "инфляц", "центральн", "экономик", "ввп",
+            "нефть", "золот", "сырь", "stock", "equity", "market", "invest",
+            "currency", "bitcoin", "crypto", "forex", "inflation", "rate",
+        )
+        if not any(word in lowered for word in relevance):
+            continue
+        tag = "Рынок"
+        if any(word in lowered for word in ("s&p", "nasdaq", "dow jones", "фрс", "американск", "америк")):
+            tag = "США"
+        elif any(word in lowered for word in ("акци", "облигац", "индекс", "stock", "equity")):
+            tag = "Акции"
+        elif any(word in lowered for word in ("битко", "крипт", "эфир", "bitcoin", "ethereum", "crypto")):
+            tag = "Крипто"
+        elif any(word in lowered for word in ("инфляц", "ставк", "центральн", "ввп", "экономик", "inflation", "rate", "central bank")):
+            tag = "Экономика"
+        news.append({
+            "id": f"news-{index}",
+            "tag": tag,
+            "title": title,
+            "summary": summary or "Свежий анализ мировых финансовых рынков.",
+            "published": published,
+            "url": link,
+        })
+    if not news:
+        raise ValueError("RSS не содержит новостей")
+    return {"updated_at": now_naive().isoformat() + "Z", "items": news}
+
+
 @app.get("/market/rates")
 async def market_rates():
     return await cached("rates", 600, fetch_rates)
@@ -594,8 +1139,13 @@ async def market_stocks():
     return await cached("stocks", 30, fetch_stocks)
 
 
+@app.get("/market/news")
+async def market_news():
+    return await cached("news-us-market", 86_400, fetch_news)
+
+
 # ---------------- демо-пользователь и фронтенд ----------------
-if ENV == "dev":
+if ENV == "dev" and os.getenv("ALEMBIC_RUNNING") != "1":
     with SessionLocal() as _db:
         if _db.scalar(select(User.id).where(User.email == "demo@example.com")) is None:
             _db.add(User(username="demo", email="demo@example.com", password_hash=password_hash.hash("demo123456"),
@@ -605,7 +1155,7 @@ if ENV == "dev":
 
 @app.get("/")
 def index():
-    return FileResponse(FRONT_DIR / "site.html")
+    return FileResponse(FRONT_DIR / "index.html")
 
 
 if FRONT_DIR.is_dir():

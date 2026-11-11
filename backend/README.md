@@ -1,24 +1,126 @@
 # Wind Finance API
 
-FastAPI backend for registration, login, and the current user profile.
+FastAPI backend for authentication, server-side asset balances, exchange operations, and verified payments.
 
 ## Run
 
 ```bash
 cd backend
 python3 -m pip install -r requirements.txt
+WINDFINANCE_SECRET_KEY="$(openssl rand -hex 32)" \
+WINDFINANCE_ENV=dev \
 uvicorn app.main:app --reload --host 0.0.0.0 --port 5500
 ```
 
-Interactive API docs: `http://localhost:5500/docs`
+Interactive API docs: `http://localhost:5500/docs`.
 
-The SQLite database is created automatically at `backend/windfinance.db`.
+## Free Render demo
+
+The repository includes [`render.yaml`](../render.yaml) for a public demo with a
+static frontend, FastAPI backend, and PostgreSQL database. In Render, create a
+Blueprint from the repository and review the generated service URLs before
+deploying. The blueprint deliberately keeps Bybit and YooKassa disabled; add
+their credentials only as encrypted Render environment variables after the demo
+is working.
+
+The demo uses `WINDFINANCE_SIMULATOR=1` so new accounts receive sample funds.
+Do not use this configuration for real payments, custody, or trading.
+
+For production, use PostgreSQL and an explicit origin allowlist:
+
+```bash
+DATABASE_URL='postgresql+psycopg://user:password@db/windfinance' \
+WINDFINANCE_ENV=prod \
+WINDFINANCE_ALLOWED_ORIGINS='https://app.example.com' \
+WINDFINANCE_SECRET_KEY="$(openssl rand -hex 32)" \
+uvicorn app.main:app --host 0.0.0.0 --port 5500
+```
+
+Apply schema changes before starting the application:
+
+```bash
+DATABASE_URL='postgresql+psycopg://user:password@db/windfinance' alembic upgrade head
+```
+
+## Payments
+
+Real top-ups use YooKassa. The server credits the balance only after receiving
+the provider webhook and fetching the payment again for verification. Card
+details never enter this application.
+
+Set `PUBLIC_BASE_URL`, `YOOKASSA_SHOP_ID`, and `YOOKASSA_SECRET_KEY`, then
+configure the YooKassa webhook URL:
+
+```text
+https://your-backend.example/payments/yookassa/webhook
+```
 
 ## Endpoints
 
 - `POST /auth/register` — create an account and receive a JWT
 - `POST /auth/login` — sign in and receive a JWT
-- `GET /auth/me` — get the authenticated user (`Authorization: Bearer <token>`)
+- `GET /auth/me` — get the authenticated user
+- `GET /wallet` — get the server-side balance and history
+- `GET /wallet/assets` — get the authenticated user's asset balances
+- `POST /wallet/exchange` — atomically exchange supported fiat assets
+- `POST /payments/create` — create a card or SBP payment
+- `GET /payments/{payment_id}` — check payment status
+- `POST /payments/yookassa/webhook` — verified YooKassa notification
 - `GET /health` — service health check
+- `POST /trading/orders` — restricted Bybit Spot market order for configured administrators
+- `GET /trading/orders` — restricted local order journal
+- `GET /trading/status` — provider, testnet, limits, and enabled state
+- `GET /trading/orders/{id}` — refresh one order status from Bybit
+- `DELETE /trading/orders/{id}` — request cancellation of an open order
+- `POST /trading/reconcile` — read-only provider balance reconciliation
 
 Set `WINDFINANCE_SECRET_KEY` before deploying outside local development.
+Never use the development SQLite database, demo account, simulator balance,
+or wildcard CORS settings in production. Add database migrations before
+changing existing production schemas, and back up PostgreSQL before every
+deployment.
+TOTP secrets are encrypted at rest using a key derived from
+`WINDFINANCE_SECRET_KEY`; rotating that secret requires a planned token and
+2FA-secret migration.
+
+## Launch checklist
+
+- Configure HTTPS at the reverse proxy and set `WINDFINANCE_ENV=prod`.
+- Set a unique secret of at least 32 random bytes.
+- Set `WINDFINANCE_ALLOWED_ORIGINS` to the exact frontend origin.
+- Run `alembic upgrade head` against a backup of the production database.
+- Configure YooKassa webhook delivery and verify a real payment in staging.
+- Replace the in-process rate limiter with Redis before running multiple workers.
+- Add PostgreSQL backups, restore drills, error monitoring, and alerting.
+- Publish terms, privacy policy, refund rules, and financial risk disclosures
+  reviewed for the target jurisdiction.
+- Do not enable public user crypto trading or investment execution until
+  settlement, reconciliation, custody, and operational controls are implemented.
+- Bybit trading is disabled unless `WINDFINANCE_LIVE_TRADING=1`, credentials,
+  administrator IDs, and a small notional limit are configured. Start with
+  Bybit testnet and API keys without withdrawal permission.
+
+  ### Bybit testnet smoke test
+
+  Create a Bybit testnet API key with trading permission only, set its values in
+  the backend environment, and add the numeric Wind Finance user ID to
+  `BYBIT_ADMIN_USER_IDS`. Never put these values in source control or chat.
+  Keep `BYBIT_API_BASE_URL=https://api-testnet.bybit.com` and
+  `WINDFINANCE_LIVE_TRADING=1` for the first test.
+
+  After applying migrations and starting the backend:
+
+  ```bash
+  TOKEN='Bearer <admin-jwt>'
+  curl -H "Authorization: $TOKEN" http://localhost:5500/trading/status
+  curl -H "Authorization: $TOKEN" -X POST http://localhost:5500/trading/orders \
+    -H 'Content-Type: application/json' \
+    -d '{"symbol":"BTCUSDT","side":"Buy","qty":"0.001"}'
+  curl -H "Authorization: $TOKEN" http://localhost:5500/trading/orders
+  curl -H "Authorization: $TOKEN" -X POST http://localhost:5500/trading/reconcile
+  ```
+
+  Use the returned local order ID with `GET /trading/orders/{id}`. Market orders
+  can fill immediately, so cancellation is only useful for orders that remain
+  open. Do not switch to the mainnet URL or increase the limit until testnet
+  reconciliation and operational review pass.

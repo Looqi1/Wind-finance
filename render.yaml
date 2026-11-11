@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: windfinance-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: WINDFINANCE_ENV
+        value: prod
+      - key: WINDFINANCE_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: windfinance-db
+          property: connectionString
+      - key: WINDFINANCE_ALLOWED_ORIGINS
+        value: https://windfinance-web.onrender.com
+      - key: PUBLIC_BASE_URL
+        value: https://windfinance-api.onrender.com
+      - key: WINDFINANCE_SIMULATOR
+        value: "1"
+      - key: WINDFINANCE_LIVE_TRADING
+        value: "0"
+      - key: BYBIT_API_BASE_URL
+        value: https://api-testnet.bybit.com
+      - key: BYBIT_MAX_NOTIONAL_USDT
+        value: "100"
+
+  - type: web
+    name: windfinance-web
+    runtime: static
+    plan: free
+    buildCommand: printf 'window.WIND_API_URL = "%s";\n' "$BACKEND_URL" > sitefinance/config.js
+    staticPublishPath: sitefinance
+    envVars:
+      - key: BACKEND_URL
+        value: https://windfinance-api.onrender.com
+
+databases:
+  - name: windfinance-db
+    plan: free
