@@ -2,3 +2,4 @@ windfinance.db
 __pycache__/
 *.py[cod]
 .env
+tests/*.db
