@@ -16,15 +16,22 @@ Interactive API docs: `http://localhost:5500/docs`.
 
 ## Free Render demo
 
-The repository includes [`render.yaml`](../render.yaml) for a public demo with a
-static frontend, FastAPI backend, and PostgreSQL database. In Render, create a
-Blueprint from the repository and review the generated service URLs before
-deploying. The blueprint deliberately keeps Bybit and YooKassa disabled; add
+The repository includes [`render.yaml`](../render.yaml) for a public FastAPI
+backend and PostgreSQL database. The frontend is published separately on
+GitHub Pages. In Render, create a Blueprint from the repository and review the
+generated service URL before deploying. The blueprint deliberately keeps Bybit
+and YooKassa disabled; add
 their credentials only as encrypted Render environment variables after the demo
 is working.
 
 The demo uses `WINDFINANCE_SIMULATOR=1` so new accounts receive sample funds.
 Do not use this configuration for real payments, custody, or trading.
+
+After Render deploys the API, create a GitHub repository variable named
+`BACKEND_URL` with the exact HTTPS API URL, for example
+`https://windfinance-api.onrender.com`. The Pages workflow will write that URL
+to `config.js`, allowing registration and server-backed features to work on
+`https://looqi1.github.io/Wind-finance/`.
 
 For production, use PostgreSQL and an explicit origin allowlist:
 
