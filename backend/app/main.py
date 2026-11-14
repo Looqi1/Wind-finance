@@ -187,6 +187,8 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     amount_kop: Mapped[int] = mapped_column(Integer)
     method: Mapped[str] = mapped_column(String(20))
+    purpose: Mapped[str] = mapped_column(String(20), default="topup")
+    plan: Mapped[str | None] = mapped_column(String(10), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -454,6 +456,11 @@ class ExchangeRequest(BaseModel):
 class PaymentRequest(BaseModel):
     amount: float = Field(gt=0, le=10_000_000)
     method: Literal["card", "sbp"]
+
+
+class SubscriptionPaymentRequest(BaseModel):
+    plan: Literal["month", "year"]
+    method: Literal["card", "sbp"] = "card"
 
 
 class PaymentWebhook(BaseModel):
@@ -882,7 +889,7 @@ async def create_payment(payload: PaymentRequest, user: User = Depends(get_curre
     provider_id = payment.get("id")
     if not provider_id or not confirmation_url:
         raise HTTPException(502, "Платёжный сервис вернул неполный ответ")
-    db.add(Payment(provider_id=provider_id, user_id=user.id, amount_kop=kop, method=payload.method))
+    db.add(Payment(provider_id=provider_id, user_id=user.id, amount_kop=kop, method=payload.method, purpose="topup"))
     db.commit()
     return {"payment_id": provider_id, "status": payment.get("status"), "confirmation_url": confirmation_url}
 
@@ -923,7 +930,16 @@ async def yookassa_webhook(payload: PaymentWebhook, db: Session = Depends(get_db
         return {"ok": True, "duplicate": True}
     payment.status = "succeeded"
     payment.paid_at = now_naive()
-    credit(db, payment.user_id, payment.amount_kop, f"Пополнение {payment.method}")
+    if payment.purpose == "subscription":
+        if not payment.plan:
+            raise HTTPException(500, "У платежа отсутствует тариф")
+        _, days = PLANS[payment.plan]
+        db.execute(update(User).where(User.id == payment.user_id).values(
+            plus_plan=payment.plan,
+            plus_until=now_naive() + timedelta(days=days),
+        ))
+    else:
+        credit(db, payment.user_id, payment.amount_kop, f"Пополнение {payment.method}")
     db.commit()
     return {"ok": True}
 
@@ -938,14 +954,58 @@ def spend(payload: MoneyRequest, user: User = Depends(get_current_user), db: Ses
 
 @app.post("/subscription")
 def subscribe(payload: PlanRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    raise HTTPException(410, "Подписка оформляется только через YooKassa")
+
+
+@app.post("/subscription/payment")
+async def create_subscription_payment(
+    payload: SubscriptionPaymentRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_yookassa()
     if user.plus_until and user.plus_until > now_naive():
         raise HTTPException(409, "Подписка уже активна")
-    price, days = PLANS[payload.plan]
-    charge(db, user.id, price, f"Подписка Wind Plus · {'год' if payload.plan == 'year' else 'месяц'}")
-    db.execute(update(User).where(User.id == user.id).values(plus_plan=payload.plan, plus_until=now_naive() + timedelta(days=days)))
+    price, _ = PLANS[payload.plan]
+    payment_key = str(uuid.uuid4())
+    return_url = f"{PUBLIC_BASE_URL}/?subscription=return"
+    request_body = {
+        "amount": {"value": f"{price / 100:.2f}", "currency": "RUB"},
+        "capture": True,
+        "confirmation": {"type": "redirect", "return_url": return_url},
+        "description": f"Wind Plus · {'год' if payload.plan == 'year' else 'месяц'} · пользователь {user.id}",
+        "metadata": {
+            "user_id": str(user.id),
+            "payment_key": payment_key,
+            "purpose": "subscription",
+            "plan": payload.plan,
+        },
+        "payment_method_data": {"type": "sbp" if payload.method == "sbp" else "bank_card"},
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(
+            "https://api.yookassa.ru/v3/payments",
+            auth=(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY),
+            headers={"Idempotence-Key": payment_key},
+            json=request_body,
+        )
+    if response.status_code >= 400:
+        raise HTTPException(502, "Платёж подписки не создан")
+    payment = response.json()
+    confirmation_url = payment.get("confirmation", {}).get("confirmation_url")
+    provider_id = payment.get("id")
+    if not provider_id or not confirmation_url:
+        raise HTTPException(502, "Платёжный сервис вернул неполный ответ")
+    db.add(Payment(
+        provider_id=provider_id,
+        user_id=user.id,
+        amount_kop=price,
+        method=payload.method,
+        purpose="subscription",
+        plan=payload.plan,
+    ))
     db.commit()
-    db.refresh(user)
-    return {"plus": plus_info(user), "balance": user.balance_kop / 100}
+    return {"payment_id": provider_id, "status": payment.get("status"), "confirmation_url": confirmation_url}
 
 
 @app.delete("/subscription")

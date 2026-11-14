@@ -3186,23 +3186,10 @@ if (cryptoChartElement && window.LightweightCharts) {
 	m.plans.forEach((b) => b.addEventListener('click', () => { if (!isPlus()) { plan = b.dataset.plan; renderModal(); } }));
 	m.sub.addEventListener('click', async () => {
 		if (isPlus()) return;
-		const cost = PLANS[plan].cost;
-		if (Wallet.get() < cost) {
-			closeModal(modal);
-			const input = document.getElementById('custom-topup-amount');
-			if (input) { input.value = String(Math.ceil((cost - Wallet.get()) / 100) * 100); input.dispatchEvent(new Event('input')); }
-			document.getElementById('topup-modal').hidden = false;
-			return;
-		}
 		m.sub.disabled = true;
 		try {
-			const d = await WindApi('/subscription', { method: 'POST', body: { plan } });
-			setPlus(d.plus);
-			await Wallet.load();
-			applyPlan();
-			closeModal(modal);
-			notify('positive', 'Wind Plus активирован', `Списано ${Wallet.format(cost)}`);
-			showSuccess(`Wind Plus активирован. Списано ${Wallet.format(cost)}`);
+			const d = await WindApi('/subscription/payment', { method: 'POST', body: { plan, method: 'card' } });
+			window.location.assign(d.confirmation_url);
 		} catch (e) {
 			m.sub.disabled = false;
 			m.status.textContent = e.message;

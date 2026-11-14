@@ -73,6 +73,7 @@ https://your-backend.example/payments/yookassa/webhook
 - `POST /payments/create` — create a card or SBP payment
 - `GET /payments/{payment_id}` — check payment status
 - `POST /payments/yookassa/webhook` — verified YooKassa notification
+- `POST /subscription/payment` — create a YooKassa payment for Wind Plus
 - `GET /health` — service health check
 - `POST /trading/orders` — restricted Bybit Spot market order for configured administrators
 - `GET /trading/orders` — restricted local order journal
