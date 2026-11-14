@@ -1955,12 +1955,58 @@ if (cryptoChartElement && window.LightweightCharts) {
 	const priceEl = $('alert-price'), hint = $('alert-hint'), listEl = $('alert-list'), countEl = $('alert-count');
 	const currentEl = $('alert-current'), quickEl = $('alert-quick'), card = $('price-alerts');
 	const KEY = 'wind_price_alerts', HKEY = 'wind_price_alerts_done';
+	const SOUND_KEY = 'wind_price_alert_sound';
 	const MAX = 10;
 	const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 	const PCTS = [1, 3, 5, 10];
 	const prices = {};
 	const rows = new Map();
+	let audioContext = null;
+	let soundEnabled = localStorage.getItem(SOUND_KEY) !== '0';
 	let symbol = 'BTCUSDT', dir = 'above', freshId = null;
+	const soundToggle = $('alert-sound-toggle');
+
+	const paintSoundToggle = () => {
+		if (!soundToggle) return;
+		soundToggle.setAttribute('aria-pressed', String(soundEnabled));
+		const text = soundToggle.querySelector('span');
+		if (text) text.textContent = soundEnabled ? 'Звук включён' : 'Звук выключен';
+		const iconName = soundEnabled ? 'volume-2' : 'volume-x';
+		soundToggle.querySelector('i')?.setAttribute('data-lucide', iconName);
+		if (window.lucide) window.lucide.createIcons();
+	};
+	const unlockAudio = () => {
+		if (!soundEnabled || !('AudioContext' in window || 'webkitAudioContext' in window)) return;
+		const AudioCtor = window.AudioContext || window.webkitAudioContext;
+		audioContext ||= new AudioCtor();
+		if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+	};
+	const playAlertSound = () => {
+		if (!soundEnabled || !audioContext || audioContext.state !== 'running') return;
+		const start = audioContext.currentTime;
+		const gain = audioContext.createGain();
+		gain.gain.setValueAtTime(0.0001, start);
+		gain.gain.exponentialRampToValueAtTime(0.12, start + 0.02);
+		gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
+		gain.connect(audioContext.destination);
+		[523.25, 783.99].forEach((frequency, index) => {
+			const oscillator = audioContext.createOscillator();
+			oscillator.type = 'triangle';
+			oscillator.frequency.value = frequency;
+			oscillator.connect(gain);
+			oscillator.start(start + index * 0.12);
+			oscillator.stop(start + 0.42);
+		});
+	};
+	soundToggle?.addEventListener('click', () => {
+		soundEnabled = !soundEnabled;
+		localStorage.setItem(SOUND_KEY, soundEnabled ? '1' : '0');
+		if (soundEnabled) unlockAudio();
+		paintSoundToggle();
+	});
+	document.addEventListener('pointerdown', unlockAudio, { once: true });
+	document.addEventListener('keydown', unlockAudio, { once: true });
+	paintSoundToggle();
 
 	const load = (key) => {
 		try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
@@ -2121,6 +2167,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	// ---- срабатывание ----
 	const fire = (a, price) => {
 		const msg = `${label(a.symbol)} ${a.dir === 'above' ? 'достиг' : 'опустился до'} ${fmtPrice(a.price)} USDT`;
+		playAlertSound();
 		portfolioNotifications.unshift({ type: 'alert', title: msg, detail: `Сейчас ${fmtPrice(price)} USDT`, time: nowTime() });
 		portfolioNotifications.splice(20);
 		renderNotifications();

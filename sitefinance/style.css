@@ -1491,6 +1491,10 @@ body.dark-theme .inv-volbar { background: rgba(255,255,255,.08); }
 .alert-live strong { color: var(--ink); font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-variant-numeric: tabular-nums; }
 .alert-live strong.tick-up { animation: tickUp .8s ease; }
 .alert-live strong.tick-down { animation: tickDown .8s ease; }
+.alerts-tools { display: flex; align-items: center; gap: 8px; }
+.alert-sound-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft-panel); color: var(--muted); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.alert-sound-toggle[aria-pressed="true"] { border-color: rgba(45,155,111,.45); color: var(--green); }
+.alert-sound-toggle svg { width: 14px; height: 14px; }
 
 .alert-dir { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .alert-dir button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft-panel); color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .2s ease, color .2s ease, border-color .2s ease, transform .15s ease; }
