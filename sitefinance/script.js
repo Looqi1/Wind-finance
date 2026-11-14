@@ -1986,17 +1986,25 @@ if (cryptoChartElement && window.LightweightCharts) {
 		const start = audioContext.currentTime;
 		const gain = audioContext.createGain();
 		gain.gain.setValueAtTime(0.0001, start);
-		gain.gain.exponentialRampToValueAtTime(0.12, start + 0.02);
-		gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
+		gain.gain.exponentialRampToValueAtTime(0.09, start + 0.04);
+		gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.62);
 		gain.connect(audioContext.destination);
-		[523.25, 783.99].forEach((frequency, index) => {
-			const oscillator = audioContext.createOscillator();
-			oscillator.type = 'triangle';
-			oscillator.frequency.value = frequency;
-			oscillator.connect(gain);
-			oscillator.start(start + index * 0.12);
-			oscillator.stop(start + 0.42);
-		});
+		const oscillator = audioContext.createOscillator();
+		const vibrato = audioContext.createOscillator();
+		const vibratoGain = audioContext.createGain();
+		oscillator.type = 'sine';
+		oscillator.frequency.setValueAtTime(430, start);
+		oscillator.frequency.exponentialRampToValueAtTime(220, start + 0.36);
+		oscillator.frequency.exponentialRampToValueAtTime(300, start + 0.58);
+		vibrato.frequency.value = 7;
+		vibratoGain.gain.value = 18;
+		vibrato.connect(vibratoGain);
+		vibratoGain.connect(oscillator.frequency);
+		oscillator.connect(gain);
+		vibrato.start(start);
+		oscillator.start(start);
+		vibrato.stop(start + 0.62);
+		oscillator.stop(start + 0.62);
 	};
 	soundToggle?.addEventListener('click', () => {
 		soundEnabled = !soundEnabled;
