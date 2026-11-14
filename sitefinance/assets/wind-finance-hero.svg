@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+	<title id="title">Wind Finance financial illustration</title>
+	<desc id="desc">Flowing mint ribbons and an upward chart with golden coins</desc>
+	<defs>
+		<linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#e4f8ed"/>
+			<stop offset="1" stop-color="#b9e5d0"/>
+		</linearGradient>
+		<linearGradient id="ribbon" x1="0" y1="1" x2="1" y2="0">
+			<stop offset="0" stop-color="#24785b"/>
+			<stop offset="1" stop-color="#77d8a6"/>
+		</linearGradient>
+		<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+			<feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#24785b" flood-opacity=".16"/>
+		</filter>
+	</defs>
+	<rect width="1200" height="700" rx="38" fill="url(#sky)"/>
+	<circle cx="1010" cy="135" r="112" fill="#f4c95d" opacity=".8"/>
+	<circle cx="1010" cy="135" r="72" fill="#ffe59a" opacity=".7"/>
+	<path d="M470 610c92-150 132-271 287-336 102-43 189-48 322-151" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="92" opacity=".42"/>
+	<path d="M390 624c120-120 176-248 320-302 130-49 199-44 346-155" fill="none" stroke="url(#ribbon)" stroke-linecap="round" stroke-width="38" filter="url(#shadow)"/>
+	<path d="M410 624c116-96 170-187 308-236 111-39 177-42 309-128" fill="none" stroke="#baf0d2" stroke-linecap="round" stroke-width="12"/>
+	<path d="M515 527 635 462l98 28 110-126 112 18 105-129" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10" opacity=".9"/>
+	<path d="m1018 254 43-6-12 42" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
+	<g filter="url(#shadow)">
+		<circle cx="625" cy="190" r="46" fill="#f4c95d"/>
+		<circle cx="625" cy="190" r="35" fill="none" stroke="#fff2b8" stroke-width="5"/>
+		<path d="M620 166v47m-14-35c5-7 27-9 34 1 7 11-2 17-17 20-16 3-23 11-17 21 6 10 29 10 36 0" fill="none" stroke="#fff8d5" stroke-linecap="round" stroke-width="6"/>
+	</g>
+	<g fill="#fff" opacity=".72">
+		<circle cx="250" cy="165" r="10"/><circle cx="328" cy="270" r="7"/><circle cx="190" cy="360" r="13"/>
+		<circle cx="845" cy="100" r="8"/><circle cx="1120" cy="390" r="11"/>
+	</g>
+</svg>
