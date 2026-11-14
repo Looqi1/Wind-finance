@@ -150,6 +150,7 @@ const showSuccess = (message) => {
 };
 
 const assetPickerOptions = document.querySelectorAll('.asset-picker-option');
+const BYBIT_REFERRAL_URL = 'https://www.bybit.com/invite?ref=393YMZP';
 assetPickerOptions.forEach((option) => {
 	option.addEventListener('click', () => {
 		assetPickerOptions.forEach((item) => item.classList.remove('active'));
@@ -159,14 +160,7 @@ assetPickerOptions.forEach((option) => {
 
 document.querySelectorAll('[data-trade]').forEach((button) => {
 	button.addEventListener('click', () => {
-		pendingTradeSide = button.dataset.trade === 'sell' ? 'Sell' : 'Buy';
-		openCheckoutFlow(0, pendingTradeSide === 'Buy' ? 'Bybit Spot' : 'Bybit Spot');
-		const title = document.querySelector('#checkout-title');
-		const copy = document.querySelector('#checkout-modal .modal-copy');
-		const submit = document.querySelector('#confirm-payment');
-		if (title) title.textContent = `${pendingTradeSide === 'Buy' ? 'Покупка' : 'Продажа'} ${cryptoPair?.value?.slice(0, -4) || 'BTC'} через Bybit`;
-		if (copy) copy.textContent = 'Реальный ордер доступен только администратору и отправляется в настроенный контур Bybit.';
-		if (submit) submit.textContent = `${pendingTradeSide === 'Buy' ? 'Купить' : 'Продать'} через Bybit →`;
+		window.open(BYBIT_REFERRAL_URL, '_blank', 'noopener,noreferrer');
 	});
 });
 
@@ -1622,7 +1616,7 @@ const loadCryptoCandles = async () => {
 		cryptoSymbolLabel.textContent = `${symbol.slice(0, -4)} / USDT`;
 		activeCryptoPrice = candles[candles.length - 1].close;
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candles[candles.length - 1].close)} USDT`;
-		cryptoUpdated.textContent = `Bybit Spot · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+		cryptoUpdated.textContent = `Котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 		cryptoChart.timeScale().fitContent();
 		connectBybitStream(symbol, activeInterval);
 	} catch (error) {
@@ -1668,7 +1662,7 @@ const connectBybitStream = (symbol, interval) => {
 		candleSeries.update(candle);
 		activeCryptoPrice = candle.close;
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candle.close)} USDT`;
-		cryptoUpdated.textContent = `LIVE · Bybit Spot · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+		cryptoUpdated.textContent = `LIVE · котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 	});
 	bybitSocket.addEventListener('close', () => {
 		if (currentVersion === streamVersion) {
