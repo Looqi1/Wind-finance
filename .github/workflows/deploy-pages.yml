@@ -27,6 +27,7 @@ jobs:
         run: |
           mkdir -p _site
           cp sitefinance/index.html sitefinance/script.js sitefinance/style.css _site/
+          cp -R sitefinance/assets _site/assets
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
           printf 'window.WIND_API_URL = %s;\n' \
             "$(python3 -c 'import json, os; print(json.dumps(os.environ.get("BACKEND_URL", "")))')" \
