@@ -7,7 +7,7 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=38">
+	<link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
 	<div class="app">
@@ -131,7 +131,7 @@
 
 			<section class="content-grid">
 				<div id="rates">
-					<div class="section-heading"><div><h2>Избранные валюты</h2><p>К российскому рублю · ЦБ и рынок</p></div><a href="#rates">Все валюты →</a></div>
+					<div class="section-heading"><div><h2>Избранные валюты</h2><p>К российскому рублю · ЦБ и рынок</p></div></div>
 					<div class="course-list">
 						<article class="card course currency favorite-currency-card" data-favorite-currency="USD" tabindex="0" role="button" aria-label="Выбрать пару USD / RUB"><div class="course-icon orange"><i data-lucide="dollar-sign"></i></div><div><h3>Доллар США <span class="code">USD</span></h3><p>1 USD = 92,48 RUB</p></div><div class="rate-change positive">+0,37%</div><div class="mini-chart green-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
 						<article class="card course currency favorite-currency-card" data-favorite-currency="EUR" tabindex="0" role="button" aria-label="Выбрать пару EUR / RUB"><div class="course-icon purple"><i data-lucide="euro"></i></div><div><h3>Евро <span class="code">EUR</span></h3><p>1 EUR = 100,21 RUB</p></div><div class="rate-change negative">−0,12%</div><div class="mini-chart green-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
@@ -469,15 +469,30 @@
 			</section>
 
 			<section class="market-section" id="game">
-				<div class="section-heading"><div><p class="eyebrow">Играй и учись</p><h2>Игровая зона</h2><p>Четыре игры с сюжетом: ловить, читать графики, считать риск и не попадаться мошенникам</p></div><span class="live-badge"><i></i> ИГРЫ</span></div>
+				<div class="section-heading"><div><p class="eyebrow">Играй и учись</p><h2>Игровая зона</h2><p>Четыре игры про рынок: копи опыт, держи серию дней и собирай награды</p></div><button type="button" class="gh-sound" id="gh-sound" aria-pressed="true" aria-label="Звук в играх"><i data-lucide="volume-2" class="on-ico"></i><i data-lucide="volume-x" class="off-ico"></i><span>Звук</span></button></div>
+				<div class="game-hub" id="game-hub">
+					<div class="gh-player">
+						<div class="gh-ring" id="gh-ring"><b id="gh-level">1</b><small>ур.</small></div>
+						<div class="gh-player-copy">
+							<span class="gh-kicker">Твой уровень</span>
+							<strong id="gh-title">Новичок</strong>
+							<div class="gh-xp"><span id="gh-xp-bar"></span></div>
+							<small id="gh-xp">0 / 120 XP</small>
+						</div>
+					</div>
+					<div class="gh-mini" id="gh-streak-card"><span class="gh-mini-icon flame"><i data-lucide="flame"></i></span><div><small>Серия дней</small><strong id="gh-streak">0 дней</strong></div></div>
+					<div class="gh-mini"><span class="gh-mini-icon star"><i data-lucide="star"></i></span><div><small>Звёзды</small><strong id="gh-stars">0 / 12</strong></div></div>
+					<button type="button" class="gh-daily" id="gh-daily"><span class="gh-mini-icon target"><i data-lucide="target"></i></span><div><small>Задание дня · <em id="gh-daily-status">+150 XP</em></small><strong id="gh-daily-text">—</strong></div><i data-lucide="chevron-right" class="gh-daily-go"></i></button>
+					<div class="gh-badges" id="gh-badges" aria-label="Награды"></div>
+				</div>
 				<div class="game-tabs" id="game-tabs" role="tablist" aria-label="Игры">
-					<button type="button" class="active" role="tab" data-game-tab="drop"><i data-lucide="package"></i><span>Crypto Drop</span><em class="gt-stars"></em></button>
-					<button type="button" role="tab" data-game-tab="candles"><i data-lucide="search"></i><span>Детектив свечей</span><em class="gt-stars" data-stars="candles"></em></button>
-					<button type="button" role="tab" data-game-tab="risk"><i data-lucide="anchor"></i><span>Риск-капитан</span><em class="gt-stars" data-stars="risk"></em></button>
-					<button type="button" role="tab" data-game-tab="scam"><i data-lucide="shield-alert"></i><span>Охота на мошенников</span><em class="gt-stars" data-stars="scam"></em></button>
+					<button type="button" class="active" role="tab" data-game-tab="drop" data-accent="drop"><span class="gt-art"><i data-lucide="package"></i></span><span class="gt-copy"><strong>Crypto Drop</strong><small>Аркада · строй башню из монет</small><span class="gt-meta"><em class="gt-stars" data-stars="drop"></em><span data-best="drop"></span></span></span></button>
+					<button type="button" role="tab" data-game-tab="candles" data-accent="candles"><span class="gt-art"><i data-lucide="search"></i></span><span class="gt-copy"><strong>Детектив свечей</strong><small>Квиз · узнай паттерн</small><span class="gt-meta"><em class="gt-stars" data-stars="candles"></em><span data-best="candles"></span></span></span></button>
+					<button type="button" role="tab" data-game-tab="risk" data-accent="risk"><span class="gt-art"><i data-lucide="anchor"></i></span><span class="gt-copy"><strong>Риск-капитан</strong><small>Стратегия · переживи шторм</small><span class="gt-meta"><em class="gt-stars" data-stars="risk"></em><span data-best="risk"></span></span></span></button>
+					<button type="button" role="tab" data-game-tab="scam" data-accent="scam"><span class="gt-art"><i data-lucide="shield-alert"></i></span><span class="gt-copy"><strong>Охота на мошенников</strong><small>На время · найди обман</small><span class="gt-meta"><em class="gt-stars" data-stars="scam"></em><span data-best="scam"></span></span></span></button>
 				</div>
 				<div class="game-panel" data-game-panel="drop">
-				<article class="card cg-card">
+				<article class="card cg-card" data-accent="drop">
 					<div class="cg-story">
 						<div class="cg-chapter"><span id="cg-chapter-label">Глава 1</span><strong id="cg-chapter-title">Первый депозит</strong></div>
 						<p id="cg-story-copy">Рынок только проснулся. Укладывай ящики в башню ровно: криво лежащие падают.</p>
@@ -509,9 +524,9 @@
 					</div>
 				</article>
 				</div>
-				<div class="game-panel" data-game-panel="candles" hidden><article class="card gm-card" id="gm-candles"></article></div>
-				<div class="game-panel" data-game-panel="risk" hidden><article class="card gm-card" id="gm-risk"></article></div>
-				<div class="game-panel" data-game-panel="scam" hidden><article class="card gm-card" id="gm-scam"></article></div>
+				<div class="game-panel" data-game-panel="candles" hidden><article class="card gm-card" data-accent="candles" id="gm-candles"></article></div>
+				<div class="game-panel" data-game-panel="risk" hidden><article class="card gm-card" data-accent="risk" id="gm-risk"></article></div>
+				<div class="game-panel" data-game-panel="scam" hidden><article class="card gm-card" data-accent="scam" id="gm-scam"></article></div>
 			</section>
 
 			<section class="settings-page" id="settings">
@@ -669,10 +684,6 @@
 						<span class="picker-icon purple"><i data-lucide="wallet"></i></span>
 						<span><strong>СБП</strong><small>Моментально</small></span>
 					</button>
-					<button type="button" class="payment-option" data-payment="crypto">
-						<span class="picker-icon amber"><i data-lucide="coins"></i></span>
-						<span><strong>Криптовалюта</strong><small>USDT / BTC / ETH / SOL</small></span>
-					</button>
 				</div>
 			</div>
 			<button id="topup-submit" class="button modal-submit" type="button" data-default-amount="5000">Пополнить на 5 000 ₽ <span>→</span></button>
@@ -697,26 +708,6 @@
 				</a>
 			</div>
 			<small class="bybit-trade-note">Wind не видит твой аккаунт Bybit и не совершает сделки за тебя.</small>
-		</div>
-	</div>
-	<div class="modal" id="checkout-modal" hidden>
-		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
-			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Bybit Spot</p>
-			<h2 id="checkout-title">Подтверждение оплаты</h2>
-			<p class="modal-copy">Покупка будет выполнена безопасно внутри мини-приложения.</p>
-			<div class="crypto-order-fields">
-				<label>Количество<input id="crypto-buy-quantity" type="number" min="0.00000001" step="0.00000001" value="0.01" inputmode="decimal"></label>
-				<label>Цена за монету<input id="crypto-buy-price" type="number" min="0" step="0.01" inputmode="decimal" readonly></label>
-			</div>
-			<div class="checkout-summary">
-				<div class="checkout-row"><span>Актив</span><strong id="checkout-asset">BTC / USDT</strong></div>
-				<div class="checkout-row"><span>Количество</span><strong id="checkout-quantity">0,01</strong></div>
-				<div class="checkout-row"><span>Цена</span><strong id="checkout-price">0 USDT</strong></div>
-				<div class="checkout-row"><span>Сумма</span><strong id="checkout-amount">0 ₽</strong></div>
-				<div class="checkout-row"><span>Исполнение</span><strong id="checkout-method">Bybit Spot</strong></div>
-			</div>
-			<button id="confirm-payment" class="button modal-submit" type="button" data-success="Покупка подтверждена, средства зарезервированы">Подтвердить оплату <span>→</span></button>
 		</div>
 	</div>
 	<div class="modal" id="subscription-modal" hidden>	
@@ -751,75 +742,6 @@
 			<p class="plus-status" id="plus-status"></p>
 			
 			<p class="article-note">Оплата картой или через СБП (ЮKassa). Автосписаний нет: подписка просто заканчивается в конце оплаченного периода, повторная оплата продлевает её. Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
-		</div>
-	</div>
-	<div class="modal" id="add-asset-modal" hidden>
-		<div class="modal-card add-asset-card" role="dialog" aria-modal="true" aria-labelledby="add-asset-title">
-			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Добавить актив</p>
-			<h2 id="add-asset-title">Выбери новый инструмент</h2>
-			<div class="asset-picker-list">
-				<button class="asset-picker-option active" type="button" data-asset-name="ETF на РФ">
-					<span class="picker-icon teal"><i data-lucide="briefcase-business"></i></span>
-					<span><strong>ETF на РФ</strong><small>Фонды и индексы</small></span>
-				</button>
-				<button class="asset-picker-option" type="button" data-asset-name="Акции Сбера">
-					<span class="picker-icon amber"><i data-lucide="factory"></i></span>
-					<span><strong>Акции Сбера</strong><small>Российский рынок</small></span>
-				</button>
-				<button class="asset-picker-option" type="button" data-asset-name="Облигации">
-					<span class="picker-icon orange"><i data-lucide="landmark"></i></span>
-					<span><strong>Облигации</strong><small>Долгий доход</small></span>
-				</button>
-				<button class="asset-picker-option" type="button" data-asset-name="Крипто">
-					<span class="picker-icon purple"><i data-lucide="bitcoin"></i></span>
-					<span><strong>Крипто</strong><small>BTC / ETH / SOL</small></span>
-				</button>
-			</div>
-			<button class="button modal-submit" type="button" data-success="Новый актив добавлен в портфель">Добавить в портфель <span>→</span></button>
-		</div>
-	</div>
-	<div class="modal" id="crypto-topup-modal" hidden>
-		<div class="modal-card crypto-topup-card" role="dialog" aria-modal="true" aria-labelledby="crypto-topup-title">
-			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
-			<p class="eyebrow">Пополнение криптовалютой</p>
-			<h2 id="crypto-topup-title">Оплата криптовалютой</h2>
-			<div class="crypto-coins" id="crypto-coins">
-				<button type="button" class="crypto-coin active" data-coin="USDT">USDT</button>
-				<button type="button" class="crypto-coin" data-coin="BTC">BTC</button>
-				<button type="button" class="crypto-coin" data-coin="ETH">ETH</button>
-				<button type="button" class="crypto-coin" data-coin="SOL">SOL</button>
-			</div>
-			<label class="crypto-field">Сеть
-				<select id="crypto-network"></select>
-			</label>
-			<div class="crypto-quote">
-				<div class="checkout-row"><span>Зачислим на баланс</span><strong id="crypto-rub">5 000 ₽</strong></div>
-				<div class="checkout-row"><span>Отправить</span><strong id="crypto-pay-amount">—</strong></div>
-				<div class="checkout-row"><span>Курс</span><strong id="crypto-rate">—</strong></div>
-			</div>
-			<div class="crypto-pay">
-				<div class="crypto-qr-box"><div id="crypto-qr"></div></div>
-				<small class="crypto-hint">Отсканируй QR-код в кошельке <span class="crypto-demo-tag">ДЕМО</span></small>
-			</div>
-			<div class="crypto-address-box">
-				<div class="crypto-row">
-					<small>Ссылка на оплату</small>
-					<div class="crypto-address-row">
-						<a id="crypto-link" class="crypto-link" target="_blank" rel="noopener">—</a>
-						<button type="button" class="crypto-copy" data-copy="crypto-link">Копировать</button>
-					</div>
-				</div>
-				<div class="crypto-row">
-					<small>Адрес кошелька</small>
-					<div class="crypto-address-row">
-						<code id="crypto-address">—</code>
-						<button type="button" class="crypto-copy" data-copy="crypto-address">Копировать</button>
-					</div>
-				</div>
-			</div>
-			<p class="crypto-warning">Отправляй только выбранную монету и только по выбранной сети, иначе средства будут потеряны. Счёт действителен: <b id="crypto-timer">30:00</b></p>
-			<button class="button modal-submit" id="crypto-paid" type="button">Я оплатил <span>→</span></button>
 		</div>
 	</div>
 	<div class="modal" id="article-modal" hidden>
@@ -871,7 +793,6 @@
 			<div class="pay-tabs" role="group" aria-label="Способ оплаты">
 				<button type="button" class="active" data-pay-tab="card"><i data-lucide="credit-card"></i> Карта</button>
 				<button type="button" data-pay-tab="sbp"><i data-lucide="qr-code"></i> СБП</button>
-				<button type="button" data-pay-tab="crypto"><i data-lucide="coins"></i> Крипто</button>
 			</div>
 			<div class="pay-sum"><span>Сумма пополнения</span><strong id="pay-sum">5 000 ₽</strong><button type="button" id="pay-change" class="pay-link">Изменить</button></div>
 
@@ -978,6 +899,6 @@
 	<script src="https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 	<script src="config.js"></script>
-	<script src="script.js?v=37"></script>
+	<script src="script.js?v=38"></script>
 </body>
 </html>

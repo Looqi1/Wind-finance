@@ -102,48 +102,6 @@ document.querySelectorAll('#topup-modal .payment-option').forEach((option) => {
 	});
 });
 
-const openCheckoutFlow = (amount, method = 'Bybit Spot') => {
-	const modal = document.getElementById('checkout-modal');
-	const amountLabel = document.getElementById('checkout-amount');
-	const methodLabel = document.getElementById('checkout-method');
-	const quantityInput = document.getElementById('crypto-buy-quantity');
-	const priceInput = document.getElementById('crypto-buy-price');
-	if (!modal || !amountLabel || !methodLabel || !quantityInput || !priceInput) return;
-
-	const selectedSymbol = cryptoPair?.value || 'BTCUSDT';
-	const fallbackPrices = { BTCUSDT: 65000, ETHUSDT: 3200, SOLUSDT: 150 };
-	const currentPrice = activeCryptoPrice || fallbackPrices[selectedSymbol] || 0;
-	quantityInput.value = quantityInput.value || '0.01';
-	priceInput.value = currentPrice ? String(currentPrice) : '';
-	updateCryptoOrderSummary();
-	methodLabel.textContent = method;
-	modal.hidden = false;
-};
-
-let pendingTradeSide = 'Buy';
-
-const updateCryptoOrderSummary = () => {
-	const quantityInput = document.getElementById('crypto-buy-quantity');
-	const priceInput = document.getElementById('crypto-buy-price');
-	const quantityLabel = document.getElementById('checkout-quantity');
-	const priceLabel = document.getElementById('checkout-price');
-	const amountLabel = document.getElementById('checkout-amount');
-	const assetLabel = document.getElementById('checkout-asset');
-	if (!quantityInput || !priceInput || !quantityLabel || !priceLabel || !amountLabel) return;
-
-	const quantity = Number(quantityInput.value || 0);
-	const price = Number(priceInput.value || 0);
-	const total = quantity * price;
-	const symbol = cryptoPair?.value || 'BTCUSDT';
-	const asset = `${symbol.slice(0, -4)} / USDT`;
-	if (assetLabel) assetLabel.textContent = asset;
-	quantityLabel.textContent = quantity.toLocaleString('ru-RU', { maximumFractionDigits: 8 });
-	priceLabel.textContent = `${price.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} USDT`;
-	amountLabel.textContent = `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(total)} USDT`;
-};
-
-document.querySelector('#crypto-buy-quantity')?.addEventListener('input', updateCryptoOrderSummary);
-document.querySelector('#crypto-buy-price')?.addEventListener('input', updateCryptoOrderSummary);
 
 const showSuccess = (message, type = 'success') => {
 	const isError = type === 'error';
@@ -166,13 +124,7 @@ const showSuccess = (message, type = 'success') => {
 	successToast.classList.add('visible');
 };
 
-const assetPickerOptions = document.querySelectorAll('.asset-picker-option');
-assetPickerOptions.forEach((option) => {
-	option.addEventListener('click', () => {
-		assetPickerOptions.forEach((item) => item.classList.remove('active'));
-		option.classList.add('active');
-	});
-});
+
 
 // ================= ПАРТНЁРКА BYBIT =================
 // Код задаётся переменной репозитория BYBIT_REF_CODE (попадает в config.js), иначе берётся код по умолчанию.
@@ -252,29 +204,6 @@ bybitOptSignup?.addEventListener('click', () => window.setTimeout(() => closeMod
 	load();
 	window.setInterval(() => { if (!document.hidden) load(); }, 60000);
 })();
-
-const confirmPaymentButton = document.getElementById('confirm-payment');
-confirmPaymentButton?.addEventListener('click', async () => {
-	const quantity = Number(document.getElementById('crypto-buy-quantity')?.value || 0);
-	const symbol = cryptoPair?.value || 'BTCUSDT';
-	if (!(quantity > 0)) {
-		showSuccess('Укажите корректное количество', 'error');
-		return;
-	}
-	confirmPaymentButton.disabled = true;
-	try {
-		const result = await window.WindApi('/trading/orders', {
-			method: 'POST',
-			body: { symbol, side: pendingTradeSide, qty: String(quantity) },
-		});
-		closeModal(document.getElementById('checkout-modal'));
-		showSuccess(`Ордер ${result.id} отправлен в Bybit · статус: ${result.status}`);
-	} catch (error) {
-		showSuccess(error.message || 'Ордер не отправлен', 'error');
-	} finally {
-		confirmPaymentButton.disabled = false;
-	}
-});
 
 document.addEventListener('keydown', (event) => {
 	if (event.key === 'Escape') {
@@ -788,6 +717,206 @@ document.addEventListener('keydown', (event) => {
 });
 
 
+// ================= ИГРОВОЙ ПРОФИЛЬ: уровень, серия дней, задание дня, награды, звук =================
+(() => {
+	const KEY = 'wind_game_profile';
+	const today = () => {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	};
+	const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+	const load = () => {
+		try {
+			const v = JSON.parse(localStorage.getItem(KEY) || '{}');
+			return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+		} catch (e) { return {}; }
+	};
+	const p = Object.assign({ xp: 0, streak: 0, lastDay: '', played: {}, badges: {}, daily: {}, dropBest: 0, games: 0, muted: false }, load());
+	const save = () => { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) { /* без хранилища прогресс живёт до перезагрузки */ } };
+
+	const TITLES = ['Новичок', 'Наблюдатель', 'Трейдер', 'Аналитик', 'Стратег', 'Управляющий', 'Магнат', 'Легенда рынка'];
+	// уровень n требует 120·n·(n−1)/2 опыта: 0, 120, 360, 720…
+	const levelOf = (xp) => {
+		let lvl = 1;
+		while (xp >= 60 * lvl * (lvl + 1)) lvl++;
+		const from = 60 * (lvl - 1) * lvl, to = 60 * lvl * (lvl + 1);
+		return { lvl, title: TITLES[Math.min(TITLES.length - 1, lvl - 1)], from, to, pct: Math.min(100, ((xp - from) / (to - from)) * 100) };
+	};
+
+	const CHALLENGES = [
+		{ id: 'drop5k', game: 'drop', text: 'Собери портфель $5 000 в Crypto Drop', check: (g, d) => g === 'drop' && d.score >= 5000 },
+		{ id: 'drop-ch2', game: 'drop', text: 'Дойди до главы «Волатильность» в Crypto Drop', check: (g, d) => g === 'drop' && d.chapter >= 2 },
+		{ id: 'candles5', game: 'candles', text: 'Раскрой 5 дел из 6 в «Детективе свечей»', check: (g, d) => g === 'candles' && d.score >= 5 },
+		{ id: 'risk-dd', game: 'risk', text: 'Доведи корабль до порта с просадкой меньше 20%', check: (g, d) => g === 'risk' && !d.ruined && d.dd < 0.2 },
+		{ id: 'scam8', game: 'scam', text: 'Распознай 8 сообщений из 10 в «Охоте на мошенников»', check: (g, d) => g === 'scam' && d.ok >= 8 },
+		{ id: 'any3', game: null, text: 'Получи 3 звезды в любой игре', check: (g, d) => d.stars >= 3 },
+		{ id: 'drop-gold', game: 'drop', text: 'Набери $12 000 в Crypto Drop', check: (g, d) => g === 'drop' && d.score >= 12000 },
+	];
+	const dailyFor = (day) => {
+		let hsh = 0;
+		for (const ch of day) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
+		return CHALLENGES[hsh % CHALLENGES.length];
+	};
+
+	const BADGES = [
+		{ id: 'first', icon: 'sparkles', name: 'Первый шаг', hint: 'Сыграй в любую игру' },
+		{ id: 'all4', icon: 'layout-grid', name: 'Универсал', hint: 'Сыграй во все четыре игры' },
+		{ id: 'perfect', icon: 'star', name: 'Отличник', hint: 'Получи 3 звезды в игре' },
+		{ id: 'whale', icon: 'gem', name: 'Кит', hint: 'Набери $20 000 в Crypto Drop' },
+		{ id: 'streak3', icon: 'flame', name: 'В ударе', hint: 'Играй 3 дня подряд' },
+		{ id: 'daily', icon: 'calendar-check', name: 'Дисциплина', hint: 'Выполни задание дня' },
+	];
+
+	// ---------- звук (WebAudio, без файлов) ----------
+	let ac = null;
+	const tone = (freq, dur = 0.09, type = 'sine', vol = 0.06, when = 0) => {
+		if (p.muted) return;
+		try {
+			ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+			if (ac.state === 'suspended') ac.resume();
+			const t = ac.currentTime + when;
+			const o = ac.createOscillator(), g = ac.createGain();
+			o.type = type; o.frequency.setValueAtTime(freq, t);
+			g.gain.setValueAtTime(vol, t);
+			g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+			o.connect(g).connect(ac.destination);
+			o.start(t); o.stop(t + dur + 0.02);
+		} catch (e) { /* звук недоступен */ }
+	};
+	const sfx = {
+		catch: (combo = 1) => tone(520 + combo * 70, 0.08, 'triangle', 0.05),
+		gold: () => { tone(880, 0.1, 'triangle', 0.05); tone(1320, 0.14, 'triangle', 0.05, 0.08); },
+		bad: () => { tone(180, 0.18, 'sawtooth', 0.04); tone(120, 0.22, 'sawtooth', 0.035, 0.1); },
+		ok: () => { tone(660, 0.08, 'sine', 0.05); tone(990, 0.12, 'sine', 0.05, 0.07); },
+		wrong: () => tone(200, 0.2, 'square', 0.03),
+		win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'triangle', 0.05, i * 0.1)),
+		tick: () => tone(1200, 0.03, 'square', 0.015),
+		deliver: () => [660, 880, 1100].forEach((f, i) => tone(f, 0.1, 'triangle', 0.045, i * 0.06)),
+	};
+
+	// ---------- отрисовка панели ----------
+	const $ = (id) => document.getElementById(id);
+	const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+	const totalStars = () => {
+		let s = {};
+		try { s = JSON.parse(localStorage.getItem('wind_game_stars') || '{}') || {}; } catch (e) { s = {}; }
+		return ['drop', 'candles', 'risk', 'scam'].reduce((a, k) => a + Math.max(0, Math.min(3, Number(s[k]) || 0)), 0);
+	};
+	const streakAlive = () => p.lastDay && dayDiff(p.lastDay, today()) <= 1 ? p.streak : 0;
+
+	const render = () => {
+		const L = levelOf(p.xp);
+		if ($('gh-level')) $('gh-level').textContent = String(L.lvl);
+		if ($('gh-title')) $('gh-title').textContent = L.title;
+		if ($('gh-xp')) $('gh-xp').textContent = `${p.xp - L.from} / ${L.to - L.from} XP`;
+		if ($('gh-xp-bar')) $('gh-xp-bar').style.width = `${L.pct}%`;
+		$('gh-ring')?.style.setProperty('--p', `${L.pct}`);
+		const st = streakAlive();
+		if ($('gh-streak')) $('gh-streak').textContent = `${st} ${st % 10 === 1 && st % 100 !== 11 ? 'день' : st % 10 >= 2 && st % 10 <= 4 && (st % 100 < 10 || st % 100 >= 20) ? 'дня' : 'дней'}`;
+		$('gh-streak-card')?.classList.toggle('hot', st >= 2);
+		if ($('gh-stars')) $('gh-stars').textContent = `${totalStars()} / 12`;
+		const ch = dailyFor(today());
+		const done = p.daily[today()] === ch.id;
+		if ($('gh-daily-text')) $('gh-daily-text').textContent = ch.text;
+		const dc = $('gh-daily');
+		if (dc) {
+			dc.classList.toggle('done', done);
+			dc.dataset.game = ch.game || '';
+			const s = $('gh-daily-status');
+			if (s) s.textContent = done ? 'Выполнено · +150 XP' : '+150 XP';
+		}
+		const list = $('gh-badges');
+		if (list) {
+			list.replaceChildren(...BADGES.map((b) => {
+				const on = Boolean(p.badges[b.id]);
+				const el = mk('span', `gh-badge${on ? ' on' : ''}`);
+				el.title = `${b.name}: ${b.hint}`;
+				el.setAttribute('aria-label', `${b.name}${on ? ', получено' : ', не получено'}: ${b.hint}`);
+				const i = document.createElement('i');
+				i.setAttribute('data-lucide', on ? b.icon : 'lock');
+				el.append(i, mk('small', '', b.name));
+				return el;
+			}));
+			if (window.lucide) window.lucide.createIcons();
+		}
+		const mute = $('gh-sound');
+		if (mute) {
+			mute.setAttribute('aria-pressed', String(!p.muted));
+			mute.classList.toggle('off', p.muted);
+			mute.title = p.muted ? 'Звук выключен' : 'Звук включён';
+		}
+		document.querySelectorAll('[data-best]').forEach((n) => {
+			const id = n.dataset.best;
+			n.textContent = id === 'drop' ? (p.dropBest ? `рекорд $${Math.round(p.dropBest).toLocaleString('ru-RU')}` : 'ещё не играл') : (p.played[id] ? `сыграно ${p.played[id]}` : 'ещё не играл');
+		});
+	};
+
+	const unlock = (id) => {
+		if (p.badges[id]) return;
+		p.badges[id] = today();
+		const b = BADGES.find((x) => x.id === id);
+		if (b && typeof showSuccess === 'function') window.setTimeout(() => showSuccess(`Новая награда: «${b.name}»`), 900);
+	};
+
+	// вызывается играми по завершении: report('candles', { stars, score, ... })
+	const report = (game, data = {}) => {
+		const day = today();
+		if (p.lastDay !== day) {
+			p.streak = p.lastDay && dayDiff(p.lastDay, day) === 1 ? p.streak + 1 : 1;
+			p.lastDay = day;
+		}
+		p.played[game] = (p.played[game] || 0) + 1;
+		p.games += 1;
+		let gain = 20 + (data.stars || 0) * 40;
+		if (game === 'drop') {
+			gain = 20 + Math.min(160, Math.round((data.score || 0) / 100));
+			p.dropBest = Math.max(p.dropBest, data.score || 0);
+		}
+		const ch = dailyFor(day);
+		if (p.daily[day] !== ch.id && ch.check(game, data)) {
+			p.daily = { [day]: ch.id };
+			gain += 150;
+			unlock('daily');
+			if (typeof showSuccess === 'function') showSuccess('Задание дня выполнено: +150 XP');
+			sfx.win();
+		}
+		const before = levelOf(p.xp).lvl;
+		p.xp += gain;
+		const after = levelOf(p.xp);
+		unlock('first');
+		if (['drop', 'candles', 'risk', 'scam'].every((g) => p.played[g])) unlock('all4');
+		if ((data.stars || 0) >= 3) unlock('perfect');
+		if (game === 'drop' && (data.score || 0) >= 20000) unlock('whale');
+		if (p.streak >= 3) unlock('streak3');
+		save();
+		render();
+		const hub = $('game-hub');
+		if (hub) {
+			const pop = mk('span', 'gh-xp-pop', `+${gain} XP`);
+			hub.appendChild(pop);
+			window.setTimeout(() => pop.remove(), 1800);
+		}
+		if (after.lvl > before && typeof showSuccess === 'function') {
+			window.setTimeout(() => showSuccess(`Новый уровень ${after.lvl}: ${after.title}!`), 400);
+			sfx.win();
+		}
+	};
+
+	$('gh-sound')?.addEventListener('click', () => {
+		p.muted = !p.muted;
+		save();
+		render();
+		if (!p.muted) sfx.ok();
+	});
+	$('gh-daily')?.addEventListener('click', () => {
+		const g = $('gh-daily').dataset.game;
+		if (g) document.querySelector(`[data-game-tab="${g}"]`)?.click();
+	});
+
+	window.WindGames = { report, sfx, render, isMuted: () => p.muted };
+	render();
+})();
+
 (() => {
 	const stage = document.getElementById('cg-stage');
 	const canvas = document.getElementById('cg-canvas');
@@ -821,7 +950,7 @@ document.addEventListener('keydown', (event) => {
 	const keys = new Set();
 
 	let w = 0, h = 0, raf = 0, last = 0, running = false;
-	const s = { px: 0, prevPx: 0, lean: 0, dir: 0, items: [], fx: [], stack: [], debris: [], timer: 0, score: 0, lives: 3, combo: 1, caught: 0, chapter: 0, shake: 0, lastCatch: 0, best: Number(localStorage.getItem('cg_best') || 0), t: 0 };
+	const s = { px: 0, prevPx: 0, lean: 0, dir: 0, items: [], fx: [], parts: [], flash: 0, banner: 0, stack: [], debris: [], timer: 0, score: 0, lives: 3, combo: 1, caught: 0, chapter: 0, shake: 0, lastCatch: 0, best: Number(localStorage.getItem('cg_best') || 0), t: 0 };
 
 	const clampX = (x) => Math.min(w - PW / 2, Math.max(PW / 2, x));
 	const basketTop = () => h - PH - 6;
@@ -851,6 +980,7 @@ document.addEventListener('keydown', (event) => {
 		canvas.width = Math.round(w * dpr);
 		canvas.height = Math.round(h * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		buildScenery();
 		s.px = clampX(s.px || w / 2);
 		if (!running) draw();
 	};
@@ -887,7 +1017,7 @@ document.addEventListener('keydown', (event) => {
 		s.items.push({ key, size, x: Math.max(size, Math.min(w - size, x)), y: -size, speed: c.speed * (0.85 + Math.random() * 0.3), rot: (Math.random() - 0.5) * 0.4, spin: (Math.random() - 0.5) * 1.0, phase: Math.random() * 6 });
 	};
 
-	const floatText = (x, y, text, color) => s.fx.push({ x, y, text, color, life: 1 });
+	const floatText = (x, y, text, color, big = false) => s.fx.push({ x, y, text, color, life: 1, big });
 
 	const showOverlay = (title, text, button) => {
 		ui.oTitle.textContent = title;
@@ -902,6 +1032,15 @@ document.addEventListener('keydown', (event) => {
 		keys.clear(); s.dir = 0;
 		if (s.score > s.best) { s.best = s.score; localStorage.setItem('cg_best', String(s.best)); }
 		if (window.WindLB) WindLB.submit(s.score);
+		const reached = s.chapter + 1;
+		const stars = result === true ? 3 : reached >= 3 ? 2 : reached >= 2 ? 1 : 0;
+		try {
+			const all = JSON.parse(localStorage.getItem('wind_game_stars') || '{}') || {};
+			if (stars > (Number(all.drop) || 0)) { all.drop = stars; localStorage.setItem('wind_game_stars', JSON.stringify(all)); }
+		} catch (e) { /* без хранилища */ }
+		window.dispatchEvent(new Event('wind-game-stars'));
+		if (result !== null || s.score > 0) window.WindGames?.report('drop', { score: s.score, chapter: reached, stars, win: result === true });
+		if (result === true) window.WindGames?.sfx.win();
 		updateUi();
 		if (result === true) showOverlay('Ты пережил крипто-зиму!', `Финальный портфель: ${money(s.score)}. Рынок запомнит это имя.`, 'Сыграть ещё раз');
 		else if (result === false) showOverlay('Ликвидация', `Рагпулл забрал последнюю жизнь. Портфель: ${money(s.score)}.`, 'Попробовать снова');
@@ -923,7 +1062,7 @@ document.addEventListener('keydown', (event) => {
 		s.score = Math.max(0, s.score - lost);
 		s.combo = 1;
 		s.shake = 0.25;
-		if (removed.length) floatText(s.px, basketTop() - 70, '−' + money(lost), '#d9544f');
+		if (removed.length) { floatText(s.px, basketTop() - 70, '−' + money(lost), '#ff8d7b', true); window.WindGames?.sfx.bad(); }
 		return removed.length;
 	};
 
@@ -951,7 +1090,9 @@ document.addEventListener('keydown', (event) => {
 		});
 		s.stack = [];
 		s.score += bonus;
-		floatText(s.px, basketTop() - 90, 'Доставка! +' + money(bonus), '#e0a82e');
+		floatText(s.px, basketTop() - 90, 'Доставка! +' + money(bonus), '#ffd978', true);
+		burst(s.px, basketTop() - 40, '#ffd978', 26);
+		window.WindGames?.sfx.deliver();
 		ui.msg.textContent = 'Башня доставлена, бонус на счёт!';
 	};
 
@@ -986,7 +1127,10 @@ document.addEventListener('keydown', (event) => {
 			s.lives -= 1; s.combo = 1; s.shake = 0.35;
 			const n = s.stack.length;
 			if (n) detach(Math.max(0, n - 2), 1.6);
-			floatText(it.x, basketTop() - 30, '−1 ♥', '#d9544f');
+			floatText(it.x, basketTop() - 30, '−1 ♥', '#ff8d7b', true);
+			burst(it.x, it.y, '#ff5a5a', 18);
+			window.WindGames?.sfx.bad();
+			if (navigator.vibrate) navigator.vibrate(60);
 			ui.msg.textContent = n ? 'Рагпулл снёс верх башни!' : 'Рагпулл! Проверяй, что ловишь.';
 			updateUi();
 			if (s.lives <= 0) finish(false);
@@ -1003,7 +1147,9 @@ document.addEventListener('keydown', (event) => {
 		const dy = (parentIdx === -1) ? -it.size / 2 : s.stack[parentIdx].dy - (s.stack[parentIdx].size + it.size) / 2 * STEP;
 		
 		s.stack.push({ key: it.key, size: it.size, dx: it.x - s.px, dy, level, parentIdx, rot: it.rot * 0.3, gain });
-		floatText(it.x, landingY - 20, '+' + money(gain), it.key === 'gold' ? '#e0a82e' : '#24785b');
+		floatText(it.x, landingY - 20, '+' + money(gain), it.key === 'gold' ? '#ffd978' : '#9ef0c6', it.key === 'gold');
+		burst(it.x, landingY, TYPES[it.key].color, it.key === 'gold' ? 20 : 10);
+		if (it.key === 'gold') window.WindGames?.sfx.gold(); else window.WindGames?.sfx.catch(s.combo);
 		ui.msg.textContent = it.key === 'gold' ? 'Золотой ящик лёг на башню!' : s.combo > 1 ? `Серия ×${s.combo}! Башня растёт.` : 'Ящик уложен.';
 
 		const fell = checkStability();
@@ -1012,6 +1158,8 @@ document.addEventListener('keydown', (event) => {
 		if (s.caught >= CHAPTERS[s.chapter].goal) {
 			if (s.chapter + 1 >= CHAPTERS.length) { updateUi(); finish(true); return true; }
 			setChapter(s.chapter + 1);
+			s.banner = 1.8;
+			window.WindGames?.sfx.win();
 			ui.msg.textContent = 'Новая глава: ' + CHAPTERS[s.chapter].title;
 		}
 		updateUi();
@@ -1055,6 +1203,11 @@ document.addEventListener('keydown', (event) => {
 			return d.y < h + 80;
 		});
 		s.fx = s.fx.filter((f) => (f.life -= dt * 1.2) > 0);
+		s.parts = s.parts.filter((pt) => { pt.vy += 520 * dt; pt.x += pt.vx * dt; pt.y += pt.vy * dt; return (pt.life -= dt * 1.6) > 0; });
+		if (s.banner > 0) s.banner -= dt;
+		if (s.flash > 0) s.flash -= dt * 2.5;
+		else if (s.chapter === 1 && Math.random() < dt * 0.12) s.flash = 1;
+		if (s.chapter === 2) scenery.snow.forEach((f) => { f.y += f.v * dt; if (f.y > h) { f.y = -4; f.x = Math.random() * w; } });
 		s.fx.forEach((f) => { f.y -= 40 * dt; });
 		if (s.shake > 0) s.shake -= dt;
 	};
@@ -1069,23 +1222,133 @@ document.addEventListener('keydown', (event) => {
 		ctx.closePath();
 	};
 
+	// ---------- декорации: небо главы, горизонт из свечей, звёзды, снег ----------
+	const SKIES = [
+		{ top: '#123f35', mid: '#2c7a5f', bot: '#f2c98a', sun: 'rgba(255,214,140,.85)', city: 'rgba(10,40,32,.55)', city2: 'rgba(10,40,32,.3)' },
+		{ top: '#1d1f4a', mid: '#3c3f7a', bot: '#7d6fa8', sun: 'rgba(190,180,255,.35)', city: 'rgba(14,14,40,.6)', city2: 'rgba(14,14,40,.32)' },
+		{ top: '#071426', mid: '#0f2a4a', bot: '#2d5a7c', sun: 'rgba(220,240,255,.75)', city: 'rgba(3,10,22,.7)', city2: 'rgba(3,10,22,.38)' },
+	];
+	const scenery = { skyline: [], skyline2: [], stars: [], snow: [], clouds: [] };
+	const buildScenery = () => {
+		const mkLine = (gap, minH, maxH) => {
+			const out = [];
+			for (let x = -20; x < w + 40; x += gap + Math.random() * gap) {
+				const bodyH = minH + Math.random() * (maxH - minH);
+				out.push({ x, bw: 8 + Math.random() * 10, bodyH, wick: 6 + Math.random() * 18 });
+			}
+			return out;
+		};
+		scenery.skyline = mkLine(26, h * 0.08, h * 0.24);
+		scenery.skyline2 = mkLine(18, h * 0.12, h * 0.34);
+		scenery.stars = Array.from({ length: Math.round(w / 9) }, () => ({ x: Math.random() * w, y: Math.random() * h * 0.6, r: Math.random() * 1.4 + 0.3, ph: Math.random() * 6 }));
+		scenery.snow = Array.from({ length: Math.round(w / 7) }, () => ({ x: Math.random() * w, y: Math.random() * h, r: Math.random() * 2 + 0.8, v: 20 + Math.random() * 40, ph: Math.random() * 6 }));
+		scenery.clouds = Array.from({ length: 4 }, (_, i) => ({ x: Math.random() * w, y: 30 + i * (h * 0.12), s: 0.6 + Math.random() * 0.8, v: 6 + Math.random() * 10 }));
+	};
+
+	const cloud = (x, y, sc, alpha) => {
+		ctx.save();
+		ctx.globalAlpha = alpha;
+		ctx.fillStyle = '#fff';
+		ctx.beginPath();
+		ctx.arc(x, y, 18 * sc, 0, Math.PI * 2);
+		ctx.arc(x + 20 * sc, y - 8 * sc, 22 * sc, 0, Math.PI * 2);
+		ctx.arc(x + 44 * sc, y, 17 * sc, 0, Math.PI * 2);
+		ctx.rect(x, y, 44 * sc, 17 * sc);
+		ctx.fill();
+		ctx.restore();
+	};
+
+	const drawSky = () => {
+		const sk = SKIES[s.chapter] || SKIES[0];
+		const g = ctx.createLinearGradient(0, 0, 0, h);
+		g.addColorStop(0, sk.top); g.addColorStop(0.55, sk.mid); g.addColorStop(1, sk.bot);
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, w, h);
+		// звёзды ночью и в шторм
+		if (s.chapter >= 1) {
+			scenery.stars.forEach((st) => {
+				ctx.globalAlpha = (s.chapter === 2 ? 0.9 : 0.45) * (0.5 + 0.5 * Math.sin(s.t * 2 + st.ph));
+				ctx.fillStyle = '#fff';
+				ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill();
+			});
+			ctx.globalAlpha = 1;
+		}
+		// солнце или луна
+		const sx = w * 0.78, sy = h * (s.chapter === 0 ? 0.62 : 0.2);
+		const glow = ctx.createRadialGradient(sx, sy, 4, sx, sy, 90);
+		glow.addColorStop(0, sk.sun); glow.addColorStop(1, 'rgba(255,255,255,0)');
+		ctx.fillStyle = glow;
+		ctx.fillRect(sx - 90, sy - 90, 180, 180);
+		ctx.fillStyle = sk.sun;
+		ctx.beginPath(); ctx.arc(sx, sy, s.chapter === 0 ? 30 : 20, 0, Math.PI * 2); ctx.fill();
+		// облака
+		scenery.clouds.forEach((c) => cloud(((c.x + s.t * c.v) % (w + 140)) - 70, c.y, c.s, s.chapter === 1 ? 0.12 : 0.18));
+		// горизонт из свечей с параллаксом от корзины
+		const par = (s.px - w / 2) / w;
+		const city = (line, col, depth, base) => {
+			ctx.fillStyle = col;
+			ctx.strokeStyle = col;
+			ctx.lineWidth = 2;
+			line.forEach((c) => {
+				const x = c.x - par * depth;
+				const top = base - c.bodyH;
+				ctx.fillRect(x - c.bw / 2, top, c.bw, c.bodyH + 40);
+				ctx.beginPath(); ctx.moveTo(x, top - c.wick); ctx.lineTo(x, top); ctx.stroke();
+			});
+		};
+		city(scenery.skyline2, sk.city2, 14, h - 8);
+		city(scenery.skyline, sk.city, 30, h + 4);
+		// вспышка молнии в шторм
+		if (s.flash > 0) {
+			ctx.fillStyle = `rgba(230,230,255,${s.flash * 0.5})`;
+			ctx.fillRect(0, 0, w, h);
+		}
+		// снег в крипто-зиму
+		if (s.chapter === 2) {
+			ctx.fillStyle = 'rgba(255,255,255,.85)';
+			scenery.snow.forEach((f) => {
+				ctx.beginPath();
+				ctx.arc(f.x + Math.sin(s.t + f.ph) * 6, f.y, f.r, 0, Math.PI * 2);
+				ctx.fill();
+			});
+		}
+	};
+
+	const shade = (hex, k) => {
+		const n = parseInt(hex.slice(1), 16);
+		const f = (v) => Math.max(0, Math.min(255, Math.round(v + (k > 0 ? (255 - v) * k : v * k))));
+		return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+	};
+
 	const drawCrate = (key, sz, x, y, rot) => {
 		const t = TYPES[key];
 		ctx.save();
 		ctx.translate(x, y);
 		ctx.rotate(rot);
-		if (key === 'gold') { ctx.shadowColor = 'rgba(244,201,93,.9)'; ctx.shadowBlur = 16; }
-		ctx.fillStyle = t.color;
-		rr(-sz / 2, -sz / 2, sz, sz, 7); ctx.fill();
-		ctx.shadowBlur = 0;
-		ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5; ctx.stroke();
-		ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 2;
-		ctx.beginPath();
-		ctx.moveTo(-sz / 2 + 4, -sz / 2 + 4); ctx.lineTo(sz / 2 - 4, sz / 2 - 4);
-		ctx.moveTo(sz / 2 - 4, -sz / 2 + 4); ctx.lineTo(-sz / 2 + 4, sz / 2 - 4);
-		ctx.stroke();
+		if (key === 'gold') { ctx.shadowColor = 'rgba(255,214,90,.95)'; ctx.shadowBlur = 18 + 6 * Math.sin(s.t * 6); }
+		else if (key === 'rug') { ctx.shadowColor = 'rgba(255,70,70,.85)'; ctx.shadowBlur = 12 + 6 * Math.sin(s.t * 9); }
+		else { ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3; }
+		const g = ctx.createLinearGradient(0, -sz / 2, 0, sz / 2);
+		g.addColorStop(0, shade(t.color, 0.28));
+		g.addColorStop(1, shade(t.color, -0.18));
+		ctx.fillStyle = g;
+		rr(-sz / 2, -sz / 2, sz, sz, 9); ctx.fill();
+		ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+		ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2; ctx.stroke();
+		// блик
+		ctx.save();
+		rr(-sz / 2, -sz / 2, sz, sz, 9); ctx.clip();
+		ctx.fillStyle = 'rgba(255,255,255,.22)';
+		ctx.beginPath(); ctx.ellipse(-sz * 0.1, -sz * 0.42, sz * 0.62, sz * 0.26, -0.2, 0, Math.PI * 2); ctx.fill();
+		if (key === 'gold') {
+			const sh = ((s.t * 1.2) % 2) * sz * 1.6 - sz * 0.8;
+			ctx.fillStyle = 'rgba(255,255,255,.45)';
+			ctx.beginPath(); ctx.moveTo(sh - 6, -sz / 2); ctx.lineTo(sh + 6, -sz / 2); ctx.lineTo(sh - 6 + sz * 0.3, sz / 2); ctx.lineTo(sh - 18 + sz * 0.3, sz / 2); ctx.fill();
+		}
+		ctx.restore();
 		ctx.fillStyle = '#fff';
-		ctx.font = `700 ${Math.round(sz * 0.55)}px "Space Grotesk", sans-serif`;
+		ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 3;
+		ctx.font = `700 ${Math.round(sz * 0.56)}px "Space Grotesk", sans-serif`;
 		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 		ctx.fillText(t.sym, 0, 1);
 		ctx.restore();
@@ -1093,24 +1356,51 @@ document.addEventListener('keydown', (event) => {
 
 	const drawBasket = () => {
 		const bx = s.px - PW / 2, by = basketTop();
-		ctx.fillStyle = '#246f55';
+		ctx.save();
+		ctx.shadowColor = 'rgba(119,213,167,.6)'; ctx.shadowBlur = 18;
+		const g = ctx.createLinearGradient(0, by, 0, by + PH);
+		g.addColorStop(0, '#2f8d68'); g.addColorStop(1, '#174f3c');
+		ctx.fillStyle = g;
 		ctx.beginPath();
 		ctx.moveTo(bx - 6, by); ctx.lineTo(bx + PW + 6, by);
 		ctx.lineTo(bx + PW - 8, by + PH); ctx.lineTo(bx + 8, by + PH);
 		ctx.closePath(); ctx.fill();
-		ctx.fillStyle = '#77d5a7';
+		ctx.restore();
+		ctx.fillStyle = '#9ef0c6';
 		rr(bx - 9, by - 5, PW + 18, 9, 4); ctx.fill();
 		ctx.fillStyle = '#fff';
-		ctx.font = '700 17px "Space Grotesk", sans-serif';
+		ctx.font = '700 15px "Space Grotesk", sans-serif';
 		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 		ctx.fillText('WALLET', s.px, by + PH / 2 + 3);
+		// индикатор серии над корзиной
+		if (s.combo > 1) {
+			const k = Math.max(0, 1 - (performance.now() - s.lastCatch) / 2200);
+			ctx.save();
+			ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 4;
+			ctx.beginPath(); ctx.arc(bx + PW + 26, by - 4, 14, 0, Math.PI * 2); ctx.stroke();
+			ctx.strokeStyle = '#f4c95d';
+			ctx.beginPath(); ctx.arc(bx + PW + 26, by - 4, 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+			ctx.fillStyle = '#fff';
+			ctx.font = '700 12px "Space Grotesk", sans-serif';
+			ctx.fillText('×' + s.combo, bx + PW + 26, by - 3);
+			ctx.restore();
+		}
+	};
+
+	const burst = (x, y, color, n = 12) => {
+		for (let i = 0; i < n; i++) {
+			const a = Math.random() * Math.PI * 2, v = 80 + Math.random() * 180;
+			s.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, life: 1, color, r: 2 + Math.random() * 3 });
+		}
 	};
 
 	function draw() {
 		if (!w) return;
+		if (!scenery.skyline.length) buildScenery();
 		ctx.clearRect(0, 0, w, h);
 		ctx.save();
-		if (s.shake > 0) ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+		if (s.shake > 0) ctx.translate((Math.random() - 0.5) * 10 * s.shake * 4, (Math.random() - 0.5) * 10 * s.shake * 4);
+		drawSky();
 		s.items.forEach((it) => drawCrate(it.key, it.size, it.x, it.y, it.rot));
 		s.debris.forEach((d) => drawCrate(d.key, d.size, d.x, d.y, d.rot));
 		const lay = layout();
@@ -1122,13 +1412,36 @@ document.addEventListener('keydown', (event) => {
 			drawCrate(c.key, c.size, lay[i].x, lay[i].y, tilt + c.rot * 0.3);
 		});
 		drawBasket();
+		s.parts.forEach((pt) => {
+			ctx.globalAlpha = Math.max(0, pt.life);
+			ctx.fillStyle = pt.color;
+			ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r * pt.life + 0.5, 0, Math.PI * 2); ctx.fill();
+		});
+		ctx.globalAlpha = 1;
 		s.fx.forEach((f) => {
 			ctx.globalAlpha = Math.max(0, f.life);
-			ctx.fillStyle = f.color;
-			ctx.font = '700 16px "Space Grotesk", sans-serif';
+			ctx.font = `800 ${f.big ? 22 : 17}px "Space Grotesk", sans-serif`;
 			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.35)';
+			ctx.strokeText(f.text, f.x, f.y);
+			ctx.fillStyle = f.color;
 			ctx.fillText(f.text, f.x, f.y);
 		});
+		ctx.globalAlpha = 1;
+		// баннер новой главы
+		if (s.banner > 0) {
+			const al = Math.min(1, s.banner * 2);
+			ctx.globalAlpha = al;
+			ctx.fillStyle = 'rgba(0,0,0,.35)';
+			ctx.fillRect(0, h * 0.32, w, 64);
+			ctx.fillStyle = '#fff';
+			ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+			ctx.font = '600 12px "DM Sans", sans-serif';
+			ctx.fillText(CHAPTERS[s.chapter].label.toUpperCase(), w / 2, h * 0.32 + 20);
+			ctx.font = '800 22px "Space Grotesk", sans-serif';
+			ctx.fillText(CHAPTERS[s.chapter].title, w / 2, h * 0.32 + 43);
+			ctx.globalAlpha = 1;
+		}
 		ctx.restore();
 	}
 
@@ -1145,7 +1458,7 @@ document.addEventListener('keydown', (event) => {
 
 	const start = () => {
 		resize();
-		Object.assign(s, { items: [], fx: [], stack: [], debris: [], timer: 0.4, score: 0, lives: 3, combo: 1, caught: 0, shake: 0, lastCatch: 0, t: 0, dir: 0, lean: 0, px: w / 2, prevPx: w / 2 });
+		Object.assign(s, { items: [], fx: [], parts: [], flash: 0, banner: 1.6, stack: [], debris: [], timer: 0.4, score: 0, lives: 3, combo: 1, caught: 0, shake: 0, lastCatch: 0, t: 0, dir: 0, lean: 0, px: w / 2, prevPx: w / 2 });
 		setChapter(0);
 		updateUi();
 		ui.msg.textContent = 'Укладывай ящики в башню. Череп = рагпулл!';
@@ -2059,167 +2372,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	window.addEventListener('wind-auth', (e) => { apply({ balance: e.detail.balance }); });
 })();
 
-(() => {
-	const modal = document.getElementById('crypto-topup-modal');
-	const topup = document.getElementById('topup-modal');
-	if (!modal || !topup) return;
 
-	const COINS = {
-		USDT: { networks: ['TRC20', 'BEP20', 'ERC20'], decimals: 2 },
-		BTC: { networks: ['Bitcoin'], decimals: 8 },
-		ETH: { networks: ['ERC20'], decimals: 6 },
-		SOL: { networks: ['Solana'], decimals: 4 },
-	};
-	const priceUsd = { USDT: 1, BTC: 65000, ETH: 3200, SOL: 150 }; // запасные цены
-	const $ = (id) => document.getElementById(id);
-	const ui = {
-		network: $('crypto-network'), rub: $('crypto-rub'), pay: $('crypto-pay-amount'), rate: $('crypto-rate'),
-		address: $('crypto-address'), link: $('crypto-link'), qr: $('crypto-qr'), timer: $('crypto-timer'), paid: $('crypto-paid'),
-	};
-	let coin = 'USDT', rub = 5000, timerId = 0, qr = null, invoice = null, seq = 0;
-
-	const fmt = (n, d = 2) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: d });
-
-	const getRub = () => {
-		const custom = Number(document.querySelector('#custom-topup-amount')?.value || 0);
-		if (custom > 0) return custom;
-		return Number(topup.querySelector('.amount-option.active')?.dataset.amount || 5000);
-	};
-
-	const createInvoice = async () => {
-		throw new Error('Криптоплатежи пока не настроены. Баланс не изменён.');
-	};
-	// ссылка-кошелёк (по ней же строится QR)
-	const buildUri = (address, amount) => {
-		const a = amount.toFixed(COINS[coin].decimals);
-		if (coin === 'BTC') return `bitcoin:${address}?amount=${a}`;
-		if (coin === 'SOL') return `solana:${address}?amount=${a}`;
-		return address; // USDT / ETH: у кошельков нет единого формата ссылки, в QR кладём адрес
-	};
-
-	const drawQr = (text) => {
-		if (!window.QRCode) { ui.qr.textContent = 'QR недоступен: не загрузилась библиотека'; return; }
-		if (!qr) {
-			ui.qr.textContent = '';
-			qr = new QRCode(ui.qr, { text, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-		} else {
-			qr.clear();
-			qr.makeCode(text);
-		}
-	};
-
-	const render = () => {
-		const c = COINS[coin];
-		const amount = rub / CURRENCY_RATES.USD / priceUsd[coin];
-		ui.rub.textContent = `${fmt(rub, 0)} ₽`;
-		ui.pay.textContent = `${fmt(amount, c.decimals)} ${coin}`;
-		ui.rate.textContent = `1 ${coin} ≈ ${fmt(priceUsd[coin] * CURRENCY_RATES.USD, 2)} ₽`;
-		if (!invoice) return;
-
-		const uri = invoice.payUrl || buildUri(invoice.address, amount);
-		ui.address.textContent = invoice.address;
-		ui.link.textContent = uri;
-		if (uri.includes(':')) ui.link.setAttribute('href', uri); else ui.link.removeAttribute('href');
-		drawQr(uri);
-		modal.querySelectorAll('.crypto-demo-tag').forEach((t) => { t.hidden = !invoice.demo; });
-	};
-
-	const fillNetworks = () => {
-		ui.network.innerHTML = COINS[coin].networks.map((n) => `<option value="${n}">${n}</option>`).join('');
-	};
-
-	const startTimer = () => {
-		clearInterval(timerId);
-		const expires = Date.now() + 30 * 60 * 1000;
-		ui.paid.disabled = false;
-		const tick = () => {
-			const left = Math.max(0, expires - Date.now());
-			ui.timer.textContent = `${String(Math.floor(left / 60000)).padStart(2, '0')}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
-			if (!left) { clearInterval(timerId); ui.timer.textContent = 'время вышло'; ui.paid.disabled = true; }
-		};
-		tick();
-		timerId = setInterval(tick, 1000);
-	};
-
-	const refresh = async () => {
-		const id = ++seq;
-		invoice = null;
-		ui.address.textContent = 'Создаём счёт…';
-		ui.link.textContent = '…';
-		ui.link.removeAttribute('href');
-		render();
-		let inv;
-		try {
-			inv = await createInvoice();
-		} catch (error) {
-			ui.address.textContent = error.message;
-			ui.link.textContent = '—';
-			ui.paid.disabled = true;
-			return;
-		}
-		if (id !== seq) return; // пока ждали, пользователь выбрал другую монету
-		invoice = inv;
-		render();
-		startTimer();
-	};
-
-	const loadPrices = async () => {
-		await Promise.all(['BTC', 'ETH', 'SOL'].map(async (c) => {
-			try {
-				const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${c}USDT`);
-				const price = Number((await r.json()).result.list[0].lastPrice);
-				if (price > 0) priceUsd[c] = price;
-			} catch (e) { /* остаётся запасная цена */ }
-		}));
-		render(); // пересчитает сумму, ссылку и QR
-	};
-
-	const open = () => {
-		rub = getRub();
-		fillNetworks();
-		modal.hidden = false;
-		refresh();
-		loadPrices();
-	};
-
-	// выбор «Криптовалюта» сразу открывает форму оплаты
-	topup.querySelector('.payment-option[data-payment="crypto"]')?.addEventListener('click', () => {
-		topup.querySelectorAll('.payment-option').forEach((o) => o.classList.toggle('active', o.dataset.payment === 'card'));
-		closeModal(topup);
-		open();
-	});
-
-	document.querySelectorAll('#crypto-coins .crypto-coin').forEach((btn) => {
-		btn.addEventListener('click', () => {
-			coin = btn.dataset.coin;
-			document.querySelectorAll('#crypto-coins .crypto-coin').forEach((b) => b.classList.toggle('active', b === btn));
-			fillNetworks();
-			refresh();
-		});
-	});
-	ui.network.addEventListener('change', refresh);
-
-	modal.querySelectorAll('[data-copy]').forEach((btn) => {
-		btn.addEventListener('click', async () => {
-			try {
-				await navigator.clipboard.writeText($(btn.dataset.copy).textContent);
-				btn.textContent = 'Скопировано';
-			} catch (e) {
-				btn.textContent = 'Выдели вручную';
-			}
-			setTimeout(() => { btn.textContent = 'Копировать'; }, 1800);
-		});
-	});
-
-
-	ui.paid.addEventListener('click', () => {
-		closeModal(modal);
-		showSuccess('Криптоплатежи пока не настроены. Баланс не изменён', 'error');
-	});
-
-	new MutationObserver(() => { if (modal.hidden) clearInterval(timerId); })
-		.observe(modal, { attributes: true, attributeFilter: ['hidden'] });
-})();
 
 (() => {
 	const form = document.getElementById('alert-form');
@@ -3700,11 +3853,6 @@ if (cryptoChartElement && window.LightweightCharts) {
 
 	// ---------- переключение способов ----------
 	const setMethod = (m) => {
-		if (m === 'crypto') {
-			closeModal(modal);
-			topup.querySelector('.payment-option[data-payment="crypto"]')?.click();
-			return;
-		}
 		method = m;
 		$('pay-title').textContent = TITLES[m];
 		modal.querySelectorAll('[data-pay-tab]').forEach((b) => b.classList.toggle('active', b.dataset.payTab === m));
@@ -4285,7 +4433,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 		box.append(mk('p', 'gm-tip', o.tip), btn('button', 'Сыграть ещё раз', o.again));
 		stage.appendChild(box);
 		setStars(id, o.stars);
-		if (o.stars >= 2) confetti(root);
+		if (o.stars >= 2) { confetti(root); window.WindGames?.sfx.win(); }
+		window.WindGames?.report(id, Object.assign({ stars: o.stars }, o.data || {}));
 		icons();
 	};
 
@@ -4402,6 +4551,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				const b = btn('gm-option', n, () => {
 					const ok = n === c.pat.name;
 					if (ok) score++;
+					if (ok) window.WindGames?.sfx.ok(); else window.WindGames?.sfx.wrong();
 					opts.querySelectorAll('button').forEach((x) => {
 						x.disabled = true;
 						if (x.textContent === c.pat.name) x.classList.add('correct');
@@ -4430,6 +4580,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				win: st >= 1, stars: st,
 				heading: st === 3 ? 'Лучший детектив города' : st === 2 ? 'Опытный следователь' : st === 1 ? 'Стажёр с потенциалом' : 'Улики ускользнули',
 				rows: [['Раскрыто дел', `${score} из ${n}`]],
+				data: { score },
 				tip: 'Свечной паттерн это подсказка, а не прогноз. Подтверждай сигнал уровнями, объёмом и индикаторами (их считает раздел «Анализ рынка» в Wind Plus).',
 				again: open,
 			});
@@ -4585,6 +4736,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				ddEl.textContent = `${Math.round(st.dd * 100)}%`;
 				paintHull();
 				box.classList.add(win ? 'win' : 'loss');
+				if (win) window.WindGames?.sfx.ok(); else window.WindGames?.sfx.wrong();
 				banner.hidden = false;
 				banner.className = `rk-banner ${win ? 'win' : 'loss'}`;
 				banner.append(
@@ -4628,6 +4780,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				win: !st.ruined, stars: s,
 				heading: st.ruined ? 'Margin call: корабль затонул' : s === 3 ? 'Капитан года' : s === 2 ? 'Дошёл до порта' : 'Еле выбрался из шторма',
 				rows: [['Итоговый капитал', money(st.cap)], ['Максимальная просадка', `−${Math.round(st.dd * 100)}%`]],
+				data: { dd: st.dd, ruined: st.ruined, cap: st.cap },
 				extra: table,
 				tip: 'Чем глубже убыток, тем больше нужно, чтобы вернуться: после −50% требуется +100%. Серия из 4 убытков при риске 1% стоит около 4%, при 20% уже около 59%, при 50% почти 94% капитала. Поэтому профессионалы рискуют 1–2% на сделку.',
 				again: open,
@@ -4730,8 +4883,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 				tbar.style.width = `${(tbar.getBoundingClientRect().width / tw) * 100}%`;
 				bScam.disabled = true; bSafe.disabled = true;
 				const ok = said === m.scam;
-				if (ok) { st.ok++; st.streak++; st.best = Math.max(st.best, st.streak); }
-				else { st.lives--; st.streak = 0; livesEl.classList.add('hit'); }
+				if (ok) { st.ok++; st.streak++; st.best = Math.max(st.best, st.streak); window.WindGames?.sfx.ok(); }
+				else { st.lives--; st.streak = 0; livesEl.classList.add('hit'); window.WindGames?.sfx.wrong(); }
 				livesEl.textContent = hearts();
 				streakEl.textContent = `×${st.streak}`;
 				okEl.textContent = String(st.ok);
@@ -4778,6 +4931,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				kicker: 'Смена окончена', title: 'Охота на мошенников', text: 'Центр безопасности Wind Finance подводит итоги смены.',
 				win: !dead, stars: s,
 				heading: dead ? 'Репутация уничтожена' : s === 3 ? 'Непробиваемая защита' : s === 2 ? 'Надёжный страж' : 'Смена прошла, но есть над чем поработать',
+				data: { ok: st.ok },
 				rows: [['Верных ответов', `${st.ok} из ${Math.min(st.i, n)}`], ['Лучшая серия', `×${st.best}`], ['Репутация', dead ? 'потеряна' : hearts()]],
 				tip: 'Золотые правила: никому не сообщай seed-фразу, пароли и коды. Настоящая поддержка не просит удалённый доступ. «Гарантированная доходность» и «только сегодня» это признаки обмана. Всегда проверяй адрес сайта.',
 				again: open,
@@ -4802,11 +4956,18 @@ if (cryptoChartElement && window.LightweightCharts) {
 	initRisk(document.getElementById('gm-risk'));
 	initScam(document.getElementById('gm-scam'));
 	paintStars();
+	window.addEventListener('wind-game-stars', () => {
+		try { const v = JSON.parse(localStorage.getItem(SKEY) || '{}'); if (v && typeof v === 'object') stars = v; } catch (e) { /* хранилище недоступно */ }
+		paintStars();
+		window.WindGames?.render();
+	});
 
 	tabs.forEach((b) => b.addEventListener('click', () => {
 		const id = b.dataset.gameTab;
 		tabs.forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', String(x === b)); });
 		document.querySelectorAll('[data-game-panel]').forEach((p) => { p.hidden = p.dataset.gamePanel !== id; });
+		document.getElementById('game-tabs')?.setAttribute('data-active', id);
+		window.WindGames?.render();
 	}));
 })();
 
@@ -4903,10 +5064,6 @@ if (cryptoChartElement && window.LightweightCharts) {
 		if (e.detail && e.detail.simulator) {
 			const c = document.querySelector('#topup-modal .modal-copy');
 			if (c) c.textContent = 'Демо-пополнение виртуального баланса. Реальные деньги не списываются, платёжные данные вводить не нужно.';
-		}
-		if (window.WIND_REGION === 'RU') {
-			document.querySelector('#topup-modal .payment-option[data-payment="crypto"]')?.setAttribute('hidden', '');
-			document.querySelector('#pay-topup-modal [data-pay-tab="crypto"]')?.setAttribute('hidden', '');
 		}
 	});
 
