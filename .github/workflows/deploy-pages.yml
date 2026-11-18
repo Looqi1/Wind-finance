@@ -15,7 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pytest
+          python -m pytest -q
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,9 +49,17 @@ jobs:
           cp sitefinance/index.html sitefinance/script.js sitefinance/style.css _site/
           cp -R sitefinance/assets _site/assets
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
+          # Каждый деплой получает уникальную версию файлов, чтобы браузер не держал старый кэш.
+          VERSION="${GITHUB_SHA::8}"
+          sed -i -E "s/(style\.css|script\.js|wind-finance-hero\.svg)\?v=[0-9A-Za-z]+/\1?v=${VERSION}/g" _site/index.html
+          sed -i -E "s/config\.js\"/config.js?v=${VERSION}\"/" _site/index.html
           printf 'window.WIND_API_URL = %s;\n' \
-            "$(python3 -c 'import json, os; print(json.dumps(os.environ.get("BACKEND_URL", "")))')" \
+            "$(python3 -c 'import json, os; print(json.dumps(os.environ.get("BACKEND_URL", "").rstrip("/")))')" \
             > _site/config.js
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::warning title=BACKEND_URL не задан::Сайт опубликуется без сервера: вход и регистрация работать не будут. Задай переменную репозитория BACKEND_URL (Settings → Secrets and variables → Actions → Variables)."
+          fi
+          grep -o '?v=[0-9A-Za-z]*' _site/index.html | sort -u
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -27,6 +27,29 @@ services:
         value: https://api-testnet.bybit.com
       - key: BYBIT_MAX_NOTIONAL_USDT
         value: "100"
+      - key: FRONTEND_URL
+        value: https://looqi1.github.io/Wind-finance/
+      # Почта для сброса пароля и ценовых уведомлений (например, Яндекс: smtp.yandex.ru:587).
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Telegram-бот для ценовых уведомлений (токен от @BotFather) и секрет вебхука.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      # ID администраторов через запятую (видят раздел «Админка» в настройках).
+      - key: WINDFINANCE_ADMIN_USER_IDS
+        sync: false
 
 databases:
   - name: windfinance-db

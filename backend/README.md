@@ -49,6 +49,23 @@ Apply schema changes before starting the application:
 DATABASE_URL='postgresql+psycopg://user:password@db/windfinance' alembic upgrade head
 ```
 
+## Connecting the site to the server
+
+1. Deploy the backend (Render Blueprint from `render.yaml`) and copy its HTTPS URL.
+2. In GitHub: Settings → Secrets and variables → Actions → Variables → `BACKEND_URL` = that URL.
+3. Re-run the "Deploy frontend to GitHub Pages" workflow. Without `BACKEND_URL` the site shows
+   a notice and only the demo mode works.
+4. "Keep backend awake" pings `/health` every 10 minutes so the free Render instance does not sleep.
+
+Password reset emails need `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+Telegram alerts need `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and a webhook:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d url="https://your-backend.example/telegram/webhook" \
+  -d secret_token="$TELEGRAM_WEBHOOK_SECRET"
+```
+
 ## Payments
 
 Real top-ups use YooKassa. The server credits the balance only after receiving
@@ -69,7 +86,17 @@ https://your-backend.example/payments/yookassa/webhook
 - `GET /auth/me` — get the authenticated user
 - `GET /wallet` — get the server-side balance and history
 - `GET /wallet/assets` — get the authenticated user's asset balances
-- `POST /wallet/exchange` — atomically exchange supported fiat assets
+- `POST /wallet/exchange` — atomically exchange supported fiat assets (fee 1%, 0.6% with Plus)
+- `GET /wallet/exchange/quote` — current exchange fee for the user
+- `POST /auth/password/forgot`, `POST /auth/password/reset` — password recovery by email link (30 min)
+- `GET /invest/portfolio`, `POST /invest/buy`, `POST /invest/sell` — investment simulator with MOEX prices
+- `GET /invest/history` — daily portfolio value and recent trades
+- `GET /invest/leaderboard` — weekly portfolio competition (server-computed return)
+- `GET|POST /goals`, `POST /goals/{id}/deposit|withdraw`, `DELETE /goals/{id}` — savings goals
+- `GET|POST /alerts`, `DELETE /alerts/{id}` — price alerts checked by the server, sent to Telegram or email
+- `POST /telegram/link`, `POST /telegram/webhook` — link a Telegram chat for alerts
+- `POST /subscription/trial` — one-time 7-day Wind Plus trial
+- `GET /admin/stats` — admin dashboard (`WINDFINANCE_ADMIN_USER_IDS`)
 - `POST /payments/create` — create a card or SBP payment
 - `GET /payments/{payment_id}` — check payment status
 - `POST /payments/yookassa/webhook` — verified YooKassa notification

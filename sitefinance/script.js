@@ -48,6 +48,13 @@ modalTriggers.forEach((trigger) => {
 		}
 	});
 });
+// кнопки, которые появляются позже (например, в пустом портфеле)
+document.addEventListener('click', (event) => {
+	const trigger = event.target.closest('[data-modal]');
+	if (!trigger || [...modalTriggers].includes(trigger)) return;
+	const modal = document.getElementById(trigger.dataset.modal);
+	if (modal) modal.hidden = false;
+});
 
 document.querySelectorAll('[data-close-modal]').forEach((button) => {
 	button.addEventListener('click', () => closeModal(button.closest('.modal')));
@@ -138,9 +145,19 @@ const updateCryptoOrderSummary = () => {
 document.querySelector('#crypto-buy-quantity')?.addEventListener('input', updateCryptoOrderSummary);
 document.querySelector('#crypto-buy-price')?.addEventListener('input', updateCryptoOrderSummary);
 
-const showSuccess = (message) => {
+const showSuccess = (message, type = 'success') => {
+	const isError = type === 'error';
+	successToast.classList.toggle('is-error', isError);
+	const toastTitle = successToast.querySelector('.success-content strong');
+	if (toastTitle) toastTitle.textContent = isError ? 'Не получилось' : 'Успешно';
 	windBurst.classList.remove('active');
 	successMessage.textContent = message;
+	if (isError) {
+		successToast.classList.remove('visible');
+		void successToast.offsetWidth;
+		successToast.classList.add('visible');
+		return;
+	}
 	void windBurst.offsetWidth;
 	windBurst.classList.add('active');
 	window.setTimeout(() => windBurst.classList.remove('active'), 2550);
@@ -169,7 +186,7 @@ confirmPaymentButton?.addEventListener('click', async () => {
 	const quantity = Number(document.getElementById('crypto-buy-quantity')?.value || 0);
 	const symbol = cryptoPair?.value || 'BTCUSDT';
 	if (!(quantity > 0)) {
-		showSuccess('Укажите корректное количество');
+		showSuccess('Укажите корректное количество', 'error');
 		return;
 	}
 	confirmPaymentButton.disabled = true;
@@ -181,7 +198,7 @@ confirmPaymentButton?.addEventListener('click', async () => {
 		closeModal(document.getElementById('checkout-modal'));
 		showSuccess(`Ордер ${result.id} отправлен в Bybit · статус: ${result.status}`);
 	} catch (error) {
-		showSuccess(error.message || 'Ордер не отправлен');
+		showSuccess(error.message || 'Ордер не отправлен', 'error');
 	} finally {
 		confirmPaymentButton.disabled = false;
 	}
@@ -244,7 +261,8 @@ let streamVersion = 0;
 		activeWalletOwner = ownerId;
 		USER_WALLETS = ownerId ? readWallets(ownerId, user.balance) : { ...DEFAULT_WALLETS, RUB: 0 };
 		updateBalanceUI();
-		if (ownerId && window.WindApi) {
+		// В демо-просмотре нет токена: запрос к серверу заведомо вернёт 401.
+		if (ownerId && ownerId !== '0' && window.WindApi) {
 			window.WindApi('/wallet/assets').then((data) => {
 				const serverAssets = data && data.assets;
 				if (!serverAssets || activeWalletOwner !== ownerId) return;
@@ -255,12 +273,13 @@ let streamVersion = 0;
 				}, {});
 				updateBalanceUI();
 			}).catch(() => {
-				showSuccess('Не удалось загрузить активы аккаунта');
+				showSuccess('Не удалось загрузить активы аккаунта', 'error');
 			});
 		}
 	};
 
 	window.addEventListener('wind-auth', (event) => selectWallet(event.detail));
+	window.addEventListener('wind-portfolio', () => updateBalanceUI());
 	window.addEventListener('wind-logout', () => selectWallet(null));
 
 	const CRYPTO_RATES = {
@@ -284,25 +303,21 @@ let streamVersion = 0;
 		if (!mainBalanceContainer) return;
 
 		let totalRub = 0;
-		let balancesHtml = '<span class="wallet-label">Твои активы</span><div class="balances-grid">';
-		
+		const chips = [];
 		Object.entries(USER_WALLETS).forEach(([code, val]) => {
 			if (val > 0) {
 				const isCrypto = ['BTC', 'ETH', 'SOL'].includes(code);
 				const rate = isCrypto ? (CRYPTO_RATES[code] * CURRENCY_RATES.USD) : CURRENCY_RATES[code];
 				totalRub += val * rate;
-				
 				const displayVal = isCrypto ? val.toFixed(4) : formatMoney(val);
-				balancesHtml += `
-					<div class="balance-item">
-						<small>${code}</small>
-						<strong>${displayVal}</strong>
-					</div>
-				`;
+				chips.push(`<span class="balance-item"><small>${code}</small><b>${displayVal}</b></span>`);
 			}
 		});
-
-		balancesHtml += `</div><strong>${formatMoney(totalRub)} ₽</strong><div class="total-estimate">Эквивалент: ${formatMoney(totalRub)} ₽</div>`;
+		// Разбивку по валютам показываем, только если валют больше одной: иначе она дублирует итог.
+		let balancesHtml = `<span class="wallet-label">${chips.length > 1 ? 'Деньги и валюты в рублях' : 'Доступно на балансе'}</span><strong>${formatMoney(totalRub)} ₽</strong>`;
+		balancesHtml += chips.length > 1
+			? `<div class="balances-grid">${chips.join('')}</div>`
+			: `<span class="wallet-caption">${totalRub > 0 ? 'Пополнение зачисляется после подтверждения платежа' : 'Пополни баланс, чтобы начать'}</span>`;
 		mainBalanceContainer.innerHTML = balancesHtml;
 
 		// Обновление балансов в секции настроек
@@ -311,10 +326,13 @@ let streamVersion = 0;
 			settingsBalance.textContent = `${formatMoney(totalRub)} ₽`;
 		}
 
-		// Обновление баланса в профиле инвестора (Общая стоимость)
+		// Общая стоимость = деньги и валюты в рублях + текущая стоимость инвестиций
 		const portfolioTotal = document.querySelector('.portfolio-summary div:first-child strong');
 		if (portfolioTotal) {
-			portfolioTotal.textContent = `${formatMoney(totalRub)} ₽`;
+			const invested = window.WindPortfolio ? window.WindPortfolio.investedValue() : 0;
+			const text = `${formatMoney(totalRub + invested)} ₽`;
+			portfolioTotal.textContent = text;
+			if (portfolioTotal.dataset.fxFinal !== undefined) { portfolioTotal.dataset.fxFinal = text; portfolioTotal._fx = null; }
 		}
 
 		updateConverterAvailable();
@@ -334,7 +352,7 @@ let streamVersion = 0;
 	};
 
 	const updatePortfolioList = () => {
-		const portfolioList = document.querySelector('.portfolio-list');
+		const portfolioList = document.getElementById('portfolio-cash');
 		if (!portfolioList) return;
 		
 		const icons = {
@@ -355,6 +373,15 @@ let streamVersion = 0;
 			AED: 'teal'
 		};
 
+		const names = {
+			USD: 'Доллар США',
+			EUR: 'Евро',
+			RUB: 'Российский рубль',
+			CNY: 'Китайский юань',
+			GBP: 'Фунт стерлингов',
+			AED: 'Дирхам ОАЭ'
+		};
+
 		let html = '';
 		Object.entries(USER_WALLETS).forEach(([code, val]) => {
 			if (val > 0) {
@@ -362,7 +389,7 @@ let streamVersion = 0;
 					<div class="portfolio-item">
 						<div class="portfolio-main">
 							<span class="asset-icon ${colors[code] || 'teal'}"><i data-lucide="${icons[code] || 'circle'}"></i></span>
-							<div><strong>${code} Balance</strong><small>${code} Валюта</small></div>
+							<div><strong>${names[code] || code}</strong><small>Валютный счёт · ${code}</small></div>
 						</div>
 						<div class="portfolio-side">
 							<span>${formatMoney(val)} ${code}</span>
@@ -371,7 +398,9 @@ let streamVersion = 0;
 				`;
 			}
 		});
-		
+
+		if (html) html = `<p class="portfolio-subhead">Валютные счета</p>${html}`;
+
 		portfolioList.innerHTML = html;
 		if (window.lucide) window.lucide.createIcons();
 	};
@@ -415,6 +444,7 @@ let streamVersion = 0;
 		const note = converter.querySelector('.converter-note');
 		if (!amountInput || !fromSelect || !toSelect || !output || !note) return;
 
+		updateConverterAvailable();
 		const from = fromSelect.value;
 		const to = toSelect.value;
 		const amount = Number(amountInput.value || 0);
@@ -422,7 +452,9 @@ let streamVersion = 0;
 		output.textContent = formatMoney(amount * getConverterRate(from, to) * (1 - p.fee / 100));
 		const pc = (v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 		const perks = [p.plus ? `Plus −${pc(p.plus)}%` : '', p.game ? `игры −${pc(p.game)}%` : ''].filter(Boolean).join(', ');
-		note.textContent = `По курсу ${formatMoney(getDisplayRate(from, to))} ${CURRENCY_SYMBOLS[to] || to} за 1 ${from} · комиссия ${pc(p.fee)}%${perks ? ` (${perks})` : ''}`;
+		const rate = getDisplayRate(from, to);
+		const rateText = rate < 1 ? rate.toLocaleString('ru-RU', { maximumFractionDigits: 4 }) : formatMoney(rate);
+		note.textContent = `По курсу ${rateText} ${CURRENCY_SYMBOLS[to] || to} за 1 ${from} · комиссия ${pc(p.fee)}%${perks ? ` (${perks})` : ''}`;
 	};
 
 	const executeConverter = async () => {
@@ -438,21 +470,21 @@ let streamVersion = 0;
 		const to = toSelect.value;
 		const amount = Number(amountInput.value || 0);
 		if (!Number.isFinite(amount) || amount <= 0) {
-			showSuccess('Введите сумму больше нуля');
+			showSuccess('Введите сумму больше нуля', 'error');
 			return;
 		}
 		if (from === to) {
-			showSuccess('Выберите разные валюты');
+			showSuccess('Выберите разные валюты', 'error');
 			return;
 		}
 		if (amount > (USER_WALLETS[from] || 0)) {
-			showSuccess(`Недостаточно ${from}. Доступно: ${formatMoney(USER_WALLETS[from] || 0)} ${from}`);
+			showSuccess(`Недостаточно ${from}. Доступно: ${formatMoney(USER_WALLETS[from] || 0)} ${from}`, 'error');
 			return;
 		}
 		const fee = window.WindFee ? WindFee.rate() : 0;
 		const result = amount * getConverterRate(from, to) * (1 - fee / 100);
 		if (!Number.isFinite(result) || result <= 0) {
-			showSuccess('Не удалось рассчитать обмен');
+			showSuccess('Не удалось рассчитать обмен', 'error');
 			return;
 		}
 
@@ -460,7 +492,7 @@ let streamVersion = 0;
 		void button.offsetWidth;
 		button.classList.add('is-animating');
 		if (!activeWalletOwner || !window.WindApi) {
-			showSuccess('Войдите в аккаунт для обмена');
+			showSuccess('Войдите в аккаунт для обмена', 'error');
 			return;
 		}
 		try {
@@ -474,9 +506,10 @@ let streamVersion = 0;
 			});
 			updateBalanceUI();
 			await window.Wallet?.load();
-			showSuccess(`Обмен выполнен: ${formatMoney(amount)} ${from} → ${formatMoney(result)} ${to}`);
+			const received = Number(data.received);
+			showSuccess(`Обмен выполнен: ${formatMoney(amount)} ${from} → ${formatMoney(Number.isFinite(received) ? received : result)} ${to}`);
 		} catch (error) {
-			showSuccess(error.message || 'Обмен не выполнен');
+			showSuccess(error.message || 'Обмен не выполнен', 'error');
 		}
 	};
 
@@ -609,21 +642,67 @@ const openInvestmentProfile = () => {
 	appNavigation.forEach((link) => {
 		link.classList.toggle('active', link.getAttribute('href') === '#investments');
 	});
+	if (topbarEyebrow) topbarEyebrow.textContent = 'Инвестиции';
+	if (topbarTitle) topbarTitle.textContent = 'Мой портфель';
+	window.scrollTo({ top: 0, behavior: 'instant' });
 };
 
 const closeInvestmentProfile = () => {
 	document.body.classList.remove('show-investment-profile');
 };
 
+// Заголовок топбара под каждую вкладку
+const viewTitles = {
+	dashboard: ['Wind Finance', 'Ваши финансы'],
+	investments: ['Симулятор', 'Инвестиции'],
+	crypto: ['Bybit · спот', 'Криптовалюты'],
+	converter: ['Валюты', 'Конвертер'],
+	game: ['Играй и учись', 'Игровая зона'],
+	settings: ['Профиль', 'Настройки'],
+};
+const topbarEyebrow = document.querySelector('.topbar .eyebrow');
+const topbarTitle = document.querySelector('.topbar h1');
+const paintViewTitle = (view) => {
+	const [eyebrow, title] = viewTitles[view] || viewTitles.dashboard;
+	if (topbarEyebrow) topbarEyebrow.textContent = eyebrow;
+	if (topbarTitle) topbarTitle.textContent = title;
+};
+
+// сводка над инвест-карточками повторяет значения из профиля портфеля
+const syncInvSummary = () => {
+	const source = document.querySelectorAll('#investment-profile .portfolio-summary strong');
+	document.querySelectorAll('[data-inv-summary]').forEach((tile) => {
+		const node = source[Number(tile.dataset.invSummary)];
+		if (node) tile.textContent = node.dataset.fxFinal || node.textContent;
+	});
+};
+const invSummarySource = document.querySelector('#investment-profile .portfolio-summary');
+if (invSummarySource) {
+	new MutationObserver(() => {
+		window.clearTimeout(syncInvSummary._t);
+		syncInvSummary._t = window.setTimeout(syncInvSummary, 120);
+	}).observe(invSummarySource, { subtree: true, childList: true, characterData: true });
+}
+
 const setAppView = (view) => {
 	const nextView = appViews.has(view) ? view : 'dashboard';
+	const changed = document.body.dataset.view !== nextView;
+	if (nextView === 'investments') syncInvSummary();
 	document.body.dataset.view = nextView;
 	closeInvestmentProfile();
 	appNavigation.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${nextView}`));
+	paintViewTitle(nextView);
+	if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
 };
 
 appNavigation.forEach((link) => {
-	link.addEventListener('click', () => setAppView(link.getAttribute('href').slice(1)));
+	link.addEventListener('click', (event) => {
+		// без прыжка к якорю: показываем вкладку сверху, с шапкой
+		event.preventDefault();
+		const view = link.getAttribute('href').slice(1);
+		window.history.replaceState(null, '', `#${view}`);
+		setAppView(view);
+	});
 });
 
 document.querySelectorAll('[data-agent-toggle]').forEach((toggle) => {
@@ -1142,8 +1221,10 @@ const updateFocusCard = (currencyCode) => {
 		focusTrend.classList.remove('positive', 'negative');
 		focusTrend.classList.add(config.trend);
 	}
+	// форма столбиков следует за направлением курса: при падении график снижается
+	const shape = config.trend === 'negative' ? [...config.chart].reverse() : config.chart;
 	chartBars.forEach((bar, index) => {
-		bar.style.height = `${config.chart[index] || 40}%`;
+		bar.style.height = `${shape[index] || 40}%`;
 		bar.style.background = config.trend === 'positive' ? 'rgba(36,120,91,.52)' : 'rgba(203,101,85,.52)';
 	});
 };
@@ -1402,24 +1483,75 @@ const updateProfile = (user) => {
 	}, 0);
 };
 
+const authNotice = document.querySelector('#auth-notice');
+const forgotButton = document.querySelector('#auth-forgot');
+let resetToken = null;
+const setNotice = (text, kind = '') => {
+	if (!authNotice) return;
+	authNotice.hidden = !text;
+	authNotice.textContent = text || '';
+	authNotice.className = `auth-notice${kind ? ' ' + kind : ''}`;
+};
+const setFieldLabel = (input, text) => {
+	const label = input.closest('label');
+	if (label && label.firstChild && label.firstChild.nodeType === Node.TEXT_NODE) label.firstChild.textContent = text;
+};
+
+const AUTH_MODES = {
+	login: { title: 'Войти в аккаунт', submit: 'Войти', helper: 'Войди, чтобы продолжить спокойный обзор портфеля.' },
+	register: { title: 'Создать аккаунт', submit: 'Зарегистрироваться', helper: 'Создай профиль — и я помогу собрать первый спокойный портфель.' },
+	forgot: { title: 'Восстановить пароль', submit: 'Отправить ссылку', helper: 'Пришлём на почту ссылку для нового пароля. Она действует 30 минут.' },
+	reset: { title: 'Новый пароль', submit: 'Сохранить пароль', helper: 'Придумай новый пароль: минимум 8 символов, лучше с цифрами и знаками.' },
+};
+
 const setAuthMode = (mode) => {
 	authMode = mode;
 	needTotp = false;
-	const isRegister = mode === 'register';
-	authTitle.textContent = isRegister ? 'Создать аккаунт' : 'Войти в аккаунт';
-	authSubmitLabel.textContent = isRegister ? 'Зарегистрироваться' : 'Войти';
+	const isRegister = mode === 'register', isForgot = mode === 'forgot', isReset = mode === 'reset';
+	const meta = AUTH_MODES[mode] || AUTH_MODES.login;
+	authTitle.textContent = meta.title;
+	authSubmitLabel.textContent = meta.submit;
 	usernameField.closest('label').hidden = !isRegister;
 	usernameField.required = isRegister;
 	consentBox.closest('label').hidden = !isRegister;
+	emailField.closest('label').hidden = isReset;
+	emailField.required = !isReset;
+	passwordField.closest('label').hidden = isForgot;
+	passwordField.required = !isForgot;
+	setFieldLabel(passwordField, isReset ? 'Новый пароль' : 'Пароль');
+	if (forgotButton) forgotButton.hidden = mode !== 'login';
 	totpField.closest('label').hidden = true;
 	totpField.value = '';
-	passwordField.autocomplete = isRegister ? 'new-password' : 'current-password';
-	passwordMeter.hidden = !isRegister;
+	passwordField.autocomplete = isRegister || isReset ? 'new-password' : 'current-password';
+	passwordMeter.hidden = !(isRegister || isReset);
 	if (!isRegister) passwordField.value = '';
-	if (authHelperText) authHelperText.textContent = isRegister ? 'Создай профиль — и я помогу собрать первый спокойный портфель.' : 'Войди, чтобы продолжить спокойный обзор портфеля.';
+	if (authHelperText) authHelperText.textContent = meta.helper;
 	document.querySelectorAll('[data-auth-mode]').forEach((b) => b.classList.toggle('active', b.dataset.authMode === mode));
 	authError.textContent = '';
 };
+forgotButton?.addEventListener('click', () => { setAuthMode('forgot'); setNotice(''); emailField.focus(); });
+
+// ---- доступность сервера ----
+// На GitHub Pages адрес API задаётся переменной BACKEND_URL. Без неё запросы уходили на сам github.io.
+const apiConfigured = Boolean(window.WIND_API_URL) || !/\.github\.io$/.test(window.location.hostname);
+let serverAwake = false;
+const wakeServer = () => {
+	if (!apiConfigured) return Promise.resolve(false);
+	// бесплатный хостинг засыпает: первый запрос будит сервер, пока человек вводит пароль
+	return fetch(`${apiBase}/health`, { cache: 'no-store' }).then((r) => { serverAwake = r.ok; return r.ok; }).catch(() => false);
+};
+const wakePromise = wakeServer();
+// подсказка «сервер просыпается», если запрос идёт дольше 3 секунд
+const withWakeHint = async (promise, label) => {
+	const timer = window.setTimeout(() => {
+		if (!serverAwake) setNotice('Сервер просыпается после простоя — это может занять до минуты. Не закрывай страницу.', 'wait');
+		if (label) label.textContent = 'Подключаемся…';
+	}, 3000);
+	try { return await promise; } finally { window.clearTimeout(timer); }
+};
+if (!apiConfigured) {
+	setNotice('Сервер ещё не подключён к этому сайту, поэтому вход и регистрация недоступны. Нажми «Войти как demo», чтобы посмотреть приложение.', 'warn');
+}
 
 document.querySelectorAll('[data-auth-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.authMode)));
 
@@ -1487,19 +1619,33 @@ const tgLogin = async () => {
 };
 
 const checkSession = async () => {
+	const params = new URLSearchParams(window.location.search);
+	if (params.get('reset')) {
+		// ссылка из письма важнее демо-режима и старой сессии
+		resetToken = params.get('reset');
+		params.delete('reset');
+		window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}${window.location.hash}`);
+		sessionStorage.removeItem(DEMO_PREVIEW_KEY);
+		showAuth();
+		setAuthMode('reset');
+		return;
+	}
 	if (isDemoPreview()) {
 		updateProfile(demoPreviewUser);
 		authGate.hidden = true;
 		return;
 	}
-	if (localStorage.getItem('wind_access_token')) {
+	if (localStorage.getItem('wind_access_token') && apiConfigured) {
+		setNotice('Восстанавливаем сессию…', 'wait');
 		try {
-			updateProfile(await api('/auth/me', { timeoutMs: 8000 }));
+			updateProfile(await withWakeHint(api('/auth/me', { timeoutMs: 70000 })));
+			setNotice('');
 			authGate.hidden = true;
 			return;
 		} catch (e) {
+			setNotice('');
 			if (e.status === 401) localStorage.removeItem('wind_access_token'); // токен чистим только при 401
-			else if (e.status === undefined) { showAuth(); return; }              // сервер недоступен
+			else if (e.status === undefined) { showAuth(); setNotice('Сервер не ответил. Проверь интернет и попробуй войти ещё раз.', 'warn'); return; }
 		}
 	}
 	if (await tgLogin()) return;
@@ -1514,6 +1660,49 @@ authForm.addEventListener('submit', async (event) => {
 	submitButton.disabled = true;
 	submitButton.classList.add('is-loading');
 	if (submitLabel) submitLabel.textContent = 'Входим…';
+	const finish = () => {
+		submitButton.disabled = false;
+		submitButton.classList.remove('is-loading');
+		if (submitLabel) submitLabel.textContent = (AUTH_MODES[authMode] || AUTH_MODES.login).submit;
+	};
+	if (!apiConfigured) {
+		authError.textContent = 'Сервер не подключён. Войди как demo или попробуй позже.';
+		finish();
+		return;
+	}
+	if (authMode === 'forgot') {
+		try {
+			const r = await withWakeHint(api('/auth/password/forgot', { method: 'POST', body: { email: emailField.value }, timeoutMs: 70000 }), submitLabel);
+			setNotice(r.message, 'ok');
+			if (r.dev_reset_url) console.info('Ссылка сброса (только для разработки):', r.dev_reset_url);
+		} catch (error) {
+			authError.textContent = error.message;
+		}
+		finish();
+		return;
+	}
+	if (authMode === 'reset') {
+		try {
+			const body = { token: resetToken, password: passwordField.value };
+			if (needTotp) body.totp_code = totpField.value.trim();
+			const result = await withWakeHint(api('/auth/password/reset', { method: 'POST', body, timeoutMs: 70000 }), submitLabel);
+			localStorage.setItem('wind_access_token', result.access_token);
+			resetToken = null;
+			updateProfile(result.user);
+			authGate.hidden = true;
+			authForm.reset();
+			setNotice('');
+			showSuccess('Пароль изменён, ты в аккаунте');
+		} catch (error) {
+			if (error.message === '2fa_required') {
+				needTotp = true;
+				totpField.closest('label').hidden = false;
+				authError.textContent = 'Введи код из приложения-аутентификатора';
+			} else authError.textContent = error.message;
+		}
+		finish();
+		return;
+	}
 	const body = { email: emailField.value, password: passwordField.value };
 	if (authMode === 'register') {
 		if (!consentBox.checked) {
@@ -1529,7 +1718,8 @@ authForm.addEventListener('submit', async (event) => {
 		body.totp_code = totpField.value.trim();
 	}
 	try {
-		const result = await api(`/auth/${authMode}`, { method: 'POST', body, timeoutMs: 15000 });
+		const result = await withWakeHint(api(`/auth/${authMode}`, { method: 'POST', body, timeoutMs: 70000 }), submitLabel);
+		setNotice('');
 		localStorage.setItem('wind_access_token', result.access_token);
 		updateProfile(result.user);
 		authGate.hidden = true;
@@ -1548,6 +1738,7 @@ authForm.addEventListener('submit', async (event) => {
 			if (submitLabel) submitLabel.textContent = 'Войти';
 			return;
 		}
+		setNotice('');
 		authError.textContent = error instanceof TypeError ? 'Сервер недоступен. Проверь соединение и попробуй ещё раз.' : error.message;
 		submitButton.disabled = false;
 		submitButton.classList.remove('is-loading');
@@ -1587,7 +1778,14 @@ const createCryptoChart = () => {
 
 	const candleOptions = { upColor: '#2d9b6f', downColor: '#d97867', borderVisible: false, wickUpColor: '#2d9b6f', wickDownColor: '#d97867' };
 	candleSeries = cryptoChart.addCandlestickSeries ? cryptoChart.addCandlestickSeries(candleOptions) : cryptoChart.addSeries(LightweightCharts.CandlestickSeries, candleOptions);
-	new ResizeObserver(() => cryptoChart.applyOptions({ width: cryptoChartElement.clientWidth, height: cryptoChartElement.clientHeight })).observe(cryptoChartElement);
+	let chartWasHidden = cryptoChartElement.clientWidth === 0;
+	new ResizeObserver(() => {
+		const width = cryptoChartElement.clientWidth;
+		cryptoChart.applyOptions({ width, height: cryptoChartElement.clientHeight });
+		// График создаётся, пока вкладка скрыта: при первом показе заново вписываем свечи в ширину.
+		if (width > 0 && chartWasHidden) cryptoChart.timeScale().fitContent();
+		chartWasHidden = width === 0;
+	}).observe(cryptoChartElement);
 };
 
 const loadCryptoCandles = async () => {
@@ -1726,8 +1924,11 @@ if (cryptoChartElement && window.LightweightCharts) {
 			const row = document.createElement('div');
 			row.className = 'ledger-row wallet-tx';
 			const tag = document.createElement('span');
-			tag.className = `ledger-tag ${h.type === 'in' ? 'transfer' : 'sell'}`;
-			tag.textContent = h.type === 'in' ? 'Пополнение' : 'Списание';
+			const isBuy = /^Покупка/.test(h.title), isSale = /^Продажа/.test(h.title);
+			const kind = h.type === 'fx' ? ['transfer', 'Обмен'] : isBuy ? ['buy', 'Покупка'] : isSale ? ['sell', 'Продажа']
+				: h.type === 'in' ? ['transfer', 'Поступление'] : ['sell', 'Списание'];
+			tag.className = `ledger-tag ${kind[0]}`;
+			tag.textContent = kind[1];
 			const mid = document.createElement('div');
 			const s = document.createElement('strong');
 			s.textContent = h.title;
@@ -1735,7 +1936,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 			sm.textContent = new Date(h.ts).toLocaleDateString('ru-RU');
 			mid.append(s, sm);
 			const b = document.createElement('b');
-			b.textContent = `${h.type === 'in' ? '+' : '−'}${fmt(h.amount)}`;
+			b.textContent = h.type === 'fx' ? `≈${fmt(h.amount)}` : `${h.type === 'in' ? '+' : '−'}${fmt(h.amount)}`;
 			row.append(tag, mid, b);
 			frag.appendChild(row);
 		});
@@ -1941,7 +2142,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 
 	ui.paid.addEventListener('click', () => {
 		closeModal(modal);
-		showSuccess('Криптоплатежи пока не настроены. Баланс не изменён');
+		showSuccess('Криптоплатежи пока не настроены. Баланс не изменён', 'error');
 	});
 
 	new MutationObserver(() => { if (modal.hidden) clearInterval(timerId); })
@@ -1956,7 +2157,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	const currentEl = $('alert-current'), quickEl = $('alert-quick'), card = $('price-alerts');
 	const KEY = 'wind_price_alerts', HKEY = 'wind_price_alerts_done';
 	const SOUND_KEY = 'wind_price_alert_sound';
-	const MAX = 10;
+	let MAX = 3; // бесплатный тариф; с сервера приходит фактический лимит (в Plus — 30)
 	const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 	const PCTS = [1, 3, 5, 10];
 	const prices = {};
@@ -2034,7 +2235,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 		.slice(0, 3)
 		.map((h) => ({ symbol: h.symbol, dir: h.dir, price: Number(h.price), time: String(h.time || '').slice(0, 20) }));
 
-	const save = () => { try { localStorage.setItem(KEY, JSON.stringify(alerts)); } catch (e) { /* хранилище недоступно */ } };
+	const save = () => { try { localStorage.setItem(KEY, JSON.stringify(alerts.filter((a) => !a.serverId))); } catch (e) { /* хранилище недоступно */ } };
 	const saveHistory = () => { try { localStorage.setItem(HKEY, JSON.stringify(history)); } catch (e) { /* хранилище недоступно */ } };
 	const fmtPrice = (p) => Number(p).toLocaleString('ru-RU', { maximumFractionDigits: p >= 1000 ? 2 : p >= 1 ? 4 : 6 });
 	const label = (s) => `${s.slice(0, -4)}/USDT`;
@@ -2111,6 +2312,50 @@ if (cryptoChartElement && window.LightweightCharts) {
 		});
 	});
 
+	// ---- синхронизация с сервером: он проверяет цены и шлёт уведомление в Telegram, даже когда сайт закрыт ----
+	const serverMode = () => Boolean(localStorage.getItem('wind_access_token')) && window.WindApi;
+	const tgButton = $('alert-telegram');
+	let telegramLinked = false;
+	const paintTelegram = () => {
+		if (!tgButton) return;
+		tgButton.hidden = !serverMode();
+		tgButton.classList.toggle('linked', telegramLinked);
+		tgButton.querySelector('span').textContent = telegramLinked ? 'Telegram подключён' : 'Подключить Telegram';
+	};
+	const fromServer = (data) => {
+		if (!data || !Array.isArray(data.active)) return;
+		MAX = Number(data.limit) || MAX;
+		telegramLinked = Boolean(data.telegram_linked);
+		alerts = data.active.map((a) => ({ id: `s${a.id}`, serverId: a.id, symbol: a.symbol, dir: a.direction, price: Number(a.price),
+			start: a.start_price ? Number(a.start_price) : null }));
+		history = data.fired.slice(0, 3).map((a) => ({ symbol: a.symbol, dir: a.direction, price: Number(a.price),
+			time: a.triggered_at ? new Date(a.triggered_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '',
+			via: a.notified_via }));
+		paintTelegram();
+		render();
+	};
+	const syncFromServer = async () => {
+		if (!serverMode()) { paintTelegram(); return; }
+		// уведомления, созданные до входа, переносим в аккаунт
+		const local = alerts.filter((a) => !a.serverId);
+		for (const a of local) {
+			try { await WindApi('/alerts', { method: 'POST', body: { symbol: a.symbol, direction: a.dir, price: a.price, start_price: a.start || undefined } }); }
+			catch (e) { /* лимит или сеть: оставшиеся не переносим */ break; }
+		}
+		if (local.length) { try { localStorage.removeItem(KEY); } catch (e) { /* хранилище недоступно */ } }
+		try { fromServer(await WindApi('/alerts')); } catch (e) { /* остаёмся на локальном списке */ }
+	};
+	tgButton?.addEventListener('click', async () => {
+		try {
+			const d = await WindApi('/telegram/link', { method: 'POST' });
+			window.open(d.url, '_blank', 'noopener');
+			setHint('Открой бота и нажми «Start» — после этого уведомления будут приходить в Telegram.', 'ok');
+		} catch (e) { setHint(e.message, 'error'); }
+	});
+	window.addEventListener('wind-auth', syncFromServer);
+	document.addEventListener('wind-plus-change', syncFromServer); // с Plus лимит растёт до 30
+	window.addEventListener('wind-logout', () => { alerts = load(KEY).filter((a) => !a.serverId); MAX = 3; paintTelegram(); render(); });
+
 	// ---- список ----
 	const progressOf = (a, cur) => {
 		if (a.start == null || a.start === a.price) return 0;
@@ -2146,7 +2391,13 @@ if (cryptoChartElement && window.LightweightCharts) {
 			const del = mk('button', 'alert-delete', '×');
 			del.type = 'button';
 			del.setAttribute('aria-label', 'Удалить уведомление');
-			del.addEventListener('click', () => { alerts = alerts.filter((x) => x.id !== a.id); save(); render(); });
+			del.addEventListener('click', async () => {
+				if (a.serverId && serverMode()) {
+					try { fromServer(await WindApi(`/alerts/${a.serverId}`, { method: 'DELETE' })); } catch (e) { setHint(e.message, 'error'); }
+					return;
+				}
+				alerts = alerts.filter((x) => x.id !== a.id); save(); render();
+			});
 			const bar = mk('span');
 			const track = mk('div', 'alert-progress');
 			track.appendChild(bar);
@@ -2208,6 +2459,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 			hit.forEach((a) => {
 				history.unshift({ symbol: a.symbol, dir: a.dir, price: a.price, time: nowTime() });
 				fire(a, prices[a.symbol]);
+				if (a.serverId && serverMode()) WindApi(`/alerts/${a.serverId}/ack`, { method: 'POST' }).catch(() => {});
 			});
 			history = history.slice(0, 3);
 			save();
@@ -2233,6 +2485,14 @@ if (cryptoChartElement && window.LightweightCharts) {
 			setHint(`Цена уже ${dir === 'above' ? 'выше' : 'ниже'} этого уровня (сейчас ${fmtPrice(current)} USDT)`, 'error');
 			return;
 		}
+		if (serverMode()) {
+			try {
+				fromServer(await WindApi('/alerts', { method: 'POST', body: { symbol, direction: dir, price, start_price: current } }));
+			} catch (e) { setHint(e.message, 'error'); return; }
+			priceEl.value = '';
+			setHint(`Готово! ${telegramLinked ? 'Пришлём в Telegram' : 'Напомним'}, когда ${label(symbol)} ${dir === 'above' ? 'поднимется' : 'опустится'} до ${fmtPrice(price)} USDT`, 'ok');
+			return;
+		}
 		const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 		alerts.push({ id, symbol, dir, price, start: current });
 		freshId = id;
@@ -2254,6 +2514,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 	render();
 	check();
 	setInterval(check, 10000);
+	syncFromServer();
+	setInterval(syncFromServer, 60000); // подтянуть то, что сработало на сервере (например, пока вкладка спала)
 })();
 
 (() => {
@@ -2261,7 +2523,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	if (!modal) return;
 	const $ = (id) => document.getElementById(id);
 	const el = { tag: $('article-tag'), info: $('article-info'), title: $('article-title'), body: $('article-body'), quiz: $('article-quiz'), note: $('article-note'), action: $('article-action') };
-	const NOTE_NEWS = 'Демонстрационный материал. Не является инвестиционной рекомендацией.';
+	const NOTE_NEWS = 'Заголовок и выжимка из открытых источников (Google Новости). Не является инвестиционной рекомендацией.';
 	const NOTE_EDU = 'Учебный материал. Не является инвестиционной рекомендацией.';
 
 	let NEWS = {
@@ -2323,78 +2585,143 @@ if (cryptoChartElement && window.LightweightCharts) {
 		},
 	};
 
-	const renderRemoteNews = (items) => {
+	// ---- живая лента новостей ----
+	const NEWS_REFRESH_MS = 10 * 60 * 1000;   // сервер обновляет ленты раз в 15 минут
+	const NEWS_PAGE = 8;
+	const SEEN_KEY = 'wind_news_seen';
+	const TAG_STYLE = {
+		'Россия': ['positive-tag', 'teal', 'landmark'],
+		'США': ['amber-tag', 'amber', 'chart-no-axes-combined'],
+		'Крипто': ['teal-tag', 'teal', 'bitcoin'],
+		'Экономика': ['purple-tag', 'purple', 'globe-2'],
+	};
+	const styleOf = (tag) => TAG_STYLE[tag] || ['amber-tag', 'purple', 'newspaper'];
+	let newsItems = [], newsFilter = 'all', newsShown = NEWS_PAGE, newsLoadedAt = 0, newsUpdatedAt = null;
+	const readSeen = () => { try { const v = JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+	const ago = (value) => {
+		const date = value ? new Date(value) : null;
+		if (!date || Number.isNaN(date.getTime())) return 'сегодня';
+		const min = Math.round((Date.now() - date.getTime()) / 60000);
+		if (min < 1) return 'только что';
+		if (min < 60) return `${min} мин назад`;
+		if (min < 24 * 60) return `${Math.round(min / 60)} ч назад`;
+		return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+	};
+
+	const paintBadge = () => {
+		const badge = $('agent-pet-badge');
+		if (!badge) return;
+		const seen = new Set(readSeen());
+		const fresh = newsItems.filter((n) => !seen.has(n.id)).length;
+		badge.hidden = !fresh || document.body.classList.contains('agent-open');
+		badge.textContent = fresh > 9 ? '9+' : String(fresh);
+	};
+	const markSeen = () => {
+		try { localStorage.setItem(SEEN_KEY, JSON.stringify(newsItems.map((n) => n.id).slice(0, 80))); } catch (e) { /* хранилище недоступно */ }
+		paintBadge();
+	};
+
+	const newsCard = (item, feature) => {
+		const [tagClass, iconClass, iconName] = styleOf(item.tag);
+		const card = document.createElement('article');
+		card.className = `${feature ? 'crypto-news-feature' : 'crypto-news-item'} card news-clickable`;
+		card.dataset.news = item.id;
+		card.tabIndex = 0;
+		card.setAttribute('role', 'button');
+		card.setAttribute('aria-label', `Читать новость: ${item.title}`);
+		const meta = `<div class="news-meta"><span class="news-tag ${tagClass}"></span><time></time></div>`;
+		if (feature) {
+			card.innerHTML = `<div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin"></span><span class="news-feature-label">Главное</span></div><div class="news-feature-copy">${meta}<h3></h3><p></p><div class="news-footer"><span class="news-source"></span><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button></div></div>`;
+			card.querySelector('.news-coin').textContent = item.tag === 'Крипто' ? '₿' : item.tag === 'США' ? '$' : item.tag === 'Россия' ? '₽' : '%';
+			card.querySelector('p').textContent = item.summary;
+		} else {
+			card.innerHTML = `<span class="news-icon ${iconClass}"><i data-lucide="${iconName}"></i></span><div>${meta}<h3></h3><span class="news-source"></span></div><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button>`;
+		}
+		card.querySelector('.news-tag').textContent = item.tag;
+		const time = card.querySelector('time');
+		time.textContent = ago(item.published);
+		time.dateTime = item.published || '';
+		card.querySelector('h3').textContent = item.title;
+		card.querySelector('.news-source').textContent = item.source || '';
+		return card;
+	};
+
+	const renderNewsList = () => {
 		const grid = $('learn-news');
-		if (!grid || !Array.isArray(items) || !items.length) return;
-		const cards = items.slice(0, 4);
-		const shortDate = (value) => {
-			const date = value ? new Date(value) : null;
-			return date && !Number.isNaN(date.getTime())
-				? date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
-				: 'Сегодня';
-		};
-		NEWS = Object.fromEntries(cards.map((item) => [item.id, {
-			tag: item.tag,
-			tagClass: item.tag === 'Акции' ? 'positive-tag' : item.tag === 'Экономика' ? 'purple-tag' : item.tag === 'Крипто' ? 'teal-tag' : 'amber-tag',
-			info: `${shortDate(item.published)} · Мировой анализ`,
-			title: item.title,
-			paragraphs: [item.summary, 'Открой первоисточник, чтобы прочитать публикацию полностью и проверить контекст новости.'],
-			url: item.url,
-		}]));
-		grid.innerHTML = '';
-		const feature = document.createElement('article');
-		feature.className = 'crypto-news-feature card news-clickable';
-		feature.dataset.news = cards[0].id;
-		feature.tabIndex = 0;
-		feature.setAttribute('role', 'button');
-		feature.setAttribute('aria-label', `Читать новость: ${cards[0].title}`);
-		feature.innerHTML = '<div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin">₿</span><span class="news-feature-label">Сегодня</span></div>';
-		const copy = document.createElement('div');
-		copy.className = 'news-feature-copy';
-		const featureTagClass = cards[0].tag === 'Акции' ? 'positive-tag' : cards[0].tag === 'Макро' ? 'purple-tag' : cards[0].tag === 'Крипто' ? 'teal-tag' : 'amber-tag';
-		copy.innerHTML = `<div class="news-meta"><span class="news-tag ${featureTagClass}"></span><time></time></div><h3></h3><p></p><div class="news-footer"><span><i data-lucide="radio"></i> Свежий анализ</span><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button></div>`;
-		copy.querySelector('.news-tag').textContent = cards[0].tag;
-		copy.querySelector('time').textContent = shortDate(cards[0].published);
-		copy.querySelector('h3').textContent = cards[0].title;
-		copy.querySelector('p').textContent = cards[0].summary;
-		feature.append(copy);
-		grid.append(feature);
+		if (!grid || !newsItems.length) return;
+		const filtered = newsFilter === 'all' ? newsItems : newsItems.filter((n) => n.tag === newsFilter);
+		grid.textContent = '';
+		if (!filtered.length) {
+			const empty = document.createElement('p');
+			empty.className = 'news-empty';
+			empty.textContent = 'По этой теме свежих новостей пока нет.';
+			grid.append(empty);
+			return;
+		}
+		grid.append(newsCard(filtered[0], true));
 		const list = document.createElement('div');
 		list.className = 'crypto-news-list';
-		cards.slice(1).forEach((item) => {
-			const card = document.createElement('article');
-			card.className = 'crypto-news-item card news-clickable';
-			card.dataset.news = item.id;
-			card.tabIndex = 0;
-			card.setAttribute('role', 'button');
-			card.setAttribute('aria-label', `Читать новость: ${item.title}`);
-			const iconClass = item.tag === 'Экономика' ? 'purple' : item.tag === 'Крипто' ? 'teal' : item.tag === 'Акции' ? 'amber' : 'purple';
-			const iconName = item.tag === 'Экономика' ? 'landmark' : item.tag === 'Крипто' ? 'bitcoin' : item.tag === 'Акции' ? 'chart-no-axes-combined' : 'globe-2';
-			const tagClass = item.tag === 'Акции' ? 'positive-tag' : item.tag === 'Экономика' ? 'purple-tag' : item.tag === 'Крипто' ? 'teal-tag' : 'amber-tag';
-			card.innerHTML = `<span class="news-icon ${iconClass}"><i data-lucide="${iconName}"></i></span><div><div class="news-meta"><span class="news-tag ${tagClass}"></span><time></time></div><h3></h3></div><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button>`;
-			card.querySelector('.news-tag').textContent = item.tag;
-			card.querySelector('time').textContent = shortDate(item.published);
-			card.querySelector('h3').textContent = item.title;
-			list.append(card);
-		});
+		filtered.slice(1, newsShown).forEach((item) => list.append(newsCard(item, false)));
 		grid.append(list);
+		if (filtered.length > newsShown) {
+			const more = document.createElement('button');
+			more.type = 'button';
+			more.className = 'news-more';
+			more.textContent = `Показать ещё (${filtered.length - newsShown})`;
+			more.addEventListener('click', () => { newsShown += NEWS_PAGE; renderNewsList(); });
+			grid.append(more);
+		}
 		if (window.lucide) window.lucide.createIcons();
 		bindNewsCards();
 	};
 
+	const renderRemoteNews = (items) => {
+		if (!Array.isArray(items) || !items.length) return;
+		newsItems = items;
+		NEWS = Object.fromEntries(items.map((item) => [item.id, {
+			tag: item.tag,
+			tagClass: styleOf(item.tag)[0],
+			info: `${ago(item.published)}${item.source ? ' · ' + item.source : ''}`,
+			title: item.title,
+			paragraphs: [item.summary, 'Это короткая выжимка. Открой первоисточник, чтобы прочитать материал полностью и проверить контекст.'],
+			url: item.url,
+		}]));
+		renderNewsList();
+		paintBadge();
+	};
+
+	const paintScan = () => {
+		const scan = $('agent-last-scan');
+		if (scan && newsUpdatedAt) scan.textContent = `Обновлено ${ago(newsUpdatedAt)}`;
+	};
+
 	const loadRemoteNews = async () => {
 		try {
-			const data = await window.WindApi('/market/news');
+			const data = await window.WindApi('/market/news', { timeoutMs: 30000 });
+			newsLoadedAt = Date.now();
+			newsUpdatedAt = data.updated_at || new Date().toISOString();
 			renderRemoteNews(data.items);
-			const scan = $('agent-last-scan');
-			if (scan) {
-				const date = data.updated_at ? new Date(data.updated_at) : new Date();
-				scan.textContent = Number.isNaN(date.getTime()) ? 'Только что' : date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-			}
+			paintScan();
+			const counts = data.counts || {};
+			const parts = ['Россия', 'США', 'Крипто', 'Экономика'].filter((t) => counts[t]).map((t) => `${t} ${counts[t]}`);
+			const sub = $('learn-sub');
+			if (sub) sub.textContent = `${data.items.length} новостей за двое суток${parts.length ? ' · ' + parts.join(' · ') : ''}`;
+			const speech = $('agent-speech-text');
+			if (speech && data.items[0]) speech.textContent = `Свежее: «${data.items[0].title}». Ниже — всё главное по темам.`;
 		} catch (error) {
+			const speech = $('agent-speech-text');
+			if (speech && !newsItems.length) speech.textContent = 'Новости сейчас недоступны — попробую обновить чуть позже.';
 			console.warn('Новости не обновились:', error.message);
 		}
 	};
+	// обновляем ленту, если она устарела: по таймеру, при открытии агента и при возврате на вкладку
+	const refreshIfStale = (maxAge = 5 * 60 * 1000) => { if (Date.now() - newsLoadedAt > maxAge) loadRemoteNews(); };
+	new MutationObserver(() => {
+		if (document.body.classList.contains('agent-open')) { refreshIfStale(); markSeen(); }
+		paintBadge();
+	}).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+	document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfStale(); });
+	window.setInterval(paintScan, 60000);
 
 	const LESSONS = [
 		{
@@ -2519,7 +2846,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 		syncAction();
 	};
 
-	const openArticle = ({ tag, tagClass, info, title, paragraphs, note, lesson }) => {
+	const openArticle = ({ tag, tagClass, info, title, paragraphs, note, lesson, url }) => {
 		el.tag.textContent = tag;
 		el.tag.className = `news-tag ${tagClass}`;
 		el.info.textContent = info;
@@ -2530,6 +2857,15 @@ if (cryptoChartElement && window.LightweightCharts) {
 			p.textContent = t;
 			el.body.appendChild(p);
 		});
+		if (url && /^https?:\/\//i.test(url)) {
+			const link = document.createElement('a');
+			link.className = 'article-source';
+			link.href = url;
+			link.target = '_blank';
+			link.rel = 'noopener noreferrer';
+			link.textContent = 'Читать в источнике ↗';
+			el.body.appendChild(link);
+		}
 		el.note.textContent = note;
 		el.quiz.textContent = '';
 		el.quiz.hidden = true;
@@ -2573,7 +2909,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	bindNewsCards();
 	window.WindNews = { refresh: loadRemoteNews };
 	loadRemoteNews();
-	window.setInterval(loadRemoteNews, 86_400_000);
+	window.setInterval(() => { if (!document.hidden) loadRemoteNews(); }, NEWS_REFRESH_MS);
 	const refreshButton = $('news-refresh');
 	refreshButton?.addEventListener('click', async () => {
 		refreshButton.disabled = true;
@@ -2586,11 +2922,9 @@ if (cryptoChartElement && window.LightweightCharts) {
 	document.querySelectorAll('[data-news-filter]').forEach((button) => {
 		button.addEventListener('click', () => {
 			document.querySelectorAll('[data-news-filter]').forEach((item) => item.classList.toggle('active', item === button));
-			const filter = button.dataset.newsFilter;
-			document.querySelectorAll('#learn-news [data-news]').forEach((card) => {
-				const article = NEWS[card.dataset.news];
-				card.hidden = filter !== 'all' && article?.tag !== filter;
-			});
+			newsFilter = button.dataset.newsFilter;
+			newsShown = NEWS_PAGE;
+			renderNewsList();
 		});
 	});
 
@@ -2719,7 +3053,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 		btn.addEventListener('click', () => {
 			const card = btn.closest('.invest-card');
 			if (!card) return;
-			asset = { name: card.dataset.assetName, price: Number(card.dataset.price), unit: card.dataset.unit || 'ед.' };
+			asset = { code: card.dataset.assetCode, name: card.dataset.assetName, price: Number(card.dataset.price), unit: card.dataset.unit || 'ед.' };
 			if (!(asset.price > 0)) return;
 			ui.title.textContent = `Купить: ${asset.name}`;
 			ui.name.textContent = asset.name;
@@ -2743,13 +3077,26 @@ if (cryptoChartElement && window.LightweightCharts) {
 		render();
 	});
 
-	ui.confirm.addEventListener('click', () => {
+	ui.confirm.addEventListener('click', async () => {
 		if (!asset) return;
-		const amount = getAmount();
+		const amount = Math.round(getAmount() * 100) / 100;
 		if (amount < 100) { ui.error.textContent = 'Минимальная сумма — 100 ₽'; return; }
 		if (amount > getBalance()) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
-		if (!Wallet.spend(amount, `Покупка: ${asset.name}`)) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
-		const qty = fmt(amount / asset.price, 4);
+		if (!localStorage.getItem('wind_access_token')) { ui.error.textContent = 'Войди в аккаунт, чтобы покупать активы'; return; }
+		ui.confirm.disabled = true;
+		let data;
+		try {
+			// цену и количество считает сервер — клиент передаёт только сумму
+			data = await WindApi('/invest/buy', { method: 'POST', body: { asset: asset.code, amount } });
+		} catch (e) {
+			ui.error.textContent = e.message || 'Покупка не выполнена';
+			return;
+		} finally {
+			ui.confirm.disabled = false;
+		}
+		window.WindPortfolio?.apply(data);
+		await Wallet.load().catch(() => {});
+		const qty = fmt(Number(data.bought.quantity), 4);
 		closeModal(modal);
 		showSuccess(`Куплено ${qty} ${asset.unit} «${asset.name}» на ${fmt(amount)} ₽`);
 		portfolioNotifications.unshift({
@@ -2759,6 +3106,142 @@ if (cryptoChartElement && window.LightweightCharts) {
 		portfolioNotifications.splice(20);
 		renderNotifications();
 	});
+})();
+
+// ================= ИНВЕСТИЦИОННЫЙ ПОРТФЕЛЬ (данные с сервера) =================
+(() => {
+	const list = document.getElementById('portfolio-positions');
+	if (!list) return;
+	const ICONS = { IMOEX: ['teal', 'landmark'], SBER: ['amber', 'factory'], ETFRU: ['purple', 'briefcase-business'], BONDS: ['orange', 'trending-up'] };
+	const fmt = (n, d = 2) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: d });
+	const signed = (n, suffix) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n))}${suffix}`;
+	let state = null;
+
+	const setText = (node, text, trend) => {
+		if (!node) return;
+		node.textContent = text;
+		if (node.dataset.fxFinal !== undefined) { node.dataset.fxFinal = text; node._fx = null; }
+		node.classList.toggle('positive', trend > 0);
+		node.classList.toggle('negative', trend < 0);
+	};
+
+	const mk = (tag, cls, text) => {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
+	};
+
+	const renderEmpty = (title, text, withButton) => {
+		const box = mk('div', 'portfolio-empty');
+		const icon = mk('span', 'portfolio-empty-icon');
+		icon.innerHTML = '<i data-lucide="sprout"></i>';
+		box.append(icon, mk('strong', '', title), mk('p', '', text));
+		if (withButton) {
+			const btn = mk('button', 'button', 'Выбрать актив →');
+			btn.type = 'button';
+			btn.addEventListener('click', () => document.querySelector('[data-back-view="investments"]')?.click());
+			box.append(btn);
+		}
+		list.replaceChildren(box);
+	};
+
+	const sell = async (asset, button) => {
+		if (button.dataset.armed !== '1') {
+			button.dataset.armed = '1';
+			button.textContent = 'Точно продать?';
+			window.setTimeout(() => { button.dataset.armed = ''; button.textContent = 'Продать'; }, 3000);
+			return;
+		}
+		button.disabled = true;
+		try {
+			const data = await WindApi('/invest/sell', { method: 'POST', body: { asset } });
+			apply(data);
+			await window.Wallet?.load().catch(() => {});
+			const pnl = Number(data.sold.pnl);
+			showSuccess(`Продано на ${fmt(data.sold.amount)} ₽ · результат ${signed(pnl, ' ₽')}`);
+		} catch (e) {
+			button.disabled = false;
+			showSuccess(e.message || 'Продажа не выполнена', 'error');
+		}
+	};
+
+	const render = () => {
+		if (!state) return;
+		if (!state.positions.length) {
+			renderEmpty('Инвестиций пока нет', 'Купи первый актив на вкладке «Инвестиции» — здесь появятся позиции и доходность.', true);
+		} else {
+			const frag = document.createDocumentFragment();
+			frag.append(mk('p', 'portfolio-subhead', 'Инвестиции'));
+			state.positions.forEach((p) => {
+				const [color, icon] = ICONS[p.asset] || ['teal', 'circle'];
+				const row = mk('div', 'portfolio-item');
+				const main = mk('div', 'portfolio-main');
+				const ic = mk('span', `asset-icon ${color}`);
+				ic.innerHTML = `<i data-lucide="${icon}"></i>`;
+				const info = mk('div');
+				info.append(mk('strong', '', p.name), mk('small', '', `${fmt(p.quantity, 4)} ${p.unit} · вложено ${fmt(p.cost)} ₽`));
+				main.append(ic, info);
+				const side = mk('div', 'portfolio-side');
+				const pnl = Number(p.pnl);
+				const em = mk('em', pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '', `${signed(pnl, ' ₽')} · ${signed(Number(p.pnl_pct), '%')}`);
+				const sellBtn = mk('button', 'portfolio-sell', 'Продать');
+				sellBtn.type = 'button';
+				sellBtn.addEventListener('click', () => sell(p.asset, sellBtn));
+				side.append(mk('span', '', `${fmt(p.value)} ₽`), em, sellBtn);
+				row.append(main, side);
+				frag.append(row);
+			});
+			list.replaceChildren(frag);
+		}
+		if (window.lucide) window.lucide.createIcons();
+
+		const pnl = Number(state.pnl), pct = Number(state.pnl_pct), has = state.positions.length > 0;
+		const strongs = document.querySelectorAll('#investment-profile .portfolio-summary strong');
+		setText(strongs[1], has ? signed(pnl, ' ₽') : '0 ₽', has ? pnl : 0);
+		setText(strongs[2], has ? signed(pct, '%') : '—', has ? pct : 0);
+		setText(document.querySelector('[data-settings-yield]'), has ? signed(pct, '%') : '—', has ? pct : 0);
+
+		// на карточках инвестиций показываем, сколько уже есть в портфеле
+		document.querySelectorAll('.invest-card').forEach((card) => {
+			const pos = state.positions.find((p) => p.asset === card.dataset.assetCode);
+			let owned = card.querySelector('.inv-owned');
+			if (!pos) { owned?.remove(); return; }
+			if (!owned) {
+				owned = mk('span', 'inv-owned');
+				card.querySelector('.inv-title')?.append(owned);
+			}
+			owned.textContent = `В портфеле: ${fmt(pos.value)} ₽`;
+		});
+		window.dispatchEvent(new Event('wind-portfolio'));
+	};
+
+	const apply = (data) => {
+		if (!data || !Array.isArray(data.positions)) return;
+		state = data;
+		render();
+	};
+
+	const load = async () => {
+		if (!localStorage.getItem('wind_access_token')) {
+			state = null;
+			renderEmpty('Портфель доступен после входа', 'Войди в аккаунт, чтобы покупать активы и следить за доходностью.', false);
+			window.dispatchEvent(new Event('wind-portfolio'));
+			return;
+		}
+		try { apply(await WindApi('/invest/portfolio')); }
+		catch (e) { renderEmpty('Не удалось загрузить портфель', e.message || 'Попробуй обновить страницу.', false); }
+	};
+
+	window.WindPortfolio = {
+		apply,
+		load,
+		investedValue: () => (state ? Number(state.invested_value) || 0 : 0),
+	};
+	window.addEventListener('wind-auth', load);
+	window.addEventListener('wind-logout', () => { state = null; load(); });
+	document.querySelector('[data-open-investment-profile]')?.addEventListener('click', load);
+	load();
 })();
 
 (() => {
@@ -3209,22 +3692,30 @@ if (cryptoChartElement && window.LightweightCharts) {
 	};
 	let state = null;
 	const setPlus = (p) => { state = p && p.active ? { plan: p.plan, until: new Date(p.until).getTime() } : null; };
-	window.addEventListener('wind-auth', (e) => { setPlus(e.detail && e.detail.plus); applyPlan(); });
+	let trialAvailable = false;
+	window.addEventListener('wind-auth', (e) => {
+		setPlus(e.detail && e.detail.plus);
+		trialAvailable = Boolean(e.detail && e.detail.trial_available) && Boolean(localStorage.getItem('wind_access_token'));
+		applyPlan();
+	});
 	window.addEventListener('wind-logout', () => { state = null; applyPlan(); });
 	let plan = 'month';
 	const isPlus = () => !!state && state.until > Date.now();
 
-	const m = { sub: $('plus-subscribe'), status: $('plus-status'), cancel: $('plus-cancel'), plans: modal.querySelectorAll('[data-plan]') };
+	const m = { sub: $('plus-subscribe'), status: $('plus-status'), plans: modal.querySelectorAll('[data-plan]') };
 		const renderModal = () => {
 		const on = isPlus();
-		m.plans.forEach((b) => { b.classList.toggle('active', b.dataset.plan === (on ? state.plan : plan)); b.disabled = on; });
+		m.plans.forEach((b) => { b.classList.toggle('active', b.dataset.plan === plan); b.disabled = false; });
 		const cost = PLANS[plan].cost;
-		const short = !on && Wallet.get() < cost;
-		m.sub.disabled = on;
-		m.sub.textContent = on ? 'Подписка активна ✓' : short ? `Пополнить баланс (не хватает ${Wallet.format(cost - Wallet.get())})` : `Оплатить ${Wallet.format(cost)} с баланса →`;
-		m.status.textContent = on ? `Активна до ${new Date(state.until).toLocaleDateString('ru-RU')}` : `На балансе: ${Wallet.format(Wallet.get())}`;
-		m.status.classList.toggle('warn', short);
-		m.cancel.hidden = !on;
+		// Оплата идёт картой/СБП через ЮKassa, а не с баланса. Активную подписку можно продлить.
+		m.sub.disabled = false;
+		m.sub.textContent = on ? `Продлить на ${plan === 'year' ? 'год' : 'месяц'} · ${Wallet.format(cost)} →` : `Оформить за ${Wallet.format(cost)} →`;
+		m.status.textContent = on
+			? `Активна до ${new Date(state.until).toLocaleDateString('ru-RU')} · автосписаний нет`
+			: 'Оплата картой или СБП · без автосписаний';
+		m.status.classList.remove('warn');
+		const trialBtn = $('plus-trial');
+		if (trialBtn) trialBtn.hidden = on || !trialAvailable;
 	};
 	const applyPlan = () => {
 		const on = isPlus();
@@ -3238,9 +3729,24 @@ if (cryptoChartElement && window.LightweightCharts) {
 		document.dispatchEvent(new Event('wind-plus-change'));
 	};
 
-	m.plans.forEach((b) => b.addEventListener('click', () => { if (!isPlus()) { plan = b.dataset.plan; renderModal(); } }));
+	m.plans.forEach((b) => b.addEventListener('click', () => { plan = b.dataset.plan; renderModal(); }));
+	$('plus-trial')?.addEventListener('click', async (event) => {
+		const btn = event.currentTarget;
+		btn.disabled = true;
+		try {
+			const d = await WindApi('/subscription/trial', { method: 'POST' });
+			trialAvailable = false;
+			setPlus(d.plus);
+			applyPlan();
+			showSuccess('Wind Plus включён на 7 дней — без оплаты и автосписаний');
+		} catch (e) {
+			m.status.textContent = e.message;
+			m.status.classList.add('warn');
+		} finally {
+			btn.disabled = false;
+		}
+	});
 	m.sub.addEventListener('click', async () => {
-		if (isPlus()) return;
 		m.sub.disabled = true;
 		try {
 			const d = await WindApi('/subscription/payment', { method: 'POST', body: { plan, method: 'card' } });
@@ -3249,16 +3755,6 @@ if (cryptoChartElement && window.LightweightCharts) {
 			m.sub.disabled = false;
 			m.status.textContent = e.message;
 			m.status.classList.add('warn');
-		}
-	});
-	m.cancel.addEventListener('click', async () => {
-		try {
-			await WindApi('/subscription', { method: 'DELETE' });
-			setPlus(null);
-			applyPlan();
-			showSuccess('Подписка отключена');
-		} catch (e) {
-			m.status.textContent = e.message;
 		}
 	});
 
@@ -4393,7 +4889,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				await Wallet.load();
 				showSuccess(`Бонус ${d.claimed.toLocaleString('ru-RU')} ₽ зачислен`);
 				refresh();
-			} catch (e) { showSuccess(e.message); }
+			} catch (e) { showSuccess(e.message, 'error'); }
 			finally { claim.disabled = false; }
 		});
 		window.addEventListener('wind-auth', refresh);
@@ -4402,17 +4898,20 @@ if (cryptoChartElement && window.LightweightCharts) {
 
 	// ================= КОМИССИЯ ОБМЕНА И СКИДКИ =================
 	(() => {
-		const BASE = 1.0, PLUS = 0.4, PER_STAR = 0.03, MAX_GAME = 0.27, MIN = 0.2;
-		const stars = () => {
-			try {
-				const v = JSON.parse(localStorage.getItem('wind_game_stars') || '{}');
-				return Object.values(v).reduce((a, n) => a + (Number.isInteger(n) && n >= 0 && n <= 3 ? n : 0), 0);
-			} catch (e) { return 0; }
+		// Комиссию начисляет сервер (1%, с Plus — 0,6%). Здесь только показываем её.
+		// Скидку за игровые звёзды убрали: звёзды хранятся в браузере, сервер не может их проверить.
+		const BASE = 1.0, PLUS_FEE = 0.6;
+		let serverFee = null;
+		const loadQuote = async () => {
+			try { serverFee = Number((await WindApi('/wallet/exchange/quote')).fee_pct); } catch (e) { serverFee = null; }
+			if (typeof updateConverter === 'function') updateConverter();
 		};
+		window.addEventListener('wind-auth', loadQuote);
+		document.addEventListener('wind-plus-change', loadQuote);
 		const parts = () => {
-			const plus = document.body.classList.contains('plus-active') ? PLUS : 0;
-			const game = Math.min(MAX_GAME, stars() * PER_STAR);
-			return { fee: Math.max(MIN, BASE - plus - game), plus, game };
+			const plusOn = document.body.classList.contains('plus-active');
+			const fee = Number.isFinite(serverFee) && serverFee > 0 ? serverFee : (plusOn ? PLUS_FEE : BASE);
+			return { fee, plus: plusOn ? BASE - fee : 0, game: 0 };
 		};
 		window.WindFee = { rate: () => parts().fee, parts };
 		const refresh = () => { if (typeof updateConverter === 'function') updateConverter(); };
@@ -4464,12 +4963,23 @@ if (cryptoChartElement && window.LightweightCharts) {
 	const loadStocks = async () => {
 		try {
 			const d = await WindApi('/market/stocks');
-			const map = { 'Сбербанк': d.SBER, 'Индекс Мосбиржи': d.IMOEX };
+			const map = { IMOEX: d.IMOEX, SBER: d.SBER, ETFRU: d.TMOS, BONDS: d.SBGB };
+			const volumes = Object.values(map).map((x) => Number(x && x.volume) || 0);
+			const maxVolume = Math.max(...volumes, 1);
+			const money = (v) => (v >= 1e9 ? `${fmt2(v / 1e9)} млрд ₽` : v >= 1e6 ? `${Math.round(v / 1e6).toLocaleString('ru-RU')} млн ₽` : `${Math.round(v).toLocaleString('ru-RU')} ₽`);
 			document.querySelectorAll('.invest-card').forEach((card) => {
-				const x = map[card.dataset.assetName];
-				if (!x || x.price == null || x.pct == null) return; // вне торгов биржа может не отдавать значения
+				const x = map[card.dataset.assetCode];
+				if (!x || x.price == null) return; // вне торгов биржа может не отдавать значения
 				card.dataset.price = String(x.price);
-				card.querySelector('.asset-value').textContent = card.dataset.assetName === 'Сбербанк' ? `${fmt2(x.price)} ₽` : fmt2(x.price);
+				const value = card.querySelector('.asset-value');
+				if (value) value.textContent = card.dataset.assetCode === 'IMOEX' ? `${fmt2(x.price)} пт.` : `${Number(x.price).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ₽`;
+				const vol = Number(x.volume) || 0;
+				const volText = card.querySelector('.inv-vol-value');
+				if (volText) volText.textContent = vol ? money(vol) : '—';
+				const bar = card.querySelector('.inv-volbar span');
+				// шкала логарифмическая: обороты фондов и Сбера отличаются в сотни раз
+				if (bar) bar.style.setProperty('--lvl', vol ? `${Math.max(6, Math.round(Math.log10(vol) / Math.log10(maxVolume) * 100))}%` : '0%');
+				if (x.pct == null) return;
 				const up = x.pct >= 0;
 				const pill = card.querySelector('.change-pill');
 				const b = pill && pill.querySelector('b');
@@ -4478,13 +4988,14 @@ if (cryptoChartElement && window.LightweightCharts) {
 					b.textContent = text; b.dataset.final = text; b.dataset.count = String(Math.abs(x.pct)); b.dataset.decimals = '2'; b.dataset.prefix = up ? '+' : '−';
 					pill.classList.toggle('up', up);
 					pill.classList.toggle('down', !up);
+					pill.querySelector('i, svg')?.setAttribute('data-lucide', up ? 'arrow-up-right' : 'arrow-down-right');
 				}
-				const gain = card.querySelector('.asset-gain');
-				if (gain) gain.textContent = `${up ? '+' : '−'}${fmt2(Math.abs(x.pct))}% за день`;
 			});
+			if (window.lucide) window.lucide.createIcons();
 		} catch (e) { /* остаются прежние значения */ }
 	};
 
+	loadStocks();
 	window.addEventListener('wind-auth', () => { loadRates(); loadStocks(); });
 	setInterval(loadRates, 5 * 60 * 1000);
 	setInterval(loadStocks, 60 * 1000);
@@ -4493,3 +5004,267 @@ if (cryptoChartElement && window.LightweightCharts) {
 if (window.lucide) {
 	lucide.createIcons();
 }
+
+// ================= КОПИЛКИ =================
+(() => {
+	const grid = document.getElementById('goals-grid');
+	const form = document.getElementById('goal-form');
+	if (!grid || !form) return;
+	const toggle = document.getElementById('goal-new-toggle');
+	const fmt = (n) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+	const mk = (tag, cls, text) => {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
+	};
+	const authed = () => Boolean(localStorage.getItem('wind_access_token'));
+	const empty = (text) => grid.replaceChildren(mk('div', 'goals-empty', text));
+
+	const afterMoney = (data) => {
+		window.Wallet?.load().catch(() => {});
+		render(data);
+	};
+
+	const moneyRow = (goal) => {
+		const row = mk('form', 'goal-move');
+		row.hidden = true;
+		const input = mk('input');
+		input.type = 'number'; input.min = '1'; input.step = '1'; input.inputMode = 'numeric'; input.placeholder = 'Сумма, ₽'; input.required = true;
+		const ok = mk('button', 'button', 'OK');
+		ok.type = 'submit';
+		row.append(input, ok);
+		row.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			ok.disabled = true;
+			try {
+				const data = await WindApi(`/goals/${goal.id}/${row.dataset.action}`, { method: 'POST', body: { amount: Number(input.value) } });
+				afterMoney(data);
+				showSuccess(row.dataset.action === 'deposit' ? `В копилку «${goal.title}» отложено ${fmt(input.value)} ₽` : `Из копилки снято ${fmt(input.value)} ₽`);
+			} catch (e) {
+				showSuccess(e.message, 'error');
+				ok.disabled = false;
+			}
+		});
+		return row;
+	};
+
+	const card = (goal) => {
+		const el = mk('article', `card goal-card${goal.done ? ' done' : ''}`);
+		const head = mk('div', 'goal-head');
+		const icon = mk('span', 'asset-icon teal');
+		icon.innerHTML = `<i data-lucide="${goal.done ? 'party-popper' : 'piggy-bank'}"></i>`;
+		const title = mk('div', 'goal-title');
+		title.append(mk('strong', '', goal.title), mk('small', '', goal.deadline ? `до ${new Date(goal.deadline).toLocaleDateString('ru-RU')}` : 'без срока'));
+		const close = mk('button', 'goal-close', '×');
+		close.type = 'button';
+		close.setAttribute('aria-label', 'Закрыть копилку и вернуть деньги на баланс');
+		close.addEventListener('click', async () => {
+			if (close.dataset.armed !== '1') {
+				close.dataset.armed = '1';
+				close.textContent = 'Закрыть?';
+				window.setTimeout(() => { close.dataset.armed = ''; close.textContent = '×'; }, 3000);
+				return;
+			}
+			try { afterMoney(await WindApi(`/goals/${goal.id}`, { method: 'DELETE' })); showSuccess('Копилка закрыта, деньги вернулись на баланс'); }
+			catch (e) { showSuccess(e.message, 'error'); }
+		});
+		head.append(icon, title, close);
+
+		const sums = mk('div', 'goal-sums');
+		sums.append(mk('strong', '', `${fmt(goal.saved)} ₽`), mk('span', '', `из ${fmt(goal.target)} ₽`));
+		const bar = mk('div', 'goal-bar');
+		const fill = mk('span');
+		fill.style.width = `${goal.progress}%`;
+		bar.append(fill);
+		const plan = mk('p', 'goal-plan', goal.done ? 'Цель достигнута! 🎉'
+			: goal.monthly_needed ? `Откладывай ${fmt(goal.monthly_needed)} ₽ в месяц, чтобы успеть` : `Осталось ${fmt(goal.target - goal.saved)} ₽`);
+
+		const actions = mk('div', 'goal-actions');
+		const move = moneyRow(goal);
+		const add = mk('button', 'goal-btn primary', '+ Отложить');
+		const take = mk('button', 'goal-btn', 'Снять');
+		[add, take].forEach((b) => { b.type = 'button'; });
+		add.addEventListener('click', () => { move.dataset.action = 'deposit'; move.hidden = false; move.querySelector('input').focus(); });
+		take.addEventListener('click', () => { move.dataset.action = 'withdraw'; move.hidden = false; move.querySelector('input').focus(); });
+		if (!goal.saved) take.disabled = true;
+		actions.append(add, take);
+		el.append(head, sums, bar, plan, actions, move);
+		return el;
+	};
+
+	const render = (data) => {
+		if (!data || !Array.isArray(data.goals)) return;
+		if (!data.goals.length) {
+			empty('Заведи первую копилку: укажи цель и срок — посчитаем, сколько откладывать в месяц.');
+		} else {
+			grid.replaceChildren(...data.goals.map(card));
+		}
+		if (window.lucide) window.lucide.createIcons();
+	};
+
+	const load = async () => {
+		if (!authed()) { empty('Копилки доступны после входа в аккаунт.'); return; }
+		try { render(await WindApi('/goals')); } catch (e) { empty('Не удалось загрузить копилки.'); }
+	};
+
+	toggle?.addEventListener('click', () => {
+		if (!authed()) { showSuccess('Войди в аккаунт, чтобы создать копилку', 'error'); return; }
+		form.hidden = !form.hidden;
+		if (!form.hidden) form.querySelector('#goal-title').focus();
+	});
+	form.addEventListener('submit', async (event) => {
+		event.preventDefault();
+		const deadline = form.querySelector('#goal-deadline').value;
+		try {
+			const data = await WindApi('/goals', { method: 'POST', body: {
+				title: form.querySelector('#goal-title').value,
+				target: Number(form.querySelector('#goal-target').value),
+				deadline: deadline ? `${deadline}T23:59:00` : null,
+			} });
+			form.reset();
+			form.hidden = true;
+			render(data);
+			showSuccess('Копилка создана');
+		} catch (e) {
+			showSuccess(e.message, 'error');
+		}
+	});
+	window.addEventListener('wind-auth', load);
+	window.addEventListener('wind-logout', load);
+	load();
+})();
+
+// ================= СОРЕВНОВАНИЕ НЕДЕЛИ И ГРАФИК ПОРТФЕЛЯ =================
+(() => {
+	const list = document.getElementById('invest-board-list');
+	const chart = document.getElementById('portfolio-chart');
+	const authed = () => Boolean(localStorage.getItem('wind_access_token'));
+	const mk = (tag, cls, text) => {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
+	};
+	const pct = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}%`;
+
+	const loadBoard = async () => {
+		if (!list) return;
+		const me = document.getElementById('invest-board-me');
+		if (!authed()) { list.replaceChildren(mk('li', 'invest-board-empty', 'Войди в аккаунт, чтобы участвовать.')); me.textContent = ''; return; }
+		try {
+			const d = await WindApi('/invest/leaderboard');
+			document.getElementById('invest-board-week').textContent = `${d.participants} участн.`;
+			if (!d.top.length) {
+				list.replaceChildren(mk('li', 'invest-board-empty', 'Пока никого: купи активы на 1 000 ₽ и больше — и попадёшь в рейтинг.'));
+			} else {
+				list.replaceChildren(...d.top.map((r) => {
+					const li = mk('li', r.me ? 'me' : '');
+					li.append(mk('span', 'lb-rank', String(r.rank)), mk('span', '', r.username + (r.me ? ' (ты)' : '')),
+						mk('span', `lb-score ${r.return_pct >= 0 ? 'positive' : 'negative'}`, pct(r.return_pct)));
+					return li;
+				}));
+			}
+			me.textContent = d.me ? (d.me.rank > 10 ? `Твоё место: ${d.me.rank} · ${pct(d.me.return_pct)}` : '')
+				: `Чтобы участвовать, вложи от ${Number(d.min_base).toLocaleString('ru-RU')} ₽. Рейтинг обнуляется в понедельник.`;
+		} catch (e) {
+			list.replaceChildren(mk('li', 'invest-board-empty', 'Рейтинг временно недоступен.'));
+		}
+	};
+
+	let days = 90;
+	const drawChart = (points) => {
+		if (!chart) return;
+		if (points.length < 2) {
+			chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'График появится со второго дня: стоимость портфеля сохраняется раз в день, когда ты заходишь или совершаешь сделку.'));
+			return;
+		}
+		const W = 640, H = 180, P = 8;
+		const values = points.flatMap((p) => [p.invested, p.cost]);
+		const min = Math.min(...values), max = Math.max(...values);
+		const span = max - min || 1;
+		const x = (i) => P + (i / (points.length - 1)) * (W - P * 2);
+		const y = (v) => H - P - ((v - min) / span) * (H - P * 2);
+		const line = (key) => points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+		const last = points[points.length - 1];
+		const up = last.invested >= last.cost;
+		const area = `${line('invested')} L${x(points.length - 1).toFixed(1)} ${H - P} L${x(0).toFixed(1)} ${H - P} Z`;
+		chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Стоимость портфеля по дням">
+			<defs><linearGradient id="pf-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".22"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+			<path d="${area}" fill="url(#pf-fill)" stroke="none"/>
+			<path d="${line('cost')}" class="pf-cost" fill="none"/>
+			<path d="${line('invested')}" class="pf-value" fill="none"/>
+		</svg>`;
+		chart.classList.toggle('down', !up);
+		const fmt = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
+		const first = new Date(points[0].day).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+		const legend = mk('div', 'portfolio-chart-legend');
+		legend.append(mk('span', 'pf-legend-value', `Стоимость: ${fmt(last.invested)}`), mk('span', 'pf-legend-cost', `Вложено: ${fmt(last.cost)}`), mk('span', '', `с ${first}`));
+		chart.append(legend);
+	};
+
+	const loadHistory = async () => {
+		if (!chart || !authed()) return;
+		try { drawChart((await WindApi(`/invest/history?days=${days}`)).points); }
+		catch (e) { chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.')); }
+	};
+	document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((b) => b.addEventListener('click', () => {
+		days = Number(b.dataset.days);
+		document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((x) => x.classList.toggle('active', x === b));
+		loadHistory();
+	}));
+
+	window.addEventListener('wind-auth', () => { loadBoard(); loadHistory(); });
+	window.addEventListener('wind-portfolio', () => { loadBoard(); loadHistory(); });
+	document.querySelector('.nav a[href="#investments"]')?.addEventListener('click', loadBoard);
+	setInterval(() => { if (document.body.dataset.view === 'investments') loadBoard(); }, 120000);
+	loadBoard();
+})();
+
+// ================= АДМИНКА =================
+(() => {
+	const cardEl = document.getElementById('admin-card');
+	if (!cardEl) return;
+	const stats = document.getElementById('admin-stats');
+	const feedback = document.getElementById('admin-feedback');
+	const mk = (tag, cls, text) => {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
+	};
+	const num = (v) => Number(v || 0).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+	const tile = (label, value, hint) => {
+		const t = mk('div', 'admin-tile');
+		t.append(mk('span', '', label), mk('strong', '', value));
+		if (hint) t.append(mk('small', '', hint));
+		return t;
+	};
+	const load = async () => {
+		try {
+			const d = await WindApi('/admin/stats');
+			stats.replaceChildren(
+				tile('Пользователи', num(d.users.total), `+${num(d.users.new_7d)} за 7 дней · +${num(d.users.new_30d)} за 30`),
+				tile('Платный Plus', num(d.plus.active_paid), `конверсия ${num(d.plus.conversion_pct)}%`),
+				tile('Пробный Plus', num(d.plus.trial_active), `стартов ${num(d.plus.trials_started)} · купили ${num(d.plus.trial_to_paid)}`),
+				tile('Выручка за 30 дней', `${num(d.revenue.subscriptions_30d)} ₽`, `пополнения ${num(d.revenue.topups_30d)} ₽`),
+				tile('Инвесторы', num(d.activity.investors), `сделок за неделю: ${num(d.activity.trades_7d)}`),
+				tile('Копилки и уведомления', `${num(d.activity.goals_active)} / ${num(d.activity.alerts_active)}`, 'активные'),
+			);
+			feedback.replaceChildren(...(d.feedback.length ? d.feedback.map((f) => {
+				const row = mk('div', 'admin-fb');
+				row.append(mk('p', '', f.message), mk('small', '', `${new Date(f.at).toLocaleString('ru-RU')}${f.page ? ' · ' + f.page : ''}${f.contact ? ' · ' + f.contact : ''}`));
+				return row;
+			}) : [mk('p', 'admin-empty', 'Сообщений пока нет.')]));
+		} catch (e) {
+			stats.replaceChildren(mk('p', 'admin-empty', e.message));
+		}
+	};
+	window.addEventListener('wind-auth', (e) => {
+		const isAdmin = Boolean(e.detail && e.detail.is_admin);
+		cardEl.hidden = !isAdmin;
+		if (isAdmin) load();
+	});
+	window.addEventListener('wind-logout', () => { cardEl.hidden = true; });
+	document.getElementById('admin-refresh')?.addEventListener('click', load);
+})();

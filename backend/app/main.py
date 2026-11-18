@@ -9,6 +9,11 @@ import time
 import uuid
 import re
 import xml.etree.ElementTree as ET
+import asyncio
+import logging
+import smtplib
+from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -19,7 +24,7 @@ from urllib.parse import parse_qsl
 import httpx
 import jwt
 import pyotp
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -57,7 +62,7 @@ BYBIT_ADMIN_USER_IDS = {
 BYBIT_ALLOWED_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT"}
 BYBIT_MAX_NOTIONAL_USDT = Decimal(os.getenv("BYBIT_MAX_NOTIONAL_USDT", "100"))
 ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in os.getenv("WINDFINANCE_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
-NEWS_RSS_URL = os.getenv(
+NEWS_RSS_URL = os.getenv(  # устарело: ленты задаются в NEWS_FEEDS
     "NEWS_RSS_URL",
     "https://news.google.com/rss/search?q=%28S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones%20OR%20%D0%A4%D0%A0%D0%A1%20OR%20%D0%B0%D0%BC%D0%B5%D1%80%D0%B8%D0%BA%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B5%20%D0%B0%D0%BA%D1%86%D0%B8%D0%B8%20OR%20%D1%84%D0%BE%D0%BD%D0%B4%D0%BE%D0%B2%D1%8B%D0%B9%20%D1%80%D1%8B%D0%BD%D0%BE%D0%BA%29%20%28%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D0%B7%20OR%20%D0%BE%D0%B1%D0%B7%D0%BE%D1%80%20OR%20%D0%BF%D1%80%D0%BE%D0%B3%D0%BD%D0%BE%D0%B7%29%20-%D1%81%D0%BC%D0%B0%D1%80%D1%82%D1%84%D0%BE%D0%BD%20-%D1%82%D0%B5%D1%85%D0%BD%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D0%B8&hl=ru&gl=RU&ceid=RU:ru",
 )
@@ -66,6 +71,29 @@ TOKEN_EXPIRE_DAYS = 7
 START_BALANCE_KOP = 2_450_000 if SIMULATOR else 0
 PLANS = {"month": (19_900, 30), "year": (179_000, 365)}      # цена в копейках, дней
 BONUS_RUB = [5000, 3000, 2000] + [1000] * 7                  # бонус за места 1..10
+EXCHANGE_FEE_PCT = Decimal(os.getenv("WINDFINANCE_EXCHANGE_FEE_PCT", "1.0"))
+EXCHANGE_FEE_PLUS_PCT = Decimal(os.getenv("WINDFINANCE_EXCHANGE_FEE_PLUS_PCT", "0.6"))
+EXCHANGE_MIN_RUB = Decimal("10")                             # минимальный обмен в рублёвом эквиваленте
+RATE_MAX_AGE = timedelta(hours=72)                           # курс ЦБ старше этого считаем устаревшим
+INVEST_MIN_RUB = Decimal("100")
+TRIAL_DAYS = 7
+ALERT_LIMIT_FREE, ALERT_LIMIT_PLUS = 3, 30
+GOALS_LIMIT = 10
+RESET_TOKEN_TTL = timedelta(minutes=30)
+ADMIN_USER_IDS = {
+    int(value.strip()) for value in os.getenv("WINDFINANCE_ADMIN_USER_IDS", "").split(",")
+    if value.strip().isdigit()
+}
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://looqi1.github.io/Wind-finance/").rstrip("/") + "/"
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+TG_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+TG_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+ALERT_CHECK_SECONDS = int(os.getenv("WINDFINANCE_ALERT_CHECK_SECONDS", "30"))
+log = logging.getLogger("windfinance")
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
@@ -132,6 +160,7 @@ class User(Base):
     totp_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False)
     tg_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
+    trial_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Transaction(Base):
@@ -152,6 +181,81 @@ class AssetBalance(Base):
     asset: Mapped[str] = mapped_column(String(12))
     quantity: Mapped[Decimal] = mapped_column(Numeric(28, 12), default=Decimal("0"))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, onupdate=now_naive)
+
+
+class Holding(Base):
+    """Позиция в инвестиционном симуляторе: количество и сколько рублей в неё вложено."""
+    __tablename__ = "holdings"
+    __table_args__ = (UniqueConstraint("user_id", "asset", name="uq_holding_user_asset"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    asset: Mapped[str] = mapped_column(String(12))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 12), default=Decimal("0"))
+    cost_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, onupdate=now_naive)
+
+
+class InvestTrade(Base):
+    """Журнал сделок симулятора: нужен для истории, реализованного результата и недельного рейтинга."""
+    __tablename__ = "invest_trades"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    asset: Mapped[str] = mapped_column(String(12))
+    side: Mapped[str] = mapped_column(String(4))                 # buy / sell
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 12))
+    price: Mapped[Decimal] = mapped_column(Numeric(28, 8))
+    amount_kop: Mapped[int] = mapped_column(BigInteger)
+    cost_kop: Mapped[int] = mapped_column(BigInteger, default=0)  # себестоимость проданной части
+    pnl_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, index=True)
+
+
+class PortfolioSnapshot(Base):
+    """Стоимость портфеля на конец дня (последнее значение за день)."""
+    __tablename__ = "portfolio_snapshots"
+    __table_args__ = (UniqueConstraint("user_id", "day", name="uq_snapshot_user_day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[str] = mapped_column(String(10))
+    invested_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+    cash_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class SavingsGoal(Base):
+    __tablename__ = "savings_goals"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(60))
+    target_kop: Mapped[int] = mapped_column(BigInteger)
+    saved_kop: Mapped[int] = mapped_column(BigInteger, default=0)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PriceAlert(Base):
+    __tablename__ = "price_alerts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    direction: Mapped[str] = mapped_column(String(5))            # above / below
+    price: Mapped[Decimal] = mapped_column(Numeric(28, 8))
+    start_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 8), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    triggered_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 8), nullable=True)
+    notified_via: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
 
 
 class RateSnapshot(Base):
@@ -296,6 +400,8 @@ def user_out(u: User) -> dict:
     return {
         "id": u.id, "username": u.username, "email": u.email, "created_at": iso(u.created_at),
         "balance": u.balance_kop / 100, "plus": plus_info(u), "totp_enabled": u.totp_enabled, "simulator": SIMULATOR,
+        "trial_available": u.trial_used_at is None, "is_admin": u.id in ADMIN_USER_IDS,
+        "telegram_linked": u.tg_id is not None, "telegram_bot": TG_BOT_USERNAME or None,
     }
 
 
@@ -373,43 +479,86 @@ def assets_out(db: Session, user_id: int) -> dict:
     return {"assets": {row.asset: str(row.quantity) for row in rows}}
 
 
-def exchange_assets(db: Session, user_id: int, request: ExchangeRequest) -> dict:
+def rub_rate(db: Session, asset: str) -> Decimal:
+    """Курс актива к рублю: свежий снимок ЦБ, иначе (только в симуляторе) справочный курс."""
+    if asset == "RUB":
+        return Decimal("1")
+    if asset not in ASSET_RATES_RUB:
+        raise HTTPException(400, "Этот актив пока не поддерживается")
+    snapshot = db.scalar(select(RateSnapshot).where(RateSnapshot.asset == asset).order_by(desc(RateSnapshot.fetched_at)))
+    if snapshot and now_naive() - snapshot.fetched_at <= RATE_MAX_AGE:
+        return Decimal(snapshot.rub_rate)
+    if SIMULATOR:
+        return Decimal(snapshot.rub_rate) if snapshot else ASSET_RATES_RUB[asset]
+    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Актуальный курс недоступен, попробуй позже")
+
+
+def exchange_fee_pct(user: User) -> Decimal:
+    return EXCHANGE_FEE_PLUS_PCT if plus_info(user)["active"] else EXCHANGE_FEE_PCT
+
+
+def debit_asset(db: Session, user_id: int, asset: str, amount: Decimal) -> None:
+    """Атомарное списание валюты: условие остатка проверяется внутри UPDATE (без гонок двойного списания)."""
+    ensure_asset(db, user_id, asset)
+    res = db.execute(
+        update(AssetBalance)
+        .where(AssetBalance.user_id == user_id, AssetBalance.asset == asset, AssetBalance.quantity >= amount)
+        .values(quantity=AssetBalance.quantity - amount)
+    )
+    if res.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Недостаточно средств")
+
+
+def credit_asset(db: Session, user_id: int, asset: str, amount: Decimal) -> None:
+    ensure_asset(db, user_id, asset)
+    db.execute(
+        update(AssetBalance)
+        .where(AssetBalance.user_id == user_id, AssetBalance.asset == asset)
+        .values(quantity=AssetBalance.quantity + amount)
+    )
+
+
+def exchange_assets(db: Session, user: User, request: ExchangeRequest) -> dict:
+    user_id = user.id
     source = normalize_asset(request.from_asset)
     target = normalize_asset(request.to_asset)
     if source == target:
         raise HTTPException(400, "Активы должны отличаться")
-    rates = dict(ASSET_RATES_RUB)
-    for asset in (source, target):
-        snapshot = db.scalar(select(RateSnapshot).where(RateSnapshot.asset == asset).order_by(desc(RateSnapshot.fetched_at)))
-        if snapshot:
-            rates[asset] = Decimal(snapshot.rub_rate)
-    if source not in rates or target not in rates:
-        raise HTTPException(400, "Этот актив пока не поддерживается")
+    rate_source, rate_target = rub_rate(db, source), rub_rate(db, target)
     amount = request.amount
-    source_row = ensure_asset(db, user_id, source)
-    target_row = ensure_asset(db, user_id, target)
-    if source == "RUB":
-        user = db.scalar(select(User).where(User.id == user_id).with_for_update())
-        available = Decimal(user.balance_kop) / 100
-    else:
-        available = Decimal(source_row.quantity or 0)
-    if available < amount:
-        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Недостаточно средств")
-    result = (amount * rates[source] / rates[target]).quantize(Decimal("0.00000001"))
+    # Фиатные суммы — с точностью до копейки/цента: иначе доли копейки списывались бы как 0.
+    if amount != amount.quantize(Decimal("0.01")):
+        raise HTTPException(400, "Сумма указывается с точностью до двух знаков после запятой")
+    rub_value = amount * rate_source
+    if rub_value < EXCHANGE_MIN_RUB:
+        raise HTTPException(400, f"Минимальная сумма обмена — {EXCHANGE_MIN_RUB} ₽ в эквиваленте")
+    fee_pct = exchange_fee_pct(user)
+    gross = amount * rate_source / rate_target
+    received = (gross * (Decimal("100") - fee_pct) / Decimal("100")).quantize(Decimal("0.01"), rounding="ROUND_DOWN")
+    if received <= 0:
+        raise HTTPException(400, "Сумма слишком мала для обмена")
+
     if source == "RUB":
         charge(db, user_id, int(amount * 100), f"Обмен RUB → {target}")
-        source_row.quantity = available - amount
     else:
-        source_row.quantity = Decimal(source_row.quantity) - amount
+        debit_asset(db, user_id, source, amount)
     if target == "RUB":
-        credit(db, user_id, int(result * 100), f"Обмен {source} → RUB")
-        target_row.quantity = result
+        credit(db, user_id, int(received * 100), f"Обмен {source} → RUB")
     else:
-        target_row.quantity = Decimal(target_row.quantity) + result
-    if source != "RUB":
-        db.add(Transaction(user_id=user_id, kind="out", title=f"Обмен {source} → {target}", amount_kop=int(amount * rates[source] * 100)))
+        credit_asset(db, user_id, target, received)
+    if source != "RUB" and target != "RUB":
+        # рублёвый баланс не менялся: пишем в историю обмен без влияния на сумму
+        db.add(Transaction(user_id=user_id, kind="fx", title=f"Обмен {amount} {source} → {received} {target}",
+                           amount_kop=int(rub_value * 100)))
     db.commit()
-    return assets_out(db, user_id)
+    out = assets_out(db, user_id)
+    out.update({
+        "received": str(received),
+        "fee_pct": str(fee_pct),
+        "rate": str((rate_source / rate_target).quantize(Decimal("0.000001"))),
+    })
+    return out
 
 
 # ---------------- схемы ----------------
@@ -644,6 +793,154 @@ def twofa_disable(payload: CodeRequest, user: User = Depends(get_current_user), 
     return {"totp_enabled": False}
 
 
+# ---------------- восстановление пароля ----------------
+def email_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_FROM)
+
+
+def send_email(to: str, subject: str, text: str) -> bool:
+    """Синхронная отправка; вызывается из BackgroundTasks, чтобы не задерживать ответ."""
+    if not email_configured():
+        log.warning("SMTP не настроен, письмо «%s» не отправлено", subject)
+        return False
+    msg = EmailMessage()
+    msg["From"], msg["To"], msg["Subject"] = SMTP_FROM, to, subject
+    msg.set_content(text)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
+            smtp.starttls()
+            if SMTP_USER:
+                smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp.send_message(msg)
+        return True
+    except (smtplib.SMTPException, OSError) as error:
+        log.error("Письмо не отправлено: %s", error)
+        return False
+
+
+def is_real_email(email: str) -> bool:
+    return not email.endswith("@tg.windfinance.local")
+
+
+class ForgotRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8, max_length=128)
+    totp_code: str | None = Field(default=None, max_length=8)
+
+
+@app.post("/auth/password/forgot")
+def password_forgot(payload: ForgotRequest, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+    email = payload.email.lower()
+    limiter.check(f"forgot-ip:{client_ip(request)}", 10, 3600)
+    limiter.check(f"forgot-mail:{email}", 3, 3600)
+    answer = {"ok": True, "message": "Если такой аккаунт есть, мы отправили ссылку для сброса пароля. Она действует 30 минут."}
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None or not is_real_email(user.email):
+        return answer  # одинаковый ответ: по нему нельзя узнать, зарегистрирован ли email
+    db.execute(update(PasswordReset).where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None))
+               .values(used_at=now_naive()))
+    token = secrets.token_urlsafe(32)
+    db.add(PasswordReset(user_id=user.id, token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                         expires_at=now_naive() + RESET_TOKEN_TTL))
+    db.commit()
+    link = f"{FRONTEND_URL}?reset={token}"
+    background.add_task(send_email, user.email, "Wind Finance: сброс пароля",
+                        f"Привет, {user.username}!\n\nЧтобы задать новый пароль, открой ссылку (действует 30 минут):\n{link}\n\n"
+                        "Если ты не запрашивал сброс, просто проигнорируй это письмо — пароль останется прежним.")
+    if ENV in {"dev", "test"} and not email_configured():
+        answer["dev_reset_url"] = link   # только для локальной разработки без почты
+    return answer
+
+
+@app.post("/auth/password/reset")
+def password_reset(payload: ResetRequest, request: Request, db: Session = Depends(get_db)):
+    limiter.check(f"reset-ip:{client_ip(request)}", 20, 3600)
+    row = db.scalar(select(PasswordReset).where(
+        PasswordReset.token_hash == hashlib.sha256(payload.token.encode()).hexdigest()))
+    if row is None or row.used_at is not None or row.expires_at < now_naive():
+        raise HTTPException(400, "Ссылка недействительна или устарела. Запроси новую.")
+    user = db.get(User, row.user_id)
+    if user.totp_enabled:
+        secret = reveal_totp_secret(user.totp_secret)
+        if not payload.totp_code:
+            raise HTTPException(401, "2fa_required")
+        if not secret or not pyotp.TOTP(secret).verify(payload.totp_code.strip(), valid_window=1):
+            raise HTTPException(401, "Неверный код 2FA")
+    user.password_hash = password_hash.hash(payload.password)
+    row.used_at = now_naive()
+    db.commit()
+    return token_out(user)
+
+
+# ---------------- Telegram: привязка и уведомления ----------------
+def telegram_link_code(user_id: int) -> str:
+    exp = int(time.time()) + 3600
+    sig = hmac.new(SECRET_KEY.encode(), f"tglink:{user_id}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{user_id}-{exp}-{sig}"
+
+
+def parse_link_code(code: str) -> int | None:
+    try:
+        uid, exp, sig = code.split("-")
+        good = hmac.new(SECRET_KEY.encode(), f"tglink:{uid}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
+        if hmac.compare_digest(good, sig) and int(exp) > time.time():
+            return int(uid)
+    except ValueError:
+        return None
+    return None
+
+
+async def telegram_send(chat_id: int, text: str) -> bool:
+    if not TG_BOT_TOKEN:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
+                                  json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True})
+        return r.status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
+@app.post("/telegram/link")
+def telegram_link(user: User = Depends(get_current_user)):
+    if not TG_BOT_TOKEN or not TG_BOT_USERNAME:
+        raise HTTPException(503, "Telegram-бот пока не подключён")
+    return {"url": f"https://t.me/{TG_BOT_USERNAME}?start={telegram_link_code(user.id)}", "linked": user.tg_id is not None}
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request, db: Session = Depends(get_db),
+                           secret: str | None = Header(default=None, alias="X-Telegram-Bot-Api-Secret-Token")):
+    if not TG_WEBHOOK_SECRET or not secret or not hmac.compare_digest(secret, TG_WEBHOOK_SECRET):
+        raise HTTPException(403, "Неверный секрет")
+    update_body = await request.json()
+    message = update_body.get("message") or {}
+    text = str(message.get("text") or "")
+    chat_id = (message.get("chat") or {}).get("id")
+    if not chat_id or not text.startswith("/start"):
+        return {"ok": True}
+    parts = text.split(maxsplit=1)
+    user_id = parse_link_code(parts[1]) if len(parts) == 2 else None
+    if user_id is None:
+        await telegram_send(chat_id, "Привет! Это бот Wind Finance. Чтобы получать ценовые уведомления, нажми «Подключить Telegram» на сайте.")
+        return {"ok": True}
+    owner = db.scalar(select(User).where(User.tg_id == chat_id))
+    if owner and owner.id != user_id:
+        await telegram_send(chat_id, "Этот Telegram уже привязан к другому аккаунту Wind Finance.")
+        return {"ok": True}
+    user = db.get(User, user_id)
+    if user:
+        user.tg_id = chat_id
+        db.commit()
+        await telegram_send(chat_id, f"Готово, {user.username}! Ценовые уведомления Wind Finance будут приходить сюда.")
+    return {"ok": True}
+
+
 # ---------------- виртуальный кошелёк ----------------
 @app.get("/wallet")
 def wallet(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -657,7 +954,484 @@ def wallet_assets(user: User = Depends(get_current_user), db: Session = Depends(
 
 @app.post("/wallet/exchange")
 def wallet_exchange(payload: ExchangeRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return exchange_assets(db, user.id, payload)
+    limiter.check(f"fx:{user.id}", 30, 60)
+    return exchange_assets(db, user, payload)
+
+
+@app.get("/wallet/exchange/quote")
+def exchange_quote(user: User = Depends(get_current_user)):
+    """Комиссия считается на сервере: клиент только показывает её."""
+    return {"fee_pct": str(exchange_fee_pct(user)), "min_rub": str(EXCHANGE_MIN_RUB)}
+
+
+# ---------------- инвестиционный симулятор ----------------
+# Справочные цены: SBER и IMOEX подменяются котировками Мосбиржи, остальные — фиксированные цены симулятора.
+INSTRUMENTS = {
+    "IMOEX": {"name": "Индекс Мосбиржи", "unit": "ед.", "price": Decimal("2500.00"), "live": "IMOEX"},
+    "SBER": {"name": "Сбербанк", "unit": "акц.", "price": Decimal("300.00"), "live": "SBER"},
+    "ETFRU": {"name": "ETF на индекс МосБиржи (TMOS)", "unit": "паёв", "price": Decimal("6.22"), "live": "TMOS"},
+    "BONDS": {"name": "Фонд гособлигаций (SBGB)", "unit": "паёв", "price": Decimal("15.50"), "live": "SBGB"},
+}
+QTY_STEP = Decimal("0.00000001")
+
+
+class InvestBuyRequest(BaseModel):
+    asset: Literal["IMOEX", "SBER", "ETFRU", "BONDS"]
+    amount: Decimal = Field(gt=Decimal("0"), le=Decimal("10000000"), max_digits=12, decimal_places=2)
+
+
+class InvestSellRequest(BaseModel):
+    asset: Literal["IMOEX", "SBER", "ETFRU", "BONDS"]
+    quantity: Decimal | None = Field(default=None, gt=Decimal("0"), max_digits=28, decimal_places=8)  # None — продать всё
+
+
+async def instrument_prices() -> dict[str, dict]:
+    live: dict = {}
+    try:
+        live = await cached("stocks", 30, fetch_stocks)
+    except HTTPException:
+        live = {}
+    out = {}
+    for code, meta in INSTRUMENTS.items():
+        quote = live.get(meta["live"]) if meta["live"] else None
+        price = quote.get("price") if isinstance(quote, dict) else None
+        out[code] = {
+            "price": Decimal(str(price)) if price else meta["price"],
+            "day_pct": quote.get("pct") if isinstance(quote, dict) else None,
+            "source": "moex" if price else "simulator",
+        }
+    return out
+
+
+def portfolio_out(db: Session, user_id: int, prices: dict[str, dict]) -> dict:
+    rows = db.scalars(select(Holding).where(Holding.user_id == user_id, Holding.quantity > 0).order_by(Holding.asset)).all()
+    positions, total_value, total_cost = [], Decimal("0"), Decimal("0")
+    for row in rows:
+        meta = INSTRUMENTS.get(row.asset)
+        if not meta:
+            continue
+        price = prices[row.asset]["price"]
+        value = (Decimal(row.quantity) * price).quantize(Decimal("0.01"))
+        cost = Decimal(row.cost_kop) / 100
+        pnl = value - cost
+        total_value += value
+        total_cost += cost
+        positions.append({
+            "asset": row.asset, "name": meta["name"], "unit": meta["unit"],
+            "quantity": str(Decimal(row.quantity).normalize()), "price": str(price), "value": str(value),
+            "cost": str(cost), "pnl": str(pnl), "pnl_pct": str((pnl / cost * 100).quantize(Decimal("0.01"))) if cost else "0",
+            "source": prices[row.asset]["source"],
+        })
+    cash = Decimal(db.scalar(select(User.balance_kop).where(User.id == user_id)) or 0) / 100
+    total_pnl = total_value - total_cost
+    return {
+        "positions": positions,
+        "invested_value": str(total_value),
+        "invested_cost": str(total_cost),
+        "pnl": str(total_pnl),
+        "pnl_pct": str((total_pnl / total_cost * 100).quantize(Decimal("0.01"))) if total_cost else "0",
+        "cash": str(cash),
+        "total": str(total_value + cash),
+        "instruments": {code: {"name": m["name"], "unit": m["unit"], "price": str(prices[code]["price"]),
+                               "day_pct": prices[code]["day_pct"], "source": prices[code]["source"]}
+                        for code, m in INSTRUMENTS.items()},
+    }
+
+
+def holdings_value(db: Session, user_id: int, prices: dict[str, dict]) -> tuple[int, int]:
+    value = cost = 0
+    for row in db.scalars(select(Holding).where(Holding.user_id == user_id, Holding.quantity > 0)).all():
+        if row.asset in prices:
+            value += int(Decimal(row.quantity) * prices[row.asset]["price"] * 100)
+            cost += row.cost_kop
+    return value, cost
+
+
+def record_snapshot(db: Session, user_id: int, prices: dict[str, dict]) -> None:
+    """Сохраняем стоимость портфеля за сегодня: так копится история для графика."""
+    value, cost = holdings_value(db, user_id, prices)
+    cash = db.scalar(select(User.balance_kop).where(User.id == user_id)) or 0
+    day = now_naive().strftime("%Y-%m-%d")
+    row = db.scalar(select(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user_id, PortfolioSnapshot.day == day))
+    if row is None:
+        row = PortfolioSnapshot(user_id=user_id, day=day)
+        db.add(row)
+    row.invested_kop, row.cost_kop, row.cash_kop = value, cost, cash
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+@app.get("/invest/portfolio")
+async def invest_portfolio(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    prices = await instrument_prices()
+    record_snapshot(db, user.id, prices)
+    return portfolio_out(db, user.id, prices)
+
+
+@app.get("/invest/history")
+def invest_history(days: int = 90, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    days = max(7, min(days, 365))
+    since = (now_naive() - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows = db.scalars(select(PortfolioSnapshot).where(PortfolioSnapshot.user_id == user.id, PortfolioSnapshot.day >= since)
+                      .order_by(PortfolioSnapshot.day)).all()
+    trades = db.scalars(select(InvestTrade).where(InvestTrade.user_id == user.id).order_by(desc(InvestTrade.id)).limit(20)).all()
+    return {
+        "points": [{"day": r.day, "invested": r.invested_kop / 100, "cost": r.cost_kop / 100,
+                    "total": (r.invested_kop + r.cash_kop) / 100} for r in rows],
+        "trades": [{"asset": t.asset, "name": INSTRUMENTS.get(t.asset, {}).get("name", t.asset), "side": t.side,
+                    "quantity": str(Decimal(t.quantity).normalize()), "price": str(t.price), "amount": t.amount_kop / 100,
+                    "pnl": t.pnl_kop / 100, "at": iso(t.created_at)} for t in trades],
+    }
+
+
+def week_start(dt: datetime) -> datetime:
+    return (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+MIN_COMPETITION_BASE_KOP = 100_000  # участвуют портфели от 1 000 ₽
+
+
+@app.get("/invest/leaderboard")
+async def invest_leaderboard(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Соревнование недели: доходность считает сервер по своим ценам, подделать счёт с клиента нельзя.
+    Результат = реализованный за неделю + текущий нереализованный; база = вложено сейчас + себестоимость проданного за неделю."""
+    prices = await instrument_prices()
+    start = week_start(now_naive())
+    sold = {r.user_id: (r.pnl or 0, r.cost or 0) for r in db.execute(
+        select(InvestTrade.user_id, func.sum(InvestTrade.pnl_kop).label("pnl"), func.sum(InvestTrade.cost_kop).label("cost"))
+        .where(InvestTrade.side == "sell", InvestTrade.created_at >= start).group_by(InvestTrade.user_id)).all()}
+    holders = set(db.scalars(select(Holding.user_id).where(Holding.quantity > 0)).all())
+    rows = []
+    for uid in holders | set(sold):
+        value, cost = holdings_value(db, uid, prices)
+        realized, sold_cost = sold.get(uid, (0, 0))
+        base = cost + sold_cost
+        if base < MIN_COMPETITION_BASE_KOP:
+            continue
+        rows.append((uid, (value - cost + realized) / base * 100))
+    rows.sort(key=lambda r: r[1], reverse=True)
+    names = dict(db.execute(select(User.id, User.username).where(User.id.in_([r[0] for r in rows] or [0]))).all())
+    top, me = [], None
+    for rank, (uid, ret) in enumerate(rows, 1):
+        item = {"rank": rank, "username": names.get(uid, "—"), "return_pct": round(ret, 2), "me": uid == user.id}
+        if rank <= 10:
+            top.append(item)
+        if uid == user.id:
+            me = item
+    return {"week": iso_week(now_naive()), "since": iso(start), "participants": len(rows), "top": top, "me": me,
+            "min_base": MIN_COMPETITION_BASE_KOP / 100}
+
+
+@app.post("/invest/buy")
+async def invest_buy(payload: InvestBuyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    limiter.check(f"invest:{user.id}", 30, 60)
+    if payload.amount < INVEST_MIN_RUB:
+        raise HTTPException(400, f"Минимальная сумма покупки — {INVEST_MIN_RUB} ₽")
+    prices = await instrument_prices()
+    price = prices[payload.asset]["price"]   # цену назначает сервер, а не клиент
+    qty = (payload.amount / price).quantize(QTY_STEP, rounding="ROUND_DOWN")
+    if qty <= 0:
+        raise HTTPException(400, "Сумма слишком мала для покупки")
+    kop = int(payload.amount * 100)
+    name = INSTRUMENTS[payload.asset]["name"]
+    charge(db, user.id, kop, f"Покупка: {name}")
+    holding = db.scalar(select(Holding).where(Holding.user_id == user.id, Holding.asset == payload.asset))
+    if holding is None:
+        holding = Holding(user_id=user.id, asset=payload.asset, quantity=Decimal("0"), cost_kop=0)
+        db.add(holding)
+        db.flush()
+    db.execute(update(Holding).where(Holding.id == holding.id).values(
+        quantity=Holding.quantity + qty, cost_kop=Holding.cost_kop + kop))
+    db.add(InvestTrade(user_id=user.id, asset=payload.asset, side="buy", quantity=qty, price=price, amount_kop=kop))
+    db.commit()
+    record_snapshot(db, user.id, prices)
+    return {"bought": {"asset": payload.asset, "quantity": str(qty), "price": str(price), "amount": str(payload.amount)},
+            **portfolio_out(db, user.id, prices)}
+
+
+@app.post("/invest/sell")
+async def invest_sell(payload: InvestSellRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    limiter.check(f"invest:{user.id}", 30, 60)
+    holding = db.scalar(select(Holding).where(Holding.user_id == user.id, Holding.asset == payload.asset))
+    held = Decimal(holding.quantity) if holding else Decimal("0")
+    if held <= 0:
+        raise HTTPException(404, "Такой позиции нет в портфеле")
+    qty = held if payload.quantity is None else payload.quantity
+    if qty > held:
+        raise HTTPException(400, "Нельзя продать больше, чем есть в портфеле")
+    prices = await instrument_prices()
+    price = prices[payload.asset]["price"]
+    proceeds_kop = int((qty * price * 100).to_integral_value(rounding="ROUND_DOWN"))
+    # себестоимость списываем пропорционально проданной доле (метод средней цены)
+    cost_part = holding.cost_kop if qty == held else int(Decimal(holding.cost_kop) * qty / held)
+    res = db.execute(update(Holding).where(Holding.id == holding.id, Holding.quantity >= qty).values(
+        quantity=Holding.quantity - qty, cost_kop=Holding.cost_kop - cost_part))
+    if res.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, "Позиция изменилась, попробуй ещё раз")
+    if proceeds_kop > 0:
+        credit(db, user.id, proceeds_kop, f"Продажа: {INSTRUMENTS[payload.asset]['name']}")
+    db.add(InvestTrade(user_id=user.id, asset=payload.asset, side="sell", quantity=qty, price=price,
+                       amount_kop=proceeds_kop, cost_kop=cost_part, pnl_kop=proceeds_kop - cost_part))
+    db.commit()
+    record_snapshot(db, user.id, prices)
+    return {"sold": {"asset": payload.asset, "quantity": str(qty), "price": str(price), "amount": str(Decimal(proceeds_kop) / 100),
+                     "pnl": str(Decimal(proceeds_kop - cost_part) / 100)},
+            **portfolio_out(db, user.id, prices)}
+
+
+# ---------------- копилки ----------------
+class GoalCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+    target: Decimal = Field(gt=Decimal("0"), le=Decimal("100000000"), max_digits=12, decimal_places=2)
+    deadline: datetime | None = None
+
+
+class GoalMove(BaseModel):
+    amount: Decimal = Field(gt=Decimal("0"), le=Decimal("100000000"), max_digits=12, decimal_places=2)
+
+
+def goal_out(g: SavingsGoal) -> dict:
+    left = max(0, g.target_kop - g.saved_kop)
+    monthly = None
+    if g.deadline and left:
+        months = max(1, round((g.deadline - now_naive()).days / 30.44))
+        monthly = round(left / 100 / months, 2)
+    return {"id": g.id, "title": g.title, "target": g.target_kop / 100, "saved": g.saved_kop / 100,
+            "progress": round(min(1, g.saved_kop / g.target_kop) * 100, 1) if g.target_kop else 0,
+            "deadline": iso(g.deadline), "monthly_needed": monthly, "done": g.saved_kop >= g.target_kop}
+
+
+def own_goal(db: Session, user_id: int, goal_id: int) -> SavingsGoal:
+    goal = db.scalar(select(SavingsGoal).where(SavingsGoal.id == goal_id, SavingsGoal.user_id == user_id,
+                                               SavingsGoal.closed_at.is_(None)))
+    if goal is None:
+        raise HTTPException(404, "Копилка не найдена")
+    return goal
+
+
+def goals_payload(db: Session, user_id: int) -> dict:
+    rows = db.scalars(select(SavingsGoal).where(SavingsGoal.user_id == user_id, SavingsGoal.closed_at.is_(None))
+                      .order_by(SavingsGoal.id)).all()
+    return {"goals": [goal_out(g) for g in rows], "limit": GOALS_LIMIT, **wallet_out(db, user_id)}
+
+
+@app.get("/goals")
+def list_goals(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return goals_payload(db, user.id)
+
+
+@app.post("/goals", status_code=201)
+def create_goal(payload: GoalCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    active = db.scalar(select(func.count(SavingsGoal.id)).where(SavingsGoal.user_id == user.id, SavingsGoal.closed_at.is_(None)))
+    if active >= GOALS_LIMIT:
+        raise HTTPException(409, f"Можно вести до {GOALS_LIMIT} копилок одновременно")
+    deadline = payload.deadline.replace(tzinfo=None) if payload.deadline else None
+    if deadline and deadline <= now_naive():
+        raise HTTPException(400, "Срок должен быть в будущем")
+    db.add(SavingsGoal(user_id=user.id, title=payload.title.strip(), target_kop=int(payload.target * 100), deadline=deadline))
+    db.commit()
+    return goals_payload(db, user.id)
+
+
+@app.post("/goals/{goal_id}/deposit")
+def goal_deposit(goal_id: int, payload: GoalMove, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = own_goal(db, user.id, goal_id)
+    kop = int(payload.amount * 100)
+    charge(db, user.id, kop, f"В копилку: {goal.title}")
+    db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id).values(saved_kop=SavingsGoal.saved_kop + kop))
+    db.commit()
+    return goals_payload(db, user.id)
+
+
+@app.post("/goals/{goal_id}/withdraw")
+def goal_withdraw(goal_id: int, payload: GoalMove, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = own_goal(db, user.id, goal_id)
+    kop = int(payload.amount * 100)
+    res = db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id, SavingsGoal.saved_kop >= kop)
+                     .values(saved_kop=SavingsGoal.saved_kop - kop))
+    if res.rowcount != 1:
+        db.rollback()
+        raise HTTPException(400, "В копилке нет такой суммы")
+    credit(db, user.id, kop, f"Из копилки: {goal.title}")
+    db.commit()
+    return goals_payload(db, user.id)
+
+
+@app.delete("/goals/{goal_id}")
+def close_goal(goal_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = own_goal(db, user.id, goal_id)
+    if goal.saved_kop > 0:
+        credit(db, user.id, goal.saved_kop, f"Копилка закрыта: {goal.title}")
+    goal.saved_kop = 0
+    goal.closed_at = now_naive()
+    db.commit()
+    return goals_payload(db, user.id)
+
+
+# ---------------- ценовые уведомления (проверяет сервер) ----------------
+ALERT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
+
+
+class AlertCreate(BaseModel):
+    symbol: Literal["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    direction: Literal["above", "below"]
+    price: Decimal = Field(gt=Decimal("0"), max_digits=20, decimal_places=8)
+    start_price: Decimal | None = Field(default=None, gt=Decimal("0"), max_digits=20, decimal_places=8)
+
+
+def alert_limit(user: User) -> int:
+    return ALERT_LIMIT_PLUS if plus_info(user)["active"] else ALERT_LIMIT_FREE
+
+
+def alert_out(a: PriceAlert) -> dict:
+    return {"id": a.id, "symbol": a.symbol, "direction": a.direction, "price": str(a.price),
+            "start_price": str(a.start_price) if a.start_price else None, "created_at": iso(a.created_at),
+            "triggered_at": iso(a.triggered_at), "triggered_price": str(a.triggered_price) if a.triggered_price else None,
+            "notified_via": a.notified_via}
+
+
+def alerts_payload(db: Session, user: User) -> dict:
+    active = db.scalars(select(PriceAlert).where(PriceAlert.user_id == user.id, PriceAlert.triggered_at.is_(None))
+                        .order_by(PriceAlert.id)).all()
+    fired = db.scalars(select(PriceAlert).where(PriceAlert.user_id == user.id, PriceAlert.triggered_at.is_not(None))
+                       .order_by(desc(PriceAlert.triggered_at)).limit(5)).all()
+    return {"active": [alert_out(a) for a in active], "fired": [alert_out(a) for a in fired],
+            "limit": alert_limit(user), "telegram_linked": user.tg_id is not None}
+
+
+@app.get("/alerts")
+def list_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return alerts_payload(db, user)
+
+
+@app.post("/alerts", status_code=201)
+def create_alert(payload: AlertCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    limiter.check(f"alerts:{user.id}", 30, 60)
+    active = db.scalar(select(func.count(PriceAlert.id)).where(PriceAlert.user_id == user.id, PriceAlert.triggered_at.is_(None)))
+    limit = alert_limit(user)
+    if active >= limit:
+        raise HTTPException(409, f"Лимит уведомлений: {limit}." + ("" if limit == ALERT_LIMIT_PLUS else " В Wind Plus — до 30."))
+    db.add(PriceAlert(user_id=user.id, symbol=payload.symbol, direction=payload.direction, price=payload.price,
+                      start_price=payload.start_price))
+    db.commit()
+    return alerts_payload(db, user)
+
+
+@app.delete("/alerts/{alert_id}")
+def delete_alert(alert_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    alert = db.scalar(select(PriceAlert).where(PriceAlert.id == alert_id, PriceAlert.user_id == user.id))
+    if alert is None:
+        raise HTTPException(404, "Уведомление не найдено")
+    db.delete(alert)
+    db.commit()
+    return alerts_payload(db, user)
+
+
+@app.post("/alerts/{alert_id}/ack")
+def ack_alert(alert_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Сайт сам увидел срабатывание (вкладка открыта): помечаем, чтобы не сработало повторно."""
+    alert = db.scalar(select(PriceAlert).where(PriceAlert.id == alert_id, PriceAlert.user_id == user.id))
+    if alert and alert.triggered_at is None:
+        alert.triggered_at = now_naive()
+        alert.notified_via = "web"
+        db.commit()
+    return alerts_payload(db, user)
+
+
+async def fetch_bybit_prices(symbols: set[str]) -> dict[str, Decimal]:
+    async with httpx.AsyncClient(timeout=8) as client:
+        r = await client.get("https://api.bybit.com/v5/market/tickers", params={"category": "spot"})
+        r.raise_for_status()
+        rows = r.json().get("result", {}).get("list", [])
+    return {row["symbol"]: Decimal(str(row["lastPrice"])) for row in rows if row.get("symbol") in symbols and row.get("lastPrice")}
+
+
+async def check_price_alerts_once() -> int:
+    """Один проход проверки: возвращает число сработавших уведомлений."""
+    with SessionLocal() as db:
+        alerts = db.scalars(select(PriceAlert).where(PriceAlert.triggered_at.is_(None))).all()
+        if not alerts:
+            return 0
+        prices = await fetch_bybit_prices({a.symbol for a in alerts})
+        fired = 0
+        for alert in alerts:
+            price = prices.get(alert.symbol)
+            if price is None:
+                continue
+            hit = price >= alert.price if alert.direction == "above" else price <= alert.price
+            if not hit:
+                continue
+            res = db.execute(update(PriceAlert).where(PriceAlert.id == alert.id, PriceAlert.triggered_at.is_(None))
+                             .values(triggered_at=now_naive(), triggered_price=price))
+            if res.rowcount != 1:
+                continue
+            db.commit()
+            fired += 1
+            user = db.get(User, alert.user_id)
+            text = (f"🔔 Wind Finance: {alert.symbol[:-4]}/USDT {'поднялся до' if alert.direction == 'above' else 'опустился до'} "
+                    f"{alert.price.normalize()} USDT (сейчас {price.normalize()}).")
+            via = None
+            if user and user.tg_id and await telegram_send(user.tg_id, text):
+                via = "telegram"
+            elif user and is_real_email(user.email) and email_configured():
+                via = "email" if await asyncio.to_thread(send_email, user.email, "Wind Finance: ценовое уведомление", text) else None
+            alert.notified_via = via or "site"
+            db.commit()
+        return fired
+
+
+async def alerts_loop():
+    while True:
+        try:
+            await check_price_alerts_once()
+        except Exception as error:  # сеть или Bybit недоступны — пробуем на следующем круге
+            log.warning("Проверка уведомлений не удалась: %s", error)
+        await asyncio.sleep(ALERT_CHECK_SECONDS)
+
+
+@app.on_event("startup")
+async def start_background_jobs():
+    if ENV != "test" and os.getenv("WINDFINANCE_DISABLE_ALERT_LOOP") != "1":
+        asyncio.get_running_loop().create_task(alerts_loop())
+
+
+# ---------------- админка ----------------
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.id not in ADMIN_USER_IDS:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Раздел доступен только администратору")
+    return user
+
+
+@app.get("/admin/stats")
+def admin_stats(user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    now = now_naive()
+    count = lambda q: db.scalar(q) or 0  # noqa: E731
+    paid = lambda purpose, days: count(select(func.sum(Payment.amount_kop)).where(  # noqa: E731
+        Payment.status == "succeeded", Payment.purpose == purpose, Payment.paid_at >= now - timedelta(days=days))) / 100
+    users_total = count(select(func.count(User.id)))
+    plus_active = count(select(func.count(User.id)).where(User.plus_until > now, User.plus_plan != "trial"))
+    trials = count(select(func.count(User.id)).where(User.trial_used_at.is_not(None)))
+    trial_converted = count(select(func.count(func.distinct(Payment.user_id))).join(User, User.id == Payment.user_id).where(
+        Payment.purpose == "subscription", Payment.status == "succeeded", User.trial_used_at.is_not(None)))
+    feedback = db.scalars(select(Feedback).order_by(desc(Feedback.id)).limit(20)).all()
+    return {
+        "users": {"total": users_total,
+                  "new_7d": count(select(func.count(User.id)).where(User.created_at >= now - timedelta(days=7))),
+                  "new_30d": count(select(func.count(User.id)).where(User.created_at >= now - timedelta(days=30)))},
+        "plus": {"active_paid": plus_active,
+                 "trial_active": count(select(func.count(User.id)).where(User.plus_until > now, User.plus_plan == "trial")),
+                 "trials_started": trials, "trial_to_paid": trial_converted,
+                 "conversion_pct": round(plus_active / users_total * 100, 1) if users_total else 0},
+        "revenue": {"subscriptions_30d": paid("subscription", 30), "topups_30d": paid("topup", 30)},
+        "activity": {"investors": count(select(func.count(func.distinct(Holding.user_id))).where(Holding.quantity > 0)),
+                     "trades_7d": count(select(func.count(InvestTrade.id)).where(InvestTrade.created_at >= now - timedelta(days=7))),
+                     "goals_active": count(select(func.count(SavingsGoal.id)).where(SavingsGoal.closed_at.is_(None))),
+                     "alerts_active": count(select(func.count(PriceAlert.id)).where(PriceAlert.triggered_at.is_(None)))},
+        "feedback": [{"id": f.id, "message": f.message, "contact": f.contact, "page": f.page, "at": iso(f.created_at)} for f in feedback],
+    }
 
 
 def require_yookassa() -> None:
@@ -934,22 +1708,17 @@ async def yookassa_webhook(payload: PaymentWebhook, db: Session = Depends(get_db
         if not payment.plan:
             raise HTTPException(500, "У платежа отсутствует тариф")
         _, days = PLANS[payment.plan]
+        owner = db.get(User, payment.user_id)
+        # продление: оплаченные дни добавляются к текущему сроку, а не сгорают
+        start = max(now_naive(), owner.plus_until) if owner and owner.plus_until else now_naive()
         db.execute(update(User).where(User.id == payment.user_id).values(
             plus_plan=payment.plan,
-            plus_until=now_naive() + timedelta(days=days),
+            plus_until=start + timedelta(days=days),
         ))
     else:
         credit(db, payment.user_id, payment.amount_kop, f"Пополнение {payment.method}")
     db.commit()
     return {"ok": True}
-
-
-@app.post("/wallet/spend")
-def spend(payload: MoneyRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Списание виртуальных денег. С реальными деньгами это должны быть проверенные заказы, а не свободная сумма."""
-    charge(db, user.id, to_kop(payload.amount), payload.title or "Списание")
-    db.commit()
-    return wallet_out(db, user.id)
 
 
 @app.post("/subscription")
@@ -964,8 +1733,8 @@ async def create_subscription_payment(
     db: Session = Depends(get_db),
 ):
     require_yookassa()
-    if user.plus_until and user.plus_until > now_naive():
-        raise HTTPException(409, "Подписка уже активна")
+    if user.plus_until and user.plus_until > now_naive() + timedelta(days=400):
+        raise HTTPException(409, "Подписка уже оплачена больше чем на год вперёд")
     price, _ = PLANS[payload.plan]
     payment_key = str(uuid.uuid4())
     return_url = f"{PUBLIC_BASE_URL}/?subscription=return"
@@ -1008,12 +1777,25 @@ async def create_subscription_payment(
     return {"payment_id": provider_id, "status": payment.get("status"), "confirmation_url": confirmation_url}
 
 
-@app.delete("/subscription")
-def cancel_subscription(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    user.plus_until = None
-    user.plus_plan = None
+@app.post("/subscription/trial")
+def start_trial(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.trial_used_at is not None:
+        raise HTTPException(409, "Пробный период уже был использован")
+    if plus_info(user)["active"]:
+        raise HTTPException(409, "Подписка уже активна")
+    user.trial_used_at = now_naive()
+    user.plus_plan = "trial"
+    user.plus_until = now_naive() + timedelta(days=TRIAL_DAYS)
     db.commit()
-    return {"plus": plus_info(user)}
+    return {"plus": plus_info(user), "user": user_out(user)}
+
+
+@app.delete("/subscription")
+def cancel_subscription(user: User = Depends(get_current_user)):
+    # Автосписаний нет, поэтому «отключать» нечего: оплаченный период не отнимаем.
+    info = plus_info(user)
+    return {"plus": info, "auto_renew": False,
+            "message": "Подписка не продлевается автоматически" + (f" и действует до {info['until'][:10]}" if info["active"] else "")}
 
 
 # ---------------- игра: лидерборд ----------------
@@ -1117,23 +1899,35 @@ async def fetch_rates() -> dict:
     return {"rates": out, "date": j.get("Date")}
 
 
+MOEX_SHARES = ("SBER", "TMOS", "SBGB")   # акции и фонды на основной доске TQBR
+
+
 async def fetch_stocks() -> dict:
-    cols = {"iss.meta": "off", "iss.only": "marketdata"}
+    """Котировки Мосбиржи. Вне торгов LAST бывает пустым — тогда берём рыночную цену или цену закрытия."""
+    base = "https://iss.moex.com/iss/engines/stock/markets"
     async with httpx.AsyncClient(timeout=8) as c:
-        sber = await c.get("https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/SBER.json",
-                           params={**cols, "marketdata.columns": "SECID,LAST,LASTTOPREVPRICE"})
-        idx = await c.get("https://iss.moex.com/iss/engines/stock/markets/index/securities/IMOEX.json",
-                          params={**cols, "marketdata.columns": "SECID,CURRENTVALUE,LASTCHANGEPRCNT"})
-    for r in (sber, idx):
+        shares, idx = await asyncio.gather(
+            c.get(f"{base}/shares/boards/TQBR/securities.json", params={
+                "iss.meta": "off", "iss.only": "marketdata,securities", "securities": ",".join(MOEX_SHARES),
+                "marketdata.columns": "SECID,LAST,MARKETPRICE,LASTTOPREVPRICE,VALTODAY", "securities.columns": "SECID,PREVPRICE"}),
+            c.get(f"{base}/index/securities/IMOEX.json", params={
+                "iss.meta": "off", "iss.only": "marketdata", "marketdata.columns": "SECID,CURRENTVALUE,LASTCHANGEPRC,VALTODAY"}),
+        )
+    for r in (shares, idx):
         r.raise_for_status()
 
-    def first(resp):
-        md = resp.json()["marketdata"]
-        return dict(zip(md["columns"], md["data"][0]))
+    def table(block):
+        return [dict(zip(block["columns"], row)) for row in block["data"]]
 
-    s, i = first(sber), first(idx)
-    return {"SBER": {"price": s.get("LAST"), "pct": s.get("LASTTOPREVPRICE")},
-            "IMOEX": {"price": i.get("CURRENTVALUE"), "pct": i.get("LASTCHANGEPRCNT")}}
+    sj = shares.json()
+    prev = {row["SECID"]: row.get("PREVPRICE") for row in table(sj["securities"])}
+    out = {}
+    for row in table(sj["marketdata"]):
+        price = row.get("LAST") or row.get("MARKETPRICE") or prev.get(row["SECID"])
+        out[row["SECID"]] = {"price": price, "pct": row.get("LASTTOPREVPRICE"), "volume": row.get("VALTODAY")}
+    i = table(idx.json()["marketdata"])[0]
+    out["IMOEX"] = {"price": i.get("CURRENTVALUE"), "pct": i.get("LASTCHANGEPRC"), "volume": i.get("VALTODAY")}
+    return out
 
 
 def clean_news_text(value: str, limit: int) -> str:
@@ -1143,50 +1937,88 @@ def clean_news_text(value: str, limit: int) -> str:
     return re.sub(r"\s+", " ", value).strip()[:limit]
 
 
-async def fetch_news() -> dict:
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        response = await client.get(NEWS_RSS_URL, headers={"User-Agent": "WindFinance/1.0"})
-        response.raise_for_status()
-    root = ET.fromstring(response.content)
-    items = root.findall("./channel/item")[:12]
-    news = []
-    for index, item in enumerate(items):
-        title = clean_news_text(item.findtext("title", ""), 180)
-        summary = clean_news_text(item.findtext("description", ""), 360)
+NEWS_FEEDS = {
+    # тег по умолчанию для ленты; внутри всё равно уточняется по ключевым словам
+    "США": "S&P 500 OR Nasdaq OR ФРС OR \"Уолл-стрит\"",
+    "Россия": "Мосбиржа OR \"индекс МосБиржи\" OR \"ключевая ставка\" OR \"курс рубля\"",
+    "Крипто": "биткоин OR криптовалюта OR Ethereum",
+    "Экономика": "инфляция OR ЦБ OR ВВП OR нефть",
+}
+NEWS_TTL = 15 * 60
+NEWS_RELEVANCE = (
+    "рынок", "инвести", "акци", "облигац", "валют", "курс", "рубл", "доллар", "евро", "битко", "крипт", "эфир", "бирж",
+    "индекс", "ставк", "инфляц", "банк", "экономик", "ввп", "нефть", "золот", "сырь", "фрс", "s&p", "nasdaq", "ethereum",
+)
+
+
+def news_tag(text: str, fallback: str) -> str:
+    lowered = text.lower()
+    rules = (
+        ("Крипто", ("битко", "крипт", "эфир", "bitcoin", "ethereum", "токен", "блокчейн")),
+        ("США", ("s&p", "nasdaq", "dow jones", "фрс", "уолл-стрит", "америк", "сша")),
+        ("Россия", ("мосбирж", "рубл", "ключев", "цб рф", "банк россии", "сбер", "газпром")),
+        ("Экономика", ("инфляц", "ставк", "ввп", "нефть", "золот", "экономик")),
+    )
+    for tag, words in rules:
+        if any(word in lowered for word in words):
+            return tag
+    return fallback
+
+
+async def fetch_feed(client: httpx.AsyncClient, fallback_tag: str, query: str) -> list[dict]:
+    response = await client.get("https://news.google.com/rss/search",
+                                params={"q": f"{query} when:2d", "hl": "ru", "gl": "RU", "ceid": "RU:ru"},
+                                headers={"User-Agent": "WindFinance/1.0"})
+    response.raise_for_status()
+    items = []
+    for item in ET.fromstring(response.content).findall("./channel/item")[:25]:
+        raw_title = clean_news_text(item.findtext("title", ""), 220)
+        source = clean_news_text(item.findtext("source", ""), 60)
+        title = raw_title[: -len(source) - 3].strip() if source and raw_title.endswith(f" - {source}") else raw_title
         link = (item.findtext("link") or "").strip()
-        published = (item.findtext("pubDate") or "").strip()
+        summary = clean_news_text(item.findtext("description", ""), 360)
+        if summary.startswith(title):
+            summary = ""
         if not title or not link or not re.search(r"[А-Яа-яЁё]", title):
             continue
-        lowered = f"{title} {summary}".lower()
-        relevance = (
-            "рынок", "инвести", "акци", "облигац", "валют", "форекс", "курс",
-            "рубл", "доллар", "евро", "битко", "крипт", "эфир", "бирж",
-            "индекс", "ставк", "инфляц", "центральн", "экономик", "ввп",
-            "нефть", "золот", "сырь", "stock", "equity", "market", "invest",
-            "currency", "bitcoin", "crypto", "forex", "inflation", "rate",
-        )
-        if not any(word in lowered for word in relevance):
+        if not any(word in f"{title} {summary}".lower() for word in NEWS_RELEVANCE):
             continue
-        tag = "Рынок"
-        if any(word in lowered for word in ("s&p", "nasdaq", "dow jones", "фрс", "американск", "америк")):
-            tag = "США"
-        elif any(word in lowered for word in ("акци", "облигац", "индекс", "stock", "equity")):
-            tag = "Акции"
-        elif any(word in lowered for word in ("битко", "крипт", "эфир", "bitcoin", "ethereum", "crypto")):
-            tag = "Крипто"
-        elif any(word in lowered for word in ("инфляц", "ставк", "центральн", "ввп", "экономик", "inflation", "rate", "central bank")):
-            tag = "Экономика"
-        news.append({
-            "id": f"news-{index}",
-            "tag": tag,
-            "title": title,
-            "summary": summary or "Свежий анализ мировых финансовых рынков.",
-            "published": published,
-            "url": link,
-        })
+        try:
+            published = parsedate_to_datetime(item.findtext("pubDate") or "").astimezone(timezone.utc).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            published = now_naive()
+        items.append({"title": title, "summary": summary, "url": link, "source": source,
+                      "published": iso(published), "_ts": published, "tag": news_tag(f"{title} {summary}", fallback_tag)})
+    return items
+
+
+async def fetch_news() -> dict:
+    feeds = dict(NEWS_FEEDS)
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+        results = await asyncio.gather(*(fetch_feed(client, tag, q) for tag, q in feeds.items()), return_exceptions=True)
+    seen, news = set(), []
+    for batch in results:
+        if isinstance(batch, Exception):
+            continue
+        for item in batch:
+            key = re.sub(r"[^а-яёa-z0-9]", "", item["title"].lower())[:60]
+            if key in seen:
+                continue
+            seen.add(key)
+            news.append(item)
     if not news:
-        raise ValueError("RSS не содержит новостей")
-    return {"updated_at": now_naive().isoformat() + "Z", "items": news}
+        raise ValueError("Ни одна лента не ответила")
+    news.sort(key=lambda n: n["_ts"], reverse=True)
+    news = news[:40]
+    for index, item in enumerate(news):
+        item.pop("_ts")
+        item["id"] = "news-" + hashlib.sha1(item["url"].encode()).hexdigest()[:12]
+        if not item["summary"]:
+            item["summary"] = f"{item['source'] or 'Источник'}: открой материал, чтобы прочитать подробности."
+    counts: dict[str, int] = {}
+    for item in news:
+        counts[item["tag"]] = counts.get(item["tag"], 0) + 1
+    return {"updated_at": iso(now_naive()), "items": news, "counts": counts, "ttl": NEWS_TTL}
 
 
 @app.get("/market/rates")
@@ -1201,7 +2033,7 @@ async def market_stocks():
 
 @app.get("/market/news")
 async def market_news():
-    return await cached("news-us-market", 86_400, fetch_news)
+    return await cached("news-v2", NEWS_TTL, fetch_news)
 
 
 # ---------------- демо-пользователь и фронтенд ----------------

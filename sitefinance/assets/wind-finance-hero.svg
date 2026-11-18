@@ -1,34 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
-	<title id="title">Wind Finance financial illustration</title>
-	<desc id="desc">Flowing mint ribbons and an upward chart with golden coins</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" role="img" aria-labelledby="title desc">
+	<title id="title">Wind Finance</title>
+	<desc id="desc">Растущий график, мятная лента ветра и золотая монета с символом рубля</desc>
 	<defs>
-		<linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
-			<stop offset="0" stop-color="#e4f8ed"/>
-			<stop offset="1" stop-color="#b9e5d0"/>
-		</linearGradient>
 		<linearGradient id="ribbon" x1="0" y1="1" x2="1" y2="0">
-			<stop offset="0" stop-color="#24785b"/>
-			<stop offset="1" stop-color="#77d8a6"/>
+			<stop offset="0" stop-color="#1f6d52"/>
+			<stop offset="1" stop-color="#6fd3a1"/>
 		</linearGradient>
-		<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-			<feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#24785b" flood-opacity=".16"/>
+		<linearGradient id="ribbon-soft" x1="0" y1="1" x2="1" y2="0">
+			<stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+			<stop offset=".45" stop-color="#ffffff" stop-opacity=".5"/>
+			<stop offset="1" stop-color="#ffffff" stop-opacity=".2"/>
+		</linearGradient>
+		<radialGradient id="sun" cx=".4" cy=".35" r=".7">
+			<stop offset="0" stop-color="#ffe9a8"/>
+			<stop offset="1" stop-color="#f4c95d"/>
+		</radialGradient>
+		<linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#ffd978"/>
+			<stop offset="1" stop-color="#e6ad35"/>
+		</linearGradient>
+		<filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+			<feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1f6d52" flood-opacity=".18"/>
 		</filter>
 	</defs>
-	<rect width="1200" height="700" rx="38" fill="url(#sky)"/>
-	<circle cx="1010" cy="135" r="112" fill="#f4c95d" opacity=".8"/>
-	<circle cx="1010" cy="135" r="72" fill="#ffe59a" opacity=".7"/>
-	<path d="M470 610c92-150 132-271 287-336 102-43 189-48 322-151" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="92" opacity=".42"/>
-	<path d="M390 624c120-120 176-248 320-302 130-49 199-44 346-155" fill="none" stroke="url(#ribbon)" stroke-linecap="round" stroke-width="38" filter="url(#shadow)"/>
-	<path d="M410 624c116-96 170-187 308-236 111-39 177-42 309-128" fill="none" stroke="#baf0d2" stroke-linecap="round" stroke-width="12"/>
-	<path d="M515 527 635 462l98 28 110-126 112 18 105-129" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10" opacity=".9"/>
-	<path d="m1018 254 43-6-12 42" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
+
+	<!-- солнце -->
+	<circle cx="500" cy="88" r="58" fill="url(#sun)" opacity=".85"/>
+	<circle cx="500" cy="88" r="78" fill="none" stroke="#f4c95d" stroke-opacity=".25" stroke-width="2"/>
+
+	<!-- ленты ветра -->
+	<path d="M70 392C150 300 200 236 300 214S440 170 560 70" fill="none" stroke="url(#ribbon-soft)" stroke-linecap="round" stroke-width="54"/>
+	<path d="M60 400C140 312 196 250 298 226S446 176 566 84" fill="none" stroke="url(#ribbon)" stroke-linecap="round" stroke-width="20" filter="url(#shadow)"/>
+	<path d="M84 400C160 324 212 268 306 246S450 194 566 110" fill="none" stroke="#bff0d6" stroke-opacity=".9" stroke-linecap="round" stroke-width="5"/>
+
+	<!-- график с наконечником, выровненным по последнему отрезку -->
+	<path d="M130 330 210 285l70 15 80-80 70 15 90-105" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="7" opacity=".95"/>
+	<path d="M488 142 520 130l-7 33" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+	<g fill="#fff">
+		<circle cx="210" cy="285" r="7"/><circle cx="360" cy="220" r="7"/>
+	</g>
+
+	<!-- монета с символом рубля -->
 	<g filter="url(#shadow)">
-		<circle cx="625" cy="190" r="46" fill="#f4c95d"/>
-		<circle cx="625" cy="190" r="35" fill="none" stroke="#fff2b8" stroke-width="5"/>
-		<path d="M620 166v47m-14-35c5-7 27-9 34 1 7 11-2 17-17 20-16 3-23 11-17 21 6 10 29 10 36 0" fill="none" stroke="#fff8d5" stroke-linecap="round" stroke-width="6"/>
+		<circle cx="300" cy="118" r="38" fill="url(#coin)"/>
+		<circle cx="300" cy="118" r="29" fill="none" stroke="#fff4c7" stroke-width="3"/>
+		<path d="M294 98v42M294 98h11a11 11 0 0 1 0 22h-19M286 130h20" fill="none" stroke="#fffbe8" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
 	</g>
-	<g fill="#fff" opacity=".72">
-		<circle cx="250" cy="165" r="10"/><circle cx="328" cy="270" r="7"/><circle cx="190" cy="360" r="13"/>
-		<circle cx="845" cy="100" r="8"/><circle cx="1120" cy="390" r="11"/>
+
+	<!-- искры -->
+	<g fill="#fff" opacity=".75">
+		<circle cx="170" cy="150" r="5"/><circle cx="412" cy="300" r="6"/><circle cx="570" cy="230" r="4"/><circle cx="236" cy="70" r="3.5"/>
 	</g>
+	<path d="M410 52v16M402 60h16" stroke="#fff" stroke-linecap="round" stroke-width="3" opacity=".8"/>
 </svg>

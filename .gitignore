@@ -1,0 +1,2 @@
+# генерируется workflow деплоя из переменной BACKEND_URL
+sitefinance/config.js
