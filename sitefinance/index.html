@@ -7,7 +7,7 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f7faf5">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=37">
+	<link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
 	<div class="app">
@@ -342,14 +342,27 @@
 					<div class="chart-source"><span><i></i> Котировки Bybit</span><span id="crypto-updated">Обновление...</span></div>
 					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy"><i data-lucide="arrow-up-right"></i> Купить на Bybit</button><button class="trade-button sell-button" type="button" data-trade="sell"><i data-lucide="arrow-down-right"></i> Продать на Bybit</button></div>
 				</article>
-				<article class="card bybit-partner-card">
-					<div>
-						<span class="bybit-partner-label">Wind Finance · Bybit Partner</span>
-						<h3>Торгуй на Bybit самостоятельно</h3>
-						<p>Кнопка открывает официальный сайт Bybit. Мы не принимаем деньги, не храним криптовалюту и не совершаем сделки за пользователя.</p>
-						<small>Партнёрская ссылка: при регистрации и торговле Bybit может выплатить нам вознаграждение. Торговля связана с риском потери средств.</small>
+				<article class="card bybit-partner-card" id="bybit-partner">
+					<div class="bp-main">
+						<span class="bybit-partner-label"><i data-lucide="handshake"></i> Wind Finance × Bybit</span>
+						<h3>Открой аккаунт на Bybit через Wind</h3>
+						<p>Регистрация занимает пару минут. Новые пользователи получают приветственные бонусы Bybit, а графики, новости и ценовые уведомления остаются здесь, в Wind.</p>
+						<ol class="bp-steps">
+							<li><b>1</b><span>Зарегистрируйся по кнопке</span></li>
+							<li><b>2</b><span>Пройди проверку и пополни счёт</span></li>
+							<li><b>3</b><span>Торгуй, а анализируй в Wind</span></li>
+						</ol>
+						<div class="bp-actions">
+							<a class="button bybit-partner-button" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Создать аккаунт Bybit <span>→</span></a>
+							<button type="button" class="bp-copy" id="bybit-ref-copy" title="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
+						</div>
+						<small>Партнёрская ссылка: Bybit платит Wind Finance часть комиссии с твоих сделок. Для тебя комиссии не меняются. Wind не принимает деньги и не хранит криптовалюту. Торговля связана с риском потери средств.</small>
 					</div>
-					<a class="button bybit-partner-button" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Открыть Bybit <span>→</span></a>
+					<div class="bp-art" aria-hidden="true">
+						<div class="bp-coin"><i data-lucide="bitcoin"></i></div>
+						<div class="bp-chip up">BTC <span id="bp-btc">—</span></div>
+						<div class="bp-chip">ETH <span id="bp-eth">—</span></div>
+					</div>
 				</article>
 
 
@@ -665,6 +678,27 @@
 			<button id="topup-submit" class="button modal-submit" type="button" data-default-amount="5000">Пополнить на 5 000 ₽ <span>→</span></button>
 		</div>
 	</div>
+	<div class="modal" id="bybit-trade-modal" hidden>
+		<div class="modal-card bybit-trade-card" role="dialog" aria-modal="true" aria-labelledby="bybit-trade-title">
+			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
+			<p class="eyebrow">Bybit Spot</p>
+			<h2 id="bybit-trade-title">Купить BTC на Bybit</h2>
+			<p class="modal-copy">Сделка проходит на официальном сайте Bybit. У тебя уже есть там аккаунт?</p>
+			<div class="bybit-choice">
+				<a class="bybit-option primary" id="bybit-opt-signup" data-bybit-signup="trade-modal" href="#" target="_blank" rel="noopener noreferrer sponsored">
+					<span class="bybit-option-icon"><i data-lucide="user-plus"></i></span>
+					<span><strong>Нет, создать аккаунт</strong><small>Регистрация через Wind и бонусы для новичков</small></span>
+					<i data-lucide="arrow-up-right"></i>
+				</a>
+				<a class="bybit-option" id="bybit-opt-trade" href="#" target="_blank" rel="noopener noreferrer">
+					<span class="bybit-option-icon"><i data-lucide="log-in"></i></span>
+					<span><strong>Да, перейти к торговле</strong><small id="bybit-opt-pair">Откроем пару BTC/USDT</small></span>
+					<i data-lucide="arrow-up-right"></i>
+				</a>
+			</div>
+			<small class="bybit-trade-note">Wind не видит твой аккаунт Bybit и не совершает сделки за тебя.</small>
+		</div>
+	</div>
 	<div class="modal" id="checkout-modal" hidden>
 		<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
@@ -944,6 +978,6 @@
 	<script src="https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 	<script src="config.js"></script>
-	<script src="script.js?v=36"></script>
+	<script src="script.js?v=37"></script>
 </body>
 </html>

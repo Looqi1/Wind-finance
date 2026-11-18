@@ -167,7 +167,6 @@ const showSuccess = (message, type = 'success') => {
 };
 
 const assetPickerOptions = document.querySelectorAll('.asset-picker-option');
-const BYBIT_REFERRAL_URL = 'https://www.bybit.com/invite?ref=393YMZP';
 assetPickerOptions.forEach((option) => {
 	option.addEventListener('click', () => {
 		assetPickerOptions.forEach((item) => item.classList.remove('active'));
@@ -175,11 +174,84 @@ assetPickerOptions.forEach((option) => {
 	});
 });
 
-document.querySelectorAll('[data-trade]').forEach((button) => {
-	button.addEventListener('click', () => {
-		window.open(BYBIT_REFERRAL_URL, '_blank', 'noopener,noreferrer');
+// ================= ПАРТНЁРКА BYBIT =================
+// Код задаётся переменной репозитория BYBIT_REF_CODE (попадает в config.js), иначе берётся код по умолчанию.
+const BYBIT_REF_CODE = String(window.WIND_BYBIT_REF || '393YMZP').trim();
+const BYBIT_REFERRAL_URL = `https://www.bybit.com/invite?ref=${encodeURIComponent(BYBIT_REF_CODE)}`;
+const bybitTradeUrl = (symbol) => {
+	const m = /^([A-Z0-9]+?)(USDT|USDC|BTC|ETH)$/.exec(symbol || '');
+	return m ? `https://www.bybit.com/trade/spot/${m[1]}/${m[2]}` : 'https://www.bybit.com/trade/spot/BTC/USDT';
+};
+const trackPartnerClick = (kind, placement, symbol = '') => {
+	if (typeof window.WindApi !== 'function') return;
+	window.WindApi('/partner/click', { method: 'POST', body: { kind, placement, symbol }, timeoutMs: 5000 }).catch(() => {});
+};
+document.querySelectorAll('[data-bybit-signup]').forEach((link) => {
+	link.href = BYBIT_REFERRAL_URL;
+	link.addEventListener('click', () => {
+		trackPartnerClick('signup', link.dataset.bybitSignup, link.dataset.symbol || '');
 	});
 });
+const refCodeEl = document.getElementById('bybit-ref-code');
+if (refCodeEl) refCodeEl.textContent = BYBIT_REF_CODE;
+document.getElementById('bybit-ref-copy')?.addEventListener('click', async () => {
+	try {
+		await navigator.clipboard.writeText(BYBIT_REF_CODE);
+		showSuccess('Реферальный код скопирован');
+	} catch (e) {
+		showSuccess(`Код: ${BYBIT_REF_CODE}`);
+	}
+});
+
+const bybitTradeModal = document.getElementById('bybit-trade-modal');
+const bybitOptTrade = document.getElementById('bybit-opt-trade');
+const bybitOptSignup = document.getElementById('bybit-opt-signup');
+document.querySelectorAll('[data-trade]').forEach((button) => {
+	button.addEventListener('click', () => {
+		const symbol = (document.getElementById('crypto-pair')?.value || 'BTCUSDT').toUpperCase();
+		const side = button.dataset.trade === 'sell' ? 'sell' : 'buy';
+		const base = symbol.replace(/(USDT|USDC)$/, '');
+		if (!bybitTradeModal) {
+			trackPartnerClick('signup', `trade-${side}`, symbol);
+			window.open(BYBIT_REFERRAL_URL, '_blank', 'noopener,noreferrer');
+			return;
+		}
+		document.getElementById('bybit-trade-title').textContent = `${side === 'buy' ? 'Купить' : 'Продать'} ${base} на Bybit`;
+		document.getElementById('bybit-opt-pair').textContent = `Откроем пару ${base}/USDT`;
+		bybitOptTrade.href = bybitTradeUrl(symbol);
+		bybitOptTrade.dataset.symbol = symbol;
+		bybitOptTrade.dataset.side = side;
+		bybitOptSignup.dataset.symbol = symbol;
+		bybitTradeModal.hidden = false;
+	});
+});
+bybitOptTrade?.addEventListener('click', () => {
+	trackPartnerClick('trade', `trade-${bybitOptTrade.dataset.side || 'buy'}`, bybitOptTrade.dataset.symbol || '');
+	window.setTimeout(() => closeModal(bybitTradeModal), 150);
+});
+bybitOptSignup?.addEventListener('click', () => window.setTimeout(() => closeModal(bybitTradeModal), 150));
+
+// живые цены в партнёрской карточке
+(() => {
+	const btc = document.getElementById('bp-btc');
+	const eth = document.getElementById('bp-eth');
+	if (!btc || !eth) return;
+	const fmt = (v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: Number(v) > 1000 ? 0 : 2 })}`;
+	const load = async () => {
+		try {
+			const res = await Promise.all(['BTCUSDT', 'ETHUSDT'].map((s) => fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}`).then((r) => r.json())));
+			[btc, eth].forEach((el, i) => {
+				const t = res[i]?.result?.list?.[0];
+				if (!t) return;
+				el.textContent = fmt(t.lastPrice);
+				el.parentElement.classList.toggle('up', Number(t.price24hPcnt) >= 0);
+				el.parentElement.classList.toggle('down', Number(t.price24hPcnt) < 0);
+			});
+		} catch (e) { /* карточка работает и без цен */ }
+	};
+	load();
+	window.setInterval(() => { if (!document.hidden) load(); }, 60000);
+})();
 
 const confirmPaymentButton = document.getElementById('confirm-payment');
 confirmPaymentButton?.addEventListener('click', async () => {
@@ -5278,6 +5350,10 @@ if (window.lucide) {
 				tile('Выручка за 30 дней', `${num(d.revenue.subscriptions_30d)} ₽`, `пополнения ${num(d.revenue.topups_30d)} ₽`),
 				tile('Инвесторы', num(d.activity.investors), `сделок за неделю: ${num(d.activity.trades_7d)}`),
 				tile('Копилки и уведомления', `${num(d.activity.goals_active)} / ${num(d.activity.alerts_active)}`, 'активные'),
+				...(d.partner ? [
+					tile('Bybit: регистрации', num(d.partner.signup_30d), `за 30 дней · за 7: ${num(d.partner.signup_7d)} · код ${d.partner.ref_code}`),
+					tile('Bybit: к торговле', num(d.partner.trade_30d), `за 30 дней · пользователей: ${num(d.partner.users_30d)}${d.partner.placements.length ? ' · топ: ' + d.partner.placements[0].placement : ''}`),
+				] : []),
 			);
 			feedback.replaceChildren(...(d.feedback.length ? d.feedback.map((f) => {
 				const row = mk('div', 'admin-fb');

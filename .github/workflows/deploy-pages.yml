@@ -44,6 +44,7 @@ jobs:
       - name: Prepare static site
         env:
           BACKEND_URL: ${{ vars.BACKEND_URL }}
+          BYBIT_REF_CODE: ${{ vars.BYBIT_REF_CODE }}
         run: |
           mkdir -p _site
           cp sitefinance/index.html sitefinance/script.js sitefinance/style.css _site/
@@ -56,6 +57,11 @@ jobs:
           printf 'window.WIND_API_URL = %s;\n' \
             "$(python3 -c 'import json, os; print(json.dumps(os.environ.get("BACKEND_URL", "").rstrip("/")))')" \
             > _site/config.js
+          if [ -n "$BYBIT_REF_CODE" ]; then
+            printf 'window.WIND_BYBIT_REF = %s;\n' \
+              "$(python3 -c 'import json, os; print(json.dumps(os.environ["BYBIT_REF_CODE"].strip()))')" \
+              >> _site/config.js
+          fi
           if [ -z "$BACKEND_URL" ]; then
             echo "::warning title=BACKEND_URL не задан::Сайт опубликуется без сервера: вход и регистрация работать не будут. Задай переменную репозитория BACKEND_URL (Settings → Secrets and variables → Actions → Variables)."
           fi

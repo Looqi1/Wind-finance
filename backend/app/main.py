@@ -57,6 +57,8 @@ BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 BYBIT_API_BASE_URL = os.getenv("BYBIT_API_BASE_URL", "https://api-testnet.bybit.com").rstrip("/")
 BYBIT_LIVE_TRADING = os.getenv("WINDFINANCE_LIVE_TRADING", "0") == "1"
+# Реферальный код партнёрской программы Bybit (affiliates.bybit.com).
+BYBIT_REF_CODE = os.getenv("BYBIT_REF_CODE", "393YMZP").strip()
 BYBIT_ADMIN_USER_IDS = {
     int(value.strip()) for value in os.getenv("BYBIT_ADMIN_USER_IDS", "").split(",")
     if value.strip().isdigit()
@@ -308,6 +310,18 @@ class GameScore(Base):
     week: Mapped[str] = mapped_column(String(10), index=True)
     score: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
+
+
+class PartnerClick(Base):
+    """Переход пользователя на Bybit по партнёрской ссылке (для статистики в админке)."""
+    __tablename__ = "partner_clicks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    partner: Mapped[str] = mapped_column(String(20), default="bybit")
+    kind: Mapped[str] = mapped_column(String(12), default="signup")
+    placement: Mapped[str] = mapped_column(String(30), default="")
+    symbol: Mapped[str] = mapped_column(String(20), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive, index=True)
 
 
 class Feedback(Base):
@@ -632,6 +646,12 @@ class PlanRequest(BaseModel):
 class ScoreRequest(BaseModel):
     game: Literal["drop"]
     score: int = Field(ge=1, le=1_000_000)
+
+
+class PartnerClickRequest(BaseModel):
+    kind: str = Field("signup", pattern="^(signup|trade)$")
+    placement: str = Field("", max_length=30, pattern="^[a-z0-9_-]*$")
+    symbol: str = Field("", max_length=20, pattern="^[A-Z0-9]*$")
 
 
 class FeedbackRequest(BaseModel):
@@ -1407,6 +1427,21 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def partner_stats(db: Session, now: datetime, count) -> dict:
+    since = now - timedelta(days=30)
+    clicks = lambda kind, days: count(select(func.count(PartnerClick.id)).where(  # noqa: E731
+        PartnerClick.kind == kind, PartnerClick.created_at >= now - timedelta(days=days)))
+    top = db.execute(select(PartnerClick.placement, func.count(PartnerClick.id)).where(PartnerClick.created_at >= since)
+                     .group_by(PartnerClick.placement).order_by(desc(func.count(PartnerClick.id))).limit(5)).all()
+    return {
+        "ref_code": BYBIT_REF_CODE,
+        "signup_7d": clicks("signup", 7), "signup_30d": clicks("signup", 30),
+        "trade_7d": clicks("trade", 7), "trade_30d": clicks("trade", 30),
+        "users_30d": count(select(func.count(func.distinct(PartnerClick.user_id))).where(PartnerClick.created_at >= since)),
+        "placements": [{"placement": p or "—", "clicks": c} for p, c in top],
+    }
+
+
 @app.get("/admin/stats")
 def admin_stats(user: User = Depends(require_admin), db: Session = Depends(get_db)):
     now = now_naive()
@@ -1432,6 +1467,7 @@ def admin_stats(user: User = Depends(require_admin), db: Session = Depends(get_d
                      "trades_7d": count(select(func.count(InvestTrade.id)).where(InvestTrade.created_at >= now - timedelta(days=7))),
                      "goals_active": count(select(func.count(SavingsGoal.id)).where(SavingsGoal.closed_at.is_(None))),
                      "alerts_active": count(select(func.count(PriceAlert.id)).where(PriceAlert.triggered_at.is_(None)))},
+        "partner": partner_stats(db, now, count),
         "feedback": [{"id": f.id, "message": f.message, "contact": f.contact, "page": f.page, "at": iso(f.created_at)} for f in feedback],
     }
 
@@ -1854,6 +1890,19 @@ def claim_bonus(user: User = Depends(get_current_user), db: Session = Depends(ge
 
 
 # ---------------- обратная связь ----------------
+@app.get("/partner/bybit")
+def partner_bybit():
+    return {"ref_code": BYBIT_REF_CODE, "invite_url": f"https://www.bybit.com/invite?ref={BYBIT_REF_CODE}" if BYBIT_REF_CODE else ""}
+
+
+@app.post("/partner/click", status_code=201)
+def partner_click(payload: PartnerClickRequest, request: Request, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)):
+    limiter.check(f"pc:{client_ip(request)}", 30, 3600)
+    db.add(PartnerClick(user_id=user.id if user else None, kind=payload.kind, placement=payload.placement, symbol=payload.symbol))
+    db.commit()
+    return {"ok": True}
+
+
 @app.post("/feedback", status_code=201)
 def send_feedback(payload: FeedbackRequest, request: Request, user: User | None = Depends(get_optional_user), db: Session = Depends(get_db)):
     limiter.check(f"fb:{client_ip(request)}", 5, 3600)

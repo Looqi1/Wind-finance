@@ -351,3 +351,18 @@ def test_admin_stats_are_restricted(monkeypatch):
     monkeypatch.setattr(main, "ADMIN_USER_IDS", {me["id"]})
     stats = client.get("/admin/stats", headers=headers)
     assert stats.status_code == 200 and stats.json()["users"]["total"] == 1
+
+
+def test_partner_clicks_are_counted_for_admin(monkeypatch):
+    from app import main
+
+    info = client.get("/partner/bybit").json()
+    assert info["invite_url"].endswith(info["ref_code"])
+    assert client.post("/partner/click", json={"kind": "signup", "placement": "crypto-card"}).status_code == 201
+    assert client.post("/partner/click", json={"kind": "bad"}).status_code == 422
+    headers = auth(register("partner@example.com", "partner-user"))
+    assert client.post("/partner/click", json={"kind": "trade", "placement": "trade-buy", "symbol": "BTCUSDT"}, headers=headers).status_code == 201
+    me = client.get("/auth/me", headers=headers).json()
+    monkeypatch.setattr(main, "ADMIN_USER_IDS", {me["id"]})
+    partner = client.get("/admin/stats", headers=headers).json()["partner"]
+    assert partner["signup_30d"] == 1 and partner["trade_30d"] == 1 and partner["users_30d"] == 1

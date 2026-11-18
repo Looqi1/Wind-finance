@@ -27,6 +27,9 @@ services:
         value: https://api-testnet.bybit.com
       - key: BYBIT_MAX_NOTIONAL_USDT
         value: "100"
+      # Реферальный код партнёрской программы Bybit (affiliates.bybit.com)
+      - key: BYBIT_REF_CODE
+        value: 393YMZP
       - key: FRONTEND_URL
         value: https://looqi1.github.io/Wind-finance/
       # Почта для сброса пароля и ценовых уведомлений (например, Яндекс: smtp.yandex.ru:587).
