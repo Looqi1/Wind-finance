@@ -2538,3 +2538,106 @@ body[data-view="dashboard"]:not(.show-investment-profile) main > #goals { displa
 	.goal-form .button { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { .auth-notice.wait::before { animation: none; } }
+
+/* =====================================================================
+   v36 — панель новостей агента
+   ===================================================================== */
+/* фиксированная панель не должна получать отступ .market-section — из-за него сверху была полоса */
+main > #news.news-page { margin: 0; padding-top: 0; }
+.news-page .agent-intro { margin-top: 0; min-height: 0; padding: 30px 30px 26px; border-radius: 0 0 26px 26px; background:
+	radial-gradient(circle at 85% -20%, rgba(255,255,255,.18), transparent 45%),
+	radial-gradient(circle at 0% 120%, rgba(244,201,93,.22), transparent 40%),
+	linear-gradient(135deg, #123a2d 0%, #1f6a50 55%, #3fa274 100%); }
+.news-page .agent-character { width: 110px; height: 110px; }
+.news-page .agent-character-body { left: 18px; top: 18px; width: 74px; height: 74px; border-radius: 28px 28px 34px 34px; }
+.news-page .agent-character-body::before, .news-page .agent-character-body::after { top: 24px; }
+.news-page .agent-speech h2 { font-size: clamp(26px, 3.4vw, 34px); }
+.news-page .agent-speech p { max-width: 380px; color: rgba(255,255,255,.8); }
+.agent-controls { margin-top: 22px; }
+.agent-controls h3 { font-size: 22px; }
+
+/* фильтры: залипают сверху при прокрутке и показывают число новостей */
+.news-page .news-filters {
+	position: sticky; z-index: 3; top: 0; gap: 6px; margin: 0 -34px 16px; padding: 10px 34px;
+	overflow-x: auto; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px);
+	scrollbar-width: none;
+}
+.news-page .news-filters::-webkit-scrollbar { display: none; }
+.news-page .news-filters button { display: inline-flex; flex-shrink: 0; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 13px; }
+.news-page .news-filters button[data-count]:not([data-count=""])::after {
+	min-width: 20px; padding: 1px 6px; border-radius: 999px; background: rgba(113,128,123,.14); color: var(--muted);
+	content: attr(data-count); font-size: 11px; text-align: center;
+}
+.news-page .news-filters button.active { border-color: transparent; background: var(--grad-primary); color: #fff; box-shadow: 0 8px 18px rgba(32,109,84,.24); }
+.news-page .news-filters button.active::after { background: rgba(255,255,255,.22) !important; color: #fff !important; }
+.news-page .news-filters button:disabled { opacity: .45; cursor: default; }
+
+/* цвета тем */
+.news-feed .tag-ru { --tag: #23815a; --tag-soft: rgba(36,120,91,.12); --lead-a: #e3f6ec; --lead-b: #c3ead6; }
+.news-feed .tag-us { --tag: #b07a13; --tag-soft: rgba(244,201,93,.2); --lead-a: #fff6dc; --lead-b: #fbe3a8; }
+.news-feed .tag-crypto { --tag: #6a59c9; --tag-soft: rgba(149,140,224,.18); --lead-a: #efecff; --lead-b: #d9d3fb; }
+.news-feed .tag-macro { --tag: #2f78a4; --tag-soft: rgba(125,181,255,.18); --lead-a: #e6f2fb; --lead-b: #cbe4f6; }
+body.dark-theme .news-feed .tag-ru { --tag: #77e1ae; --lead-a: rgba(36,120,91,.32); --lead-b: rgba(36,120,91,.12); }
+body.dark-theme .news-feed .tag-us { --tag: #f4c95d; --lead-a: rgba(244,201,93,.2); --lead-b: rgba(244,201,93,.06); }
+body.dark-theme .news-feed .tag-crypto { --tag: #b9b1ff; --lead-a: rgba(149,140,224,.26); --lead-b: rgba(149,140,224,.08); }
+body.dark-theme .news-feed .tag-macro { --tag: #9cc6ff; --lead-a: rgba(125,181,255,.22); --lead-b: rgba(125,181,255,.06); }
+
+#learn-news.news-feed { display: block; }
+.news-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--tag-soft); color: var(--tag); font-size: 11px; font-weight: 800; letter-spacing: .02em; }
+.news-chip::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ''; }
+.news-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* главная новость */
+.news-lead {
+	position: relative; display: grid; gap: 12px; overflow: hidden; margin-bottom: 14px; padding: 22px 22px 18px;
+	border: 1px solid color-mix(in srgb, var(--tag) 22%, transparent); border-radius: 22px;
+	background: linear-gradient(135deg, var(--lead-a), var(--lead-b)); color: var(--ink); cursor: pointer;
+	transition: transform .25s ease, box-shadow .25s ease;
+}
+.news-lead:hover, .news-lead:focus-visible { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(30,65,45,.14); outline: none; }
+.news-lead > * { position: relative; z-index: 1; }
+.news-lead-glyph {
+	position: absolute !important; z-index: 0 !important; right: -8px; bottom: -46px; color: var(--tag);
+	font-family: 'Space Grotesk', sans-serif; font-size: 190px; font-weight: 700; line-height: 1; opacity: .12; pointer-events: none;
+}
+.news-lead-top { display: flex; align-items: center; gap: 10px; }
+.news-lead-label { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.news-lead-top .news-time { margin-left: auto; }
+.news-lead h3 { max-width: 92%; margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: clamp(20px, 2.4vw, 26px); line-height: 1.18; letter-spacing: -.025em; }
+.news-lead p { display: -webkit-box; max-width: 88%; margin: 0; overflow: hidden; color: color-mix(in srgb, var(--ink) 72%, transparent); font-size: 14px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.news-lead-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
+.news-lead .news-source { margin: 0; color: var(--ink); font-size: 13px; font-weight: 700; }
+.news-read { padding: 8px 14px; border-radius: 999px; background: var(--tag); color: #fff; font-size: 12px; font-weight: 800; }
+body.dark-theme .news-read { color: #0d1714; }
+
+/* список новостей */
+.news-rows { overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: var(--shadow-card); }
+.news-row { position: relative; display: flex; align-items: center; gap: 14px; padding: 14px 16px 14px 20px; border-top: 1px solid var(--line); cursor: pointer; transition: background .2s ease; }
+.news-row:first-child { border-top: 0; }
+.news-row::before { position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--tag); content: ''; opacity: .75; }
+.news-row:hover, .news-row:focus-visible { background: var(--tag-soft); outline: none; }
+.news-row-body { display: grid; flex: 1; gap: 7px; min-width: 0; }
+.news-row h4 { display: -webkit-box; margin: 0; overflow: hidden; font-size: 14.5px; font-weight: 700; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.news-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.news-row-meta > span:nth-child(2):not(:empty)::after { margin-left: 8px; content: '·'; }
+.news-row-meta .news-chip { padding: 2px 8px; font-size: 10.5px; }
+.news-row-arrow { display: grid; flex-shrink: 0; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--soft-panel); color: var(--muted); transition: transform .2s ease, background .2s ease, color .2s ease; }
+.news-row-arrow svg { width: 16px; height: 16px; }
+.news-row:hover .news-row-arrow { transform: translate(2px, -2px); background: var(--tag); color: #fff; }
+
+.news-page .news-more { margin-top: 12px; min-height: 44px; border: 1px solid var(--line); background: var(--card); color: var(--green); }
+.news-page .news-more:hover { background: var(--pill-up-bg); }
+
+@media (max-width: 620px) {
+	.news-page .agent-intro { padding: 24px 20px 22px; border-radius: 0 0 22px 22px; }
+	.news-page .news-filters { margin: 0 -14px 14px; padding: 10px 14px; }
+	.news-lead { padding: 18px 16px 16px; }
+	.news-lead h3, .news-lead p { max-width: 100%; }
+	.news-lead-label { display: none; }
+	.news-row { padding: 13px 12px 13px 16px; }
+	.news-row-arrow { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .news-lead, .news-row-arrow { transition: none; } }
+.news-page .news-filters { flex-wrap: nowrap; background: var(--paper); box-shadow: 0 10px 14px -12px rgba(20,58,42,.25); backdrop-filter: none; }
+.news-lead-glyph { right: -14px; bottom: -64px; font-size: 170px; opacity: .09; }
+.news-lead h3 { max-width: 86%; }

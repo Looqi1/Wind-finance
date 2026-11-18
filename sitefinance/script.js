@@ -2587,7 +2587,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 
 	// ---- живая лента новостей ----
 	const NEWS_REFRESH_MS = 10 * 60 * 1000;   // сервер обновляет ленты раз в 15 минут
-	const NEWS_PAGE = 8;
+	const NEWS_PAGE = 10;
 	const SEEN_KEY = 'wind_news_seen';
 	const TAG_STYLE = {
 		'Россия': ['positive-tag', 'teal', 'landmark'],
@@ -2621,56 +2621,84 @@ if (cryptoChartElement && window.LightweightCharts) {
 		paintBadge();
 	};
 
-	const newsCard = (item, feature) => {
-		const [tagClass, iconClass, iconName] = styleOf(item.tag);
-		const card = document.createElement('article');
-		card.className = `${feature ? 'crypto-news-feature' : 'crypto-news-item'} card news-clickable`;
+	const TAG_KEY = { 'Россия': 'ru', 'США': 'us', 'Крипто': 'crypto', 'Экономика': 'macro' };
+	const TAG_GLYPH = { 'Россия': '₽', 'США': '$', 'Крипто': '₿', 'Экономика': '%' };
+	const tagKey = (tag) => TAG_KEY[tag] || 'macro';
+	const make = (tag, cls, text) => {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
+	};
+	const asButton = (el, title) => {
+		el.tabIndex = 0;
+		el.setAttribute('role', 'button');
+		el.setAttribute('aria-label', `Читать новость: ${title}`);
+	};
+
+	// главная новость — широкая цветная карточка
+	const leadCard = (item) => {
+		const card = make('article', `news-lead tag-${tagKey(item.tag)}`);
 		card.dataset.news = item.id;
-		card.tabIndex = 0;
-		card.setAttribute('role', 'button');
-		card.setAttribute('aria-label', `Читать новость: ${item.title}`);
-		const meta = `<div class="news-meta"><span class="news-tag ${tagClass}"></span><time></time></div>`;
-		if (feature) {
-			card.innerHTML = `<div class="news-feature-art"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-coin"></span><span class="news-feature-label">Главное</span></div><div class="news-feature-copy">${meta}<h3></h3><p></p><div class="news-footer"><span class="news-source"></span><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button></div></div>`;
-			card.querySelector('.news-coin').textContent = item.tag === 'Крипто' ? '₿' : item.tag === 'США' ? '$' : item.tag === 'Россия' ? '₽' : '%';
-			card.querySelector('p').textContent = item.summary;
-		} else {
-			card.innerHTML = `<span class="news-icon ${iconClass}"><i data-lucide="${iconName}"></i></span><div>${meta}<h3></h3><span class="news-source"></span></div><button type="button" aria-label="Открыть новость"><i data-lucide="arrow-up-right"></i></button>`;
-		}
-		card.querySelector('.news-tag').textContent = item.tag;
-		const time = card.querySelector('time');
-		time.textContent = ago(item.published);
-		time.dateTime = item.published || '';
-		card.querySelector('h3').textContent = item.title;
-		card.querySelector('.news-source').textContent = item.source || '';
+		asButton(card, item.title);
+		const top = make('div', 'news-lead-top');
+		top.append(make('span', 'news-chip', item.tag), make('span', 'news-lead-label', 'Главное сейчас'), make('time', 'news-time', ago(item.published)));
+		const foot = make('div', 'news-lead-foot');
+		foot.append(make('span', 'news-source', item.source || 'Источник'), make('span', 'news-read', 'Читать →'));
+		card.append(make('span', 'news-lead-glyph', TAG_GLYPH[item.tag] || '%'), top, make('h3', '', item.title));
+		if (item.summary) card.append(make('p', '', item.summary));
+		card.append(foot);
 		return card;
+	};
+
+	// остальные — строки одного списка
+	const newsRow = (item) => {
+		const row = make('article', `news-row tag-${tagKey(item.tag)}`);
+		row.dataset.news = item.id;
+		asButton(row, item.title);
+		const body = make('div', 'news-row-body');
+		const meta = make('div', 'news-row-meta');
+		meta.append(make('span', 'news-chip', item.tag), make('span', '', item.source || ''), make('time', 'news-time', ago(item.published)));
+		body.append(make('h4', '', item.title), meta);
+		const arrow = make('span', 'news-row-arrow');
+		arrow.innerHTML = '<i data-lucide="arrow-up-right"></i>';
+		row.append(body, arrow);
+		return row;
+	};
+
+	const paintFilterCounts = () => {
+		document.querySelectorAll('[data-news-filter]').forEach((button) => {
+			const f = button.dataset.newsFilter;
+			const count = f === 'all' ? newsItems.length : newsItems.filter((n) => n.tag === f).length;
+			button.dataset.count = count ? String(count) : '';
+			button.disabled = f !== 'all' && !count;
+		});
 	};
 
 	const renderNewsList = () => {
 		const grid = $('learn-news');
 		if (!grid || !newsItems.length) return;
+		grid.classList.add('news-feed');
 		const filtered = newsFilter === 'all' ? newsItems : newsItems.filter((n) => n.tag === newsFilter);
 		grid.textContent = '';
 		if (!filtered.length) {
-			const empty = document.createElement('p');
-			empty.className = 'news-empty';
-			empty.textContent = 'По этой теме свежих новостей пока нет.';
-			grid.append(empty);
+			grid.append(make('p', 'news-empty', 'По этой теме свежих новостей пока нет.'));
 			return;
 		}
-		grid.append(newsCard(filtered[0], true));
-		const list = document.createElement('div');
-		list.className = 'crypto-news-list';
-		filtered.slice(1, newsShown).forEach((item) => list.append(newsCard(item, false)));
-		grid.append(list);
+		grid.append(leadCard(filtered[0]));
+		const rest = filtered.slice(1, newsShown);
+		if (rest.length) {
+			const list = make('div', 'news-rows');
+			rest.forEach((item) => list.append(newsRow(item)));
+			grid.append(list);
+		}
 		if (filtered.length > newsShown) {
-			const more = document.createElement('button');
+			const more = make('button', 'news-more', `Показать ещё ${Math.min(NEWS_PAGE, filtered.length - newsShown)} из ${filtered.length - newsShown}`);
 			more.type = 'button';
-			more.className = 'news-more';
-			more.textContent = `Показать ещё (${filtered.length - newsShown})`;
 			more.addEventListener('click', () => { newsShown += NEWS_PAGE; renderNewsList(); });
 			grid.append(more);
 		}
+		paintFilterCounts();
 		if (window.lucide) window.lucide.createIcons();
 		bindNewsCards();
 	};
@@ -2683,7 +2711,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 			tagClass: styleOf(item.tag)[0],
 			info: `${ago(item.published)}${item.source ? ' · ' + item.source : ''}`,
 			title: item.title,
-			paragraphs: [item.summary, 'Это короткая выжимка. Открой первоисточник, чтобы прочитать материал полностью и проверить контекст.'],
+			paragraphs: item.summary ? [item.summary, 'Это короткая выжимка. Полный материал и контекст — в первоисточнике.'] : ['Полный текст новости — в первоисточнике по ссылке ниже.'],
 			url: item.url,
 		}]));
 		renderNewsList();

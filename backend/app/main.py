@@ -2015,8 +2015,6 @@ async def fetch_news() -> dict:
     for index, item in enumerate(news):
         item.pop("_ts")
         item["id"] = "news-" + hashlib.sha1(item["url"].encode()).hexdigest()[:12]
-        if not item["summary"]:
-            item["summary"] = f"{item['source'] or 'Источник'}: открой материал, чтобы прочитать подробности."
     counts: dict[str, int] = {}
     for item in news:
         counts[item["tag"]] = counts.get(item["tag"], 0) + 1
