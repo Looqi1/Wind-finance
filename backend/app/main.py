@@ -1892,6 +1892,9 @@ def claim_bonus(user: User = Depends(get_current_user), db: Session = Depends(ge
 # ---------------- обратная связь ----------------
 @app.get("/partner/bybit")
 def partner_bybit():
+    # BYBIT_REF_CODE может быть кодом или целой партнёрской ссылкой из кабинета Bybit Affiliates
+    if BYBIT_REF_CODE.startswith("https://"):
+        return {"ref_code": "", "invite_url": BYBIT_REF_CODE}
     return {"ref_code": BYBIT_REF_CODE, "invite_url": f"https://www.bybit.com/invite?ref={BYBIT_REF_CODE}" if BYBIT_REF_CODE else ""}
 
 

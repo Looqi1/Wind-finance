@@ -127,9 +127,13 @@ const showSuccess = (message, type = 'success') => {
 
 
 // ================= ПАРТНЁРКА BYBIT =================
-// Код задаётся переменной репозитория BYBIT_REF_CODE (попадает в config.js), иначе берётся код по умолчанию.
-const BYBIT_REF_CODE = String(window.WIND_BYBIT_REF || '393YMZP').trim();
-const BYBIT_REFERRAL_URL = `https://www.bybit.com/invite?ref=${encodeURIComponent(BYBIT_REF_CODE)}`;
+// Переменная репозитория BYBIT_REF_CODE (попадает в config.js): реферальный код
+// или целая партнёрская ссылка из кабинета Bybit Affiliates (начинается с https://).
+const BYBIT_REF_RAW = String(window.WIND_BYBIT_REF || '393YMZP').trim();
+const BYBIT_REF_IS_URL = /^https:\/\/[^\s"'<>]+$/i.test(BYBIT_REF_RAW);
+const BYBIT_REF_CODE = BYBIT_REF_IS_URL ? '' : BYBIT_REF_RAW;
+const BYBIT_REFERRAL_URL = BYBIT_REF_IS_URL ? BYBIT_REF_RAW : `https://www.bybit.com/invite?ref=${encodeURIComponent(BYBIT_REF_CODE)}`;
+if (BYBIT_REF_IS_URL) document.getElementById('bybit-ref-copy')?.setAttribute('hidden', '');
 const bybitTradeUrl = (symbol) => {
 	const m = /^([A-Z0-9]+?)(USDT|USDC|BTC|ETH)$/.exec(symbol || '');
 	return m ? `https://www.bybit.com/trade/spot/${m[1]}/${m[2]}` : 'https://www.bybit.com/trade/spot/BTC/USDT';
@@ -717,21 +721,20 @@ document.addEventListener('keydown', (event) => {
 });
 
 
-// ================= ИГРОВОЙ ПРОФИЛЬ: уровень, серия дней, задание дня, награды, звук =================
+// ================= ИГРОВОЙ ПРОФИЛЬ: уровень, задание дня, награды, звук =================
 (() => {
 	const KEY = 'wind_game_profile';
 	const today = () => {
 		const d = new Date();
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	};
-	const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 	const load = () => {
 		try {
 			const v = JSON.parse(localStorage.getItem(KEY) || '{}');
 			return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
 		} catch (e) { return {}; }
 	};
-	const p = Object.assign({ xp: 0, streak: 0, lastDay: '', played: {}, badges: {}, daily: {}, dropBest: 0, games: 0, muted: false }, load());
+	const p = Object.assign({ xp: 0, played: {}, badges: {}, daily: {}, dropBest: 0, games: 0, muted: false }, load());
 	const save = () => { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) { /* без хранилища прогресс живёт до перезагрузки */ } };
 
 	const TITLES = ['Новичок', 'Наблюдатель', 'Трейдер', 'Аналитик', 'Стратег', 'Управляющий', 'Магнат', 'Легенда рынка'];
@@ -762,8 +765,6 @@ document.addEventListener('keydown', (event) => {
 		{ id: 'first', icon: 'sparkles', name: 'Первый шаг', hint: 'Сыграй в любую игру' },
 		{ id: 'all4', icon: 'layout-grid', name: 'Универсал', hint: 'Сыграй во все четыре игры' },
 		{ id: 'perfect', icon: 'star', name: 'Отличник', hint: 'Получи 3 звезды в игре' },
-		{ id: 'whale', icon: 'gem', name: 'Кит', hint: 'Набери $20 000 в Crypto Drop' },
-		{ id: 'streak3', icon: 'flame', name: 'В ударе', hint: 'Играй 3 дня подряд' },
 		{ id: 'daily', icon: 'calendar-check', name: 'Дисциплина', hint: 'Выполни задание дня' },
 	];
 
@@ -802,7 +803,6 @@ document.addEventListener('keydown', (event) => {
 		try { s = JSON.parse(localStorage.getItem('wind_game_stars') || '{}') || {}; } catch (e) { s = {}; }
 		return ['drop', 'candles', 'risk', 'scam'].reduce((a, k) => a + Math.max(0, Math.min(3, Number(s[k]) || 0)), 0);
 	};
-	const streakAlive = () => p.lastDay && dayDiff(p.lastDay, today()) <= 1 ? p.streak : 0;
 
 	const render = () => {
 		const L = levelOf(p.xp);
@@ -811,9 +811,6 @@ document.addEventListener('keydown', (event) => {
 		if ($('gh-xp')) $('gh-xp').textContent = `${p.xp - L.from} / ${L.to - L.from} XP`;
 		if ($('gh-xp-bar')) $('gh-xp-bar').style.width = `${L.pct}%`;
 		$('gh-ring')?.style.setProperty('--p', `${L.pct}`);
-		const st = streakAlive();
-		if ($('gh-streak')) $('gh-streak').textContent = `${st} ${st % 10 === 1 && st % 100 !== 11 ? 'день' : st % 10 >= 2 && st % 10 <= 4 && (st % 100 < 10 || st % 100 >= 20) ? 'дня' : 'дней'}`;
-		$('gh-streak-card')?.classList.toggle('hot', st >= 2);
 		if ($('gh-stars')) $('gh-stars').textContent = `${totalStars()} / 12`;
 		const ch = dailyFor(today());
 		const done = p.daily[today()] === ch.id;
@@ -861,10 +858,6 @@ document.addEventListener('keydown', (event) => {
 	// вызывается играми по завершении: report('candles', { stars, score, ... })
 	const report = (game, data = {}) => {
 		const day = today();
-		if (p.lastDay !== day) {
-			p.streak = p.lastDay && dayDiff(p.lastDay, day) === 1 ? p.streak + 1 : 1;
-			p.lastDay = day;
-		}
 		p.played[game] = (p.played[game] || 0) + 1;
 		p.games += 1;
 		let gain = 20 + (data.stars || 0) * 40;
@@ -886,8 +879,6 @@ document.addEventListener('keydown', (event) => {
 		unlock('first');
 		if (['drop', 'candles', 'risk', 'scam'].every((g) => p.played[g])) unlock('all4');
 		if ((data.stars || 0) >= 3) unlock('perfect');
-		if (game === 'drop' && (data.score || 0) >= 20000) unlock('whale');
-		if (p.streak >= 3) unlock('streak3');
 		save();
 		render();
 		const hub = $('game-hub');
@@ -5528,4 +5519,184 @@ if (window.lucide) {
 	});
 	window.addEventListener('wind-logout', () => { cardEl.hidden = true; });
 	document.getElementById('admin-refresh')?.addEventListener('click', load);
+})();
+
+// ================= АГЕНТ-ГИД: обучение по сайту при первом входе (в демо — каждый раз) =================
+(() => {
+	const STEPS = [
+		{ title: 'Привет! Я Винд', text: 'Твой помощник в Wind Finance. За минуту покажу, где баланс, инвестиции, крипта и игры. Можно пропустить и вернуться к обучению в настройках.' },
+		{ view: 'dashboard', target: '.wallet-bar', title: 'Баланс и пополнение', text: 'Здесь твой баланс. «Пополнить» принимает карту или СБП, а «Подписка» открывает Wind Plus с расширенной аналитикой.' },
+		{ view: 'dashboard', target: '.focus-card', title: 'Курс дня', text: 'Главная валютная пара с графиком за день. Курсы обновляются по данным ЦБ и рынка.' },
+		{ view: 'dashboard', target: '#goals', title: 'Копилки', text: 'Поставь цель и срок, например «Отпуск к лету», и я посчитаю, сколько откладывать каждый месяц.' },
+		{ view: 'investments', target: '.asset-grid', title: 'Инвестиции', text: 'Индекс, акции, фонды и облигации по реальным котировкам Мосбиржи. Покупки идут с виртуального баланса: это тренажёр, учиться можно без риска.' },
+		{ view: 'investments', target: '[data-open-investment-profile]', title: 'Твой портфель', text: 'Здесь доходность, история сделок и график стоимости портфеля. А в «Топ недели» видно, кто из игроков в плюсе.' },
+		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: 'Живые свечи с Bybit: выбирай пару и таймфрейм. Кнопки «Купить» и «Продать» ведут на Bybit.' },
+		{ view: 'crypto', target: '#price-alerts', title: 'Уведомления о цене', text: 'Задай уровень, например «BTC поднимется до 70 000», и я напомню в браузере или в Telegram.' },
+		{ view: 'converter', target: '#converter .converter', title: 'Конвертер', text: 'Пересчитай сумму между валютами по актуальному курсу. Стрелки меняют валюты местами.' },
+		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Четыре игры про рынок: копи опыт, выполняй задание дня и собирай награды. Заодно научишься читать графики и распознавать мошенников.' },
+		{ view: 'dashboard', target: '.agent-pet', title: 'А это я', text: 'Нажми на меня в любой момент: покажу свежие новости по России, США, крипте и экономике. Значок с цифрой значит, что есть непрочитанные.' },
+		{ view: 'dashboard', target: '.profile-trigger', title: 'Профиль и настройки', text: 'Тема, основная валюта, двухфакторная защита и твой ID. Там же можно пройти это обучение заново.' },
+		{ view: 'dashboard', title: 'Готово!', text: 'Ты знаешь всё самое важное. Начни с пополнения или загляни в «Инвестиции»: это самый живой раздел.', last: true },
+	];
+	const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+	let root = null, spot = null, card = null, idx = 0, user = null, startedThisLoad = false, raf = 0;
+
+	const isDemo = (u) => Boolean(u) && (u.id === 0 || String(u.email || '').toLowerCase() === 'demo@example.com');
+	const doneKey = (u) => `wind_tour_done_${u && u.id != null ? u.id : 'guest'}`;
+	const visible = (el) => el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+
+	const place = () => {
+		if (!root) return;
+		const st = STEPS[idx];
+		const el = st.target ? document.querySelector(st.target) : null;
+		const vw = window.innerWidth, vh = window.innerHeight;
+		const mobile = vw <= 620;
+		if (!visible(el)) {
+			spot.classList.add('center');
+			spot.style.cssText = `left:${vw / 2}px;top:${vh / 2}px;width:0;height:0;`;
+			card.classList.add('centered');
+			card.style.left = ''; card.style.top = ''; card.style.bottom = '';
+			return;
+		}
+		spot.classList.remove('center');
+		card.classList.remove('centered');
+		const r = el.getBoundingClientRect();
+		const pad = 8;
+		const top = Math.max(4, r.top - pad), left = Math.max(4, r.left - pad);
+		const width = Math.min(vw - left - 4, r.width + pad * 2), height = Math.min(vh - top - 4, r.height + pad * 2);
+		spot.style.cssText = `left:${left}px;top:${top}px;width:${width}px;height:${height}px;`;
+		const cw = card.offsetWidth, ch = card.offsetHeight;
+		if (mobile) {
+			const below = top + height + ch + 24 < vh - 70;
+			card.style.left = '12px';
+			card.style.top = below ? `${top + height + 12}px` : '';
+			card.style.bottom = below ? '' : `${Math.max(78, vh - top + 12)}px`;
+			if (!below && vh - top + 12 + ch > vh - 8) { card.style.bottom = ''; card.style.top = '12px'; }
+			return;
+		}
+		card.style.bottom = '';
+		let cx, cy;
+		if (r.right + 20 + cw < vw) { cx = r.right + 20; cy = r.top + r.height / 2 - ch / 2; }
+		else if (r.left - 20 - cw > 0) { cx = r.left - 20 - cw; cy = r.top + r.height / 2 - ch / 2; }
+		else if (r.bottom + 16 + ch < vh) { cx = r.left + r.width / 2 - cw / 2; cy = r.bottom + 16; }
+		else { cx = r.left + r.width / 2 - cw / 2; cy = r.top - 16 - ch; }
+		card.style.left = `${Math.max(12, Math.min(vw - cw - 12, cx))}px`;
+		card.style.top = `${Math.max(12, Math.min(vh - ch - 12, cy))}px`;
+	};
+	const follow = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(place); };
+
+	const render = () => {
+		const st = STEPS[idx];
+		card.replaceChildren();
+		const head = mk('div', 'wt-head');
+		const ava = mk('span', 'wt-ava');
+		const ic = document.createElement('i');
+		ic.setAttribute('data-lucide', 'brain-circuit');
+		ava.appendChild(ic);
+		const who = mk('div', 'wt-who');
+		who.append(mk('strong', '', 'Винд'), mk('small', '', `Шаг ${idx + 1} из ${STEPS.length}`));
+		const close = mk('button', 'wt-close');
+		close.type = 'button';
+		close.setAttribute('aria-label', 'Закрыть обучение');
+		close.textContent = '×';
+		close.addEventListener('click', () => end(true));
+		head.append(ava, who, close);
+		const dots = mk('div', 'wt-dots');
+		STEPS.forEach((_, i) => dots.appendChild(mk('i', i === idx ? 'on' : i < idx ? 'past' : '')));
+		const actions = mk('div', 'wt-actions');
+		if (idx > 0 && !st.last) {
+			const back = mk('button', 'wt-back', 'Назад');
+			back.type = 'button';
+			back.addEventListener('click', () => go(idx - 1));
+			actions.appendChild(back);
+		} else if (!st.last) {
+			const skip = mk('button', 'wt-back', 'Пропустить');
+			skip.type = 'button';
+			skip.addEventListener('click', () => end(true));
+			actions.appendChild(skip);
+		}
+		const next = mk('button', 'wt-next', st.last ? 'Начать пользоваться' : idx === 0 ? 'Показать' : 'Далее');
+		next.type = 'button';
+		next.addEventListener('click', () => (st.last ? end(true) : go(idx + 1)));
+		actions.appendChild(next);
+		card.append(head, mk('h3', 'wt-title', st.title), mk('p', 'wt-text', st.text), dots, actions);
+		if (window.lucide) window.lucide.createIcons();
+		card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+		window.setTimeout(() => next.focus({ preventScroll: true }), 50);
+	};
+
+	const go = (i) => {
+		idx = Math.max(0, Math.min(STEPS.length - 1, i));
+		const st = STEPS[idx];
+		document.body.classList.remove('agent-open');
+		if (st.view && document.body.dataset.view !== st.view && typeof setAppView === 'function') {
+			window.history.replaceState(null, '', `#${st.view}`);
+			setAppView(st.view);
+		}
+		render();
+		const el = st.target ? document.querySelector(st.target) : null;
+		if (visible(el)) {
+			const r = el.getBoundingClientRect();
+			const fixed = getComputedStyle(el).position === 'fixed';
+			if (!fixed && (r.top < 70 || r.bottom > window.innerHeight - 90)) {
+				el.scrollIntoView({ block: r.height > window.innerHeight * 0.6 ? 'start' : 'center', behavior: 'smooth' });
+			}
+		}
+		place();
+		window.setTimeout(place, 380);
+	};
+
+	const end = (markDone) => {
+		if (!root) return;
+		if (markDone && user && !isDemo(user)) { try { localStorage.setItem(doneKey(user), '1'); } catch (e) { /* без хранилища покажем снова */ } }
+		root.remove();
+		root = null;
+		document.body.classList.remove('tour-on');
+		window.removeEventListener('resize', follow);
+		window.removeEventListener('scroll', follow, true);
+		if (typeof setAppView === 'function') { window.history.replaceState(null, '', '#dashboard'); setAppView('dashboard'); }
+	};
+
+	const start = () => {
+		if (root) return;
+		document.querySelectorAll('.modal').forEach((m) => { m.hidden = true; });
+		root = mk('div', 'wind-tour');
+		root.setAttribute('role', 'dialog');
+		root.setAttribute('aria-modal', 'true');
+		root.setAttribute('aria-label', 'Обучение по сайту');
+		spot = mk('div', 'wt-spot');
+		card = mk('div', 'wt-card');
+		root.append(spot, card);
+		root.addEventListener('click', (e) => { if (e.target === root) go(idx + 1 < STEPS.length ? idx + 1 : idx); });
+		document.body.appendChild(root);
+		document.body.classList.add('tour-on');
+		window.addEventListener('resize', follow);
+		window.addEventListener('scroll', follow, true);
+		go(0);
+	};
+
+	document.addEventListener('keydown', (e) => {
+		if (!root) return;
+		if (e.key === 'Escape') end(true);
+		else if (e.key === 'ArrowRight') go(idx + 1);
+		else if (e.key === 'ArrowLeft') go(idx - 1);
+	});
+
+	window.addEventListener('wind-auth', (e) => {
+		user = e.detail || null;
+		if (startedThisLoad || !user) return;
+		let done = false;
+		try { done = localStorage.getItem(doneKey(user)) === '1'; } catch (err) { done = false; }
+		if (isDemo(user) || !done) {
+			startedThisLoad = true;
+			window.setTimeout(() => {
+				const gate = document.getElementById('auth-gate');
+				if (gate && !gate.hidden) { startedThisLoad = false; return; }
+				start();
+			}, 900);
+		}
+	});
+	window.addEventListener('wind-logout', () => { startedThisLoad = false; end(false); });
+	document.getElementById('tour-restart')?.addEventListener('click', start);
+	window.WindTour = { start };
 })();
