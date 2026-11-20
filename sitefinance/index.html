@@ -7,14 +7,17 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f2f5ef">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=42">
+	<link rel="stylesheet" href="style.css?v=46">
+	<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+	<script defer src="config.js"></script>
+	<script defer src="script.js?v=46"></script>
 </head>
 <body>
 	<div class="app">
 		<aside class="sidebar">
 			<div class="brand"><span class="brand-mark"><i data-lucide="wind"></i></span> wind finance</div>
 			<nav class="nav" aria-label="Основная навигация">
-				<a class="active" href="#dashboard"><span class="nav-icon"><i data-lucide="layout-dashboard"></i></span> Обзор</a>
+				<a class="active" href="#dashboard" aria-current="page"><span class="nav-icon"><i data-lucide="layout-dashboard"></i></span> Обзор</a>
 				<a href="#investments"><span class="nav-icon"><i data-lucide="chart-no-axes-combined"></i></span> Инвестиции</a>
 				<a href="#crypto"><span class="nav-icon"><i data-lucide="bitcoin"></i></span> Крипто</a>
 				<a href="#converter"><span class="nav-icon"><i data-lucide="repeat-2"></i></span> Конвертер</a>
@@ -22,7 +25,7 @@
 			</nav>
 		</aside>
 
-		<button class="agent-pet" type="button" data-agent-toggle aria-expanded="false" aria-controls="news">
+		<button class="agent-pet" type="button" data-agent-toggle aria-label="Помощник Винд" aria-expanded="false" aria-controls="news">
 			<span class="agent-pet-aura"></span><span class="agent-pet-face"><i data-lucide="brain-circuit"></i><b></b></span><span class="agent-pet-label">Wind рядом</span><span class="agent-pet-dot"></span><span class="agent-pet-badge" id="agent-pet-badge" hidden></span>
 		</button>
 		<button class="agent-backdrop" type="button" data-agent-toggle aria-label="Закрыть панель агента"></button>
@@ -59,28 +62,63 @@
 					</div>
 				</div>
 			</header>
-			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Инвестиционные сделки виртуальные. Пополнение требует подтверждения платежа.</span><button id="sim-ok" type="button">Понятно</button></div>
+			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Сделки и активы виртуальные.</span><button id="sim-ok" type="button">Понятно</button></div>
 
-			<section class="hero-grid" aria-label="Баланс и обзор валют">
+			<section class="hero-grid" aria-label="Баланс и курсы валют">
 				<section class="wallet-bar card" aria-label="Баланс">
+					<div class="wallet-top">
+						<span class="wallet-symbol"><i data-lucide="wallet" aria-hidden="true"></i></span>
+						<span class="wallet-mode" id="wallet-demo" hidden>Демо-режим</span>
+					</div>
 					<div class="wallet-balance"><span class="wallet-label">Доступно на балансе</span><strong>—</strong><span class="wallet-caption">Загрузка баланса</span></div>
-					<div class="wallet-actions"><button class="button button-light" type="button" data-modal="topup-modal"><i data-lucide="plus"></i> Пополнить</button><button class="button" type="button" data-modal="subscription-modal">Wind Plus</button></div>
+					<div class="wallet-actions">
+						<button class="button button-light" type="button" data-modal="topup-modal"><i data-lucide="plus"></i> Пополнить</button>
+						<button class="button button-light" id="demo-goal-shortcut" type="button" hidden><i data-lucide="piggy-bank"></i> Создать пробную копилку</button>
+						<button class="button" id="wallet-plus-button" type="button" data-modal="subscription-modal">Wind Plus</button>
+					</div>
 				</section>
-				<article class="card focus-card">
-					<img class="focus-illustration" src="assets/wind-finance-hero.svg?v=2" alt="" aria-hidden="true">
-					<span class="focus-tag">Избранная пара · USD / RUB</span>
-					<h2>92,48 ₽ <span class="unit">за 1 доллар</span></h2>
-					<p class="positive">▲ 0,34 ₽ · +0,37% · пример</p>
-					<div class="chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-					<div class="chart-labels">Иллюстрация динамики</div>
-				</article>
-				<article class="card stats-card">
-					<div class="stats-head"><h3>Курсы валют</h3><span class="market-source" id="market-source">Пример данных</span></div>
-					<div class="stat-row"><span class="stat-label"><span class="asset-icon orange"><i data-lucide="dollar-sign"></i></span><span><b>Доллар США</b><small>USD / RUB</small></span></span><strong class="stat-value positive">+0,37%</strong></div>
-					<div class="stat-row"><span class="stat-label"><span class="asset-icon purple"><i data-lucide="euro"></i></span><span><b>Евро</b><small>EUR / RUB</small></span></span><strong class="stat-value negative">−0,12%</strong></div>
-					<div class="stat-row"><span class="stat-label"><span class="asset-icon teal"><i data-lucide="japanese-yen"></i></span><span><b>Юань</b><small>CNY / RUB</small></span></span><strong class="stat-value positive">+0,08%</strong></div>
-					<a class="stats-link" href="#converter"><i data-lucide="repeat-2"></i> Открыть конвертер</a>
-				</article>
+				<section class="card stats-card" aria-labelledby="market-title">
+					<div class="stats-head">
+						<h2 id="market-title">Курсы валют</h2>
+						<span id="market-source">Пример данных</span>
+					</div>
+					<div class="market-pairs" role="group" aria-label="Валютная пара">
+						<button type="button" data-market-currency="USD" aria-pressed="true">USD / RUB</button>
+						<button type="button" data-market-currency="EUR" aria-pressed="false">EUR / RUB</button>
+						<button type="button" data-market-currency="CNY" aria-pressed="false">CNY / RUB</button>
+					</div>
+					<div class="focus-card" aria-live="polite" aria-atomic="true">
+						<div>
+							<span class="focus-unit">За 1 доллар США</span>
+							<strong class="focus-value">92,48 ₽</strong>
+						</div>
+						<div>
+							<span class="focus-change positive">+0,37%</span>
+							<span class="focus-previous">Было 92,14 ₽</span>
+						</div>
+					</div>
+					<section class="rate-history" aria-labelledby="rate-history-title">
+						<div class="rate-history-head">
+							<h3 id="rate-history-title">История курса ЦБ РФ</h3>
+							<div class="rate-periods" role="group" aria-label="Период истории">
+								<button type="button" data-rate-days="7" aria-pressed="true">7 дней</button>
+								<button type="button" data-rate-days="30" aria-pressed="false">30 дней</button>
+							</div>
+						</div>
+						<p class="rate-history-status" id="rate-history-status" role="status">Загружаем котировки…</p>
+						<button class="rate-history-retry" id="rate-history-retry" type="button" hidden>Повторить загрузку</button>
+						<figure id="rate-history-figure" hidden>
+							<div class="rate-plot">
+								<div class="rate-y-labels" aria-hidden="true"><span id="rate-y-high"></span><span id="rate-y-low"></span></div>
+								<svg viewBox="0 0 320 92" preserveAspectRatio="none" aria-hidden="true">
+									<polyline id="rate-history-line" fill="none" vector-effect="non-scaling-stroke"/>
+								</svg>
+							</div>
+							<figcaption id="rate-history-summary"></figcaption>
+						</figure>
+					</section>
+					<a class="stats-link" href="#converter"><i data-lucide="repeat-2"></i> Рассчитать сумму</a>
+				</section>
 			</section>
 
 			<section id="converter" class="market-section">
@@ -88,7 +126,7 @@
 				<article class="card schedule converter">
 					<label for="converter-amount">У меня есть</label>
 					<div class="convert-row currency-picker-row">
-						<input id="converter-amount" type="number" value="100" min="0" step="0.01">
+						<input id="converter-amount" type="number" value="100" min="0" step="0.01" inputmode="decimal">
 						<select class="converter-from" hidden aria-label="Валюта, с которой конвертируем">
 							<option value="USD" selected>USD</option>
 							<option value="EUR">EUR</option>
@@ -104,9 +142,9 @@
 					<div class="converter-actions-row">
 						<button class="swap-currency" type="button" id="swap-currencies" aria-label="Поменять валюты"><i data-lucide="arrow-up-down"></i></button>
 					</div>
-					<label>Получаю</label>
+					<label for="converter-result">К получению</label>
 					<div class="convert-row currency-picker-row">
-						<output class="converter-output">9 248,00</output>
+						<output id="converter-result" class="converter-output" for="converter-amount">9 248,00</output>
 						<select class="converter-to" hidden aria-label="Валюта, в которую конвертируем">
 							<option value="USD">USD</option>
 							<option value="EUR">EUR</option>
@@ -123,26 +161,15 @@
 						<span class="converter-submit-wave" aria-hidden="true"></span>
 						<span class="converter-submit-label"><i data-lucide="refresh-cw"></i> Обменять</span>
 					</button>
-					<p class="converter-note">По курсу 92,48 ₽ за 1 USD</p>
+					<p class="converter-note">Пример курса: 92,48 ₽ за 1 USD</p>
 				</article>
 			</section>
 
-			<section class="content-grid">
-				<div id="rates">
-					<div class="section-heading"><div><h2>Избранные валюты</h2><p>К российскому рублю · столбики для иллюстрации</p></div></div>
-					<div class="course-list">
-						<article class="card course currency favorite-currency-card" data-favorite-currency="USD" tabindex="0" role="button" aria-pressed="false" aria-label="Выбрать пару USD / RUB"><div class="course-icon orange"><i data-lucide="dollar-sign"></i></div><div><h3>Доллар США <span class="code">USD</span></h3><p>1 USD = 92,48 RUB</p></div><div class="rate-change positive">+0,37%</div><div class="mini-chart green-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-						<article class="card course currency favorite-currency-card" data-favorite-currency="EUR" tabindex="0" role="button" aria-pressed="false" aria-label="Выбрать пару EUR / RUB"><div class="course-icon purple"><i data-lucide="euro"></i></div><div><h3>Евро <span class="code">EUR</span></h3><p>1 EUR = 100,21 RUB</p></div><div class="rate-change negative">−0,12%</div><div class="mini-chart green-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-						<article class="card course currency favorite-currency-card" data-favorite-currency="CNY" tabindex="0" role="button" aria-pressed="false" aria-label="Выбрать пару CNY / RUB"><div class="course-icon blue"><i data-lucide="japanese-yen"></i></div><div><h3>Китайский юань <span class="code">CNY</span></h3><p>1 CNY = 12,86 RUB</p></div><div class="rate-change positive">+0,08%</div><div class="mini-chart green-chart" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-					</div>
-				</div>
-			</section>
-
 			<section class="goals-section" id="goals">
-				<div class="section-heading"><div><h2>Копилки</h2><p>Цели с планом: сколько откладывать в месяц, чтобы успеть к сроку</p></div><button type="button" class="portfolio-link" id="goal-new-toggle">+ Новая цель</button></div>
+				<div class="section-heading"><div><h2>Копилки</h2><p id="goals-description">План накоплений к выбранной дате</p></div><button type="button" class="portfolio-link" id="goal-new-toggle" aria-controls="goal-form" aria-expanded="false" hidden>+ Новая цель</button></div>
 				<form class="card goal-form" id="goal-form" hidden>
 					<label>Цель<input id="goal-title" maxlength="60" required placeholder="Например, ноутбук"></label>
-					<label>Сумма, ₽<input id="goal-target" type="number" min="1" step="1" required inputmode="numeric" placeholder="50 000"></label>
+					<label>Сумма, ₽<input id="goal-target" type="number" min="1" max="100000000" step="1" required inputmode="numeric" placeholder="50 000"></label>
 					<label>Срок<input id="goal-deadline" type="date"></label>
 					<button class="button" type="submit">Создать</button>
 				</form>
@@ -608,10 +635,11 @@
 				<div class="auth-form-intro">
 					<span class="auth-mobile-mark"><i data-lucide="wind"></i></span>
 					<h2 id="auth-title">Войти в аккаунт</h2>
-					<p class="auth-copy">Открой свой портфель и историю операций.</p>
+					<p class="auth-copy">Войди, чтобы открыть портфель и историю операций.</p>
 				</div>
 				<div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Войти</button><button type="button" data-auth-mode="register">Регистрация</button></div>
 				<p class="auth-notice" id="auth-notice" role="status" hidden></p>
+				<button class="button telegram-login-button" id="telegram-login-button" type="button" hidden>Войти через Telegram</button>
 				<form id="auth-form">
 					<label class="register-only" hidden>Имя пользователя<input id="auth-username" type="text" minlength="2" maxlength="50" autocomplete="username" placeholder="Как к тебе обращаться"></label>
 					<label class="auth-email-label">Email<input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
@@ -620,12 +648,12 @@
 					<div class="password-meter" id="password-meter" hidden><div class="password-meter-top"><span>Надёжность пароля</span><b id="password-meter-label">Добавь символы</b></div><div class="password-meter-track"><i id="password-meter-bar"></i></div></div>
 					<label class="totp-only" hidden>Код из приложения-аутентификатора<input id="auth-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
 					<label class="auth-consent" hidden><input id="auth-consent" type="checkbox"><span>Я принимаю <button type="button" class="legal-link" data-legal="terms">условия</button> и <button type="button" class="legal-link" data-legal="privacy">политику конфиденциальности</button> и понимаю, что инвестиционный раздел — симулятор.</span></label>
-					<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span><i data-lucide="arrow-right"></i></button>
+					<button class="button auth-submit" type="submit"><span id="auth-submit-label">Войти</span></button>
 				</form>
 				<button class="button secondary-button demo-login-button" id="demo-login-button" type="button">Попробовать демо</button>
+				<p class="demo-note">Демо доступно без регистрации.</p>
 				<p class="auth-error" id="auth-error" role="alert"></p>
-				<p class="auth-security"><i data-lucide="lock-keyhole"></i> Защищённый вход · Wind Finance</p>
-				<div class="auth-helper" id="auth-helper"><span class="auth-helper-avatar"><i data-lucide="sparkles"></i></span><p><strong>Wind подсказывает</strong><span id="auth-helper-text">Войди, чтобы продолжить спокойный обзор портфеля.</span></p><button type="button" id="auth-helper-close" aria-label="Скрыть подсказку">×</button></div>
+				<div class="auth-helper" id="auth-helper"><span class="auth-helper-avatar"><i data-lucide="sparkles"></i></span><p><strong>Wind подсказывает</strong><span id="auth-helper-text">Включи двухфакторную защиту в настройках после входа.</span></p><button type="button" id="auth-helper-close" aria-label="Скрыть подсказку">×</button></div>
 			</section>
 		</div>
 	</div>
@@ -654,8 +682,8 @@
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
 			<p class="eyebrow">Баланс Wind Finance</p>
 			<h2 id="topup-title">Пополнить баланс</h2>
-			<p class="modal-copy">Выбери готовую сумму или введи своё значение вручную.</p>
-			<div class="topup-form">
+			<p class="modal-copy web-payment">Выбери готовую сумму или введи своё значение вручную.</p>
+			<div class="topup-form web-payment">
 				<div class="amount-options">
 					<button type="button" class="amount-option" data-amount="1000">1 000 ₽</button>
 					<button type="button" class="amount-option active" data-amount="5000">5 000 ₽</button>
@@ -679,7 +707,12 @@
 					</button>
 				</div>
 			</div>
-			<button id="topup-submit" class="button modal-submit" type="button" data-default-amount="5000">Пополнить на 5 000 ₽ <span>→</span></button>
+			<button id="topup-submit" class="button modal-submit web-payment" type="button" data-default-amount="5000">Пополнить на 5 000 ₽ <span>→</span></button>
+			<div class="stars-payment" id="stars-topup" hidden>
+				<p class="modal-copy">Учебные рубли для сделок и копилок. Оплата в Telegram Stars.</p>
+				<div class="stars-topup-options" id="stars-topup-options"></div>
+				<p class="plus-status" id="stars-topup-status" role="status">Загружаем варианты пополнения…</p>
+			</div>
 		</div>
 	</div>
 	<div class="modal" id="bybit-trade-modal" hidden>
@@ -710,6 +743,25 @@
 				<span class="plus-hero-icon"><i data-lucide="wind"></i></span>
 				<div><p class="eyebrow">Wind Plus</p><h2 id="subscription-title">Больше данных, меньше догадок</h2></div>
 			</div>
+			<section class="plus-preview" id="plus-preview" aria-label="Примеры Wind Plus" hidden>
+				<p class="modal-copy">Примеры на учебных данных. Можно открыть каждый блок.</p>
+				<details open>
+					<summary>Анализ рынка</summary>
+					<p><strong>BTC · RSI 56</strong> — в этом примере индикатор находится между уровнями перепроданности и перекупленности.</p>
+				</details>
+				<details>
+					<summary>Радар крипторынка</summary>
+					<p><strong>ETH +3,2% · SOL −1,4%</strong> — пример списка изменений за 24 часа.</p>
+				</details>
+				<details>
+					<summary>Радар инвестиций</summary>
+					<p><strong>Учебная облигация · 2 года</strong> — карточка инструмента со сроком погашения и уровнем риска.</p>
+				</details>
+				<details>
+					<summary>Ценовые уведомления</summary>
+					<p><strong>BTC выше 70 000 USDT</strong> — пример уведомления, которое срабатывает при достижении порога.</p>
+				</details>
+			</section>
 			<p class="modal-copy">Анализ рынка, радар новых инвестиций и отслеживание криптовалют в одной подписке.</p>
 			<ul class="plus-features">
 				<li><span><i data-lucide="activity"></i></span><div><strong>Анализ рынка</strong><small>RSI, MACD, тренд, уровни поддержки и сопротивления и вывод простым языком по BTC, ETH и SOL</small></div></li>
@@ -732,9 +784,9 @@
 			</div>
 			<button class="button modal-submit" id="plus-subscribe" type="button">Оформить Plus →</button>
 			<button class="plus-trial" id="plus-trial" type="button" hidden><i data-lucide="gift"></i> Попробовать 7 дней бесплатно</button>
-			<p class="plus-status" id="plus-status"></p>
+			<p class="plus-status" id="plus-status" role="status"></p>
 			
-			<p class="article-note">Оплата картой или через СБП (ЮKassa). Автосписаний нет: подписка просто заканчивается в конце оплаченного периода, повторная оплата продлевает её. Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
+			<p class="article-note"><span class="web-payment">Оплата картой или через СБП (ЮKassa). Автосписаний нет. </span>Аналитика носит информационный характер и не является инвестиционной рекомендацией.</p>
 		</div>
 	</div>
 	<div class="modal" id="article-modal" hidden>
@@ -886,12 +938,20 @@
 			<button class="button modal-submit" id="twofa-confirm" type="button">Подтвердить</button>
 		</div>
 	</div>
-	<script>window.WIND_REGION = 'RU';</script>
-	<script src="https://telegram.org/js/telegram-web-app.js"></script>
-	<script src="https://unpkg.com/lucide@1.57.0/dist/umd/lucide.min.js"></script>
-	<script src="https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-	<script src="config.js"></script>
-	<script src="script.js?v=42"></script>
+	<dialog class="wind-welcome" id="wind-welcome" aria-labelledby="welcome-title" aria-describedby="welcome-description">
+		<button class="welcome-close" type="button" data-close-welcome aria-label="Закрыть приветствие">×</button>
+		<div class="welcome-stage">
+			<div class="welcome-art" aria-hidden="true">
+				<span class="welcome-orbit"></span>
+				<div class="welcome-robot">
+					<span class="welcome-antenna"></span>
+					<div class="welcome-face"><span></span><span></span><b></b></div>
+				</div>
+			</div>
+			<h2 id="welcome-title">Привет, я Винд!</h2>
+			<p id="welcome-description">Помогу найти курсы валют, заглянуть в учебный портфель и накопить на цель.</p>
+			<button class="button welcome-continue" type="button" data-close-welcome autofocus>Продолжить</button>
+		</div>
+	</dialog>
 </body>
 </html>

@@ -66,6 +66,14 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   -d secret_token="$TELEGRAM_WEBHOOK_SECRET"
 ```
 
+### Telegram Stars checkout
+
+1. Run `alembic upgrade head` and set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` on the backend.
+2. Register the same `/telegram/webhook` URL with Telegram. Include `message` and `pre_checkout_query` in the `allowed_updates` list. Keep any update types your bot already uses.
+3. Set `WINDFINANCE_STARS_PRICES` to a JSON object with the prices you choose in Stars. Supported keys are `topup_1000`, `topup_5000`, `topup_10000`, `month`, and `year`. Omitted offers stay unavailable. The top-up offers credit the named amount in virtual rubles and are available only in simulator mode with live trading disabled. Plus is a one-time purchase for 30 or 365 days.
+
+The webhook answers `pre_checkout_query` and fulfills paid invoices on `successful_payment`. For support, users can send `/paysupport` to the bot. Operators can match receipts to `payments.stars_charge_id` and handle refunds through the [Telegram Bot API](https://core.telegram.org/bots/api#refundstarpayment), with a corresponding account adjustment.
+
 ## Payments
 
 Real top-ups use YooKassa. The server credits the balance only after receiving
@@ -95,6 +103,7 @@ https://your-backend.example/payments/yookassa/webhook
 - `GET|POST /goals`, `POST /goals/{id}/deposit|withdraw`, `DELETE /goals/{id}` — savings goals
 - `GET|POST /alerts`, `DELETE /alerts/{id}` — price alerts checked by the server, sent to Telegram or email
 - `POST /telegram/link`, `POST /telegram/webhook` — link a Telegram chat for alerts
+- `GET /market/rates/history?asset=USD` — dated Bank of Russia rates over the last 30 calendar days for USD, EUR, or CNY, in RUB per unit
 - `POST /subscription/trial` — one-time 7-day Wind Plus trial
 - `GET /admin/stats` — admin dashboard (`WINDFINANCE_ADMIN_USER_IDS`)
 - `POST /payments/create` — create a card or SBP payment

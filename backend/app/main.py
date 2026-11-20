@@ -17,7 +17,7 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -37,6 +37,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, desc, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+from .cbr_history import CBR_HISTORY_URL, CBR_TIMEZONE, history_params, parse_history
 
 # ---------------- настройки ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -74,6 +76,14 @@ TRUST_PROXY = os.getenv("TRUST_PROXY", "0") == "1"           # включи за
 TOKEN_EXPIRE_DAYS = 7
 START_BALANCE_KOP = 2_450_000 if SIMULATOR else 0
 PLANS = {"month": (19_900, 30), "year": (179_000, 365)}      # цена в копейках, дней
+STARS_TOPUPS = {"topup_1000": 1000, "topup_5000": 5000, "topup_10000": 10000}
+STARS_PRICES = json.loads(os.getenv("WINDFINANCE_STARS_PRICES") or "{}")
+if not isinstance(STARS_PRICES, dict) or any(
+    (offer not in STARS_TOPUPS and offer not in PLANS) or type(price) is not int or not 1 <= price <= 10000
+    for offer, price in STARS_PRICES.items()
+):
+    raise RuntimeError("Проверь WINDFINANCE_STARS_PRICES: нужны коды товаров и целые цены в Stars")
+STARS_INVOICE_TTL = timedelta(minutes=30)
 BONUS_RUB = [5000, 3000, 2000] + [1000] * 7                  # бонус за места 1..10
 EXCHANGE_FEE_PCT = Decimal(os.getenv("WINDFINANCE_EXCHANGE_FEE_PCT", "1.0"))
 EXCHANGE_FEE_PLUS_PCT = Decimal(os.getenv("WINDFINANCE_EXCHANGE_FEE_PLUS_PCT", "0.6"))
@@ -300,6 +310,10 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    stars_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stars_payer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    stars_checkout_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    stars_charge_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
 
 class GameScore(Base):
@@ -435,6 +449,14 @@ def to_kop(amount: float) -> int:
 def credit(db: Session, user_id: int, kop: int, title: str):
     db.execute(update(User).where(User.id == user_id).values(balance_kop=User.balance_kop + kop))
     db.add(Transaction(user_id=user_id, kind="in", title=title[:80], amount_kop=kop))
+
+
+def extend_paid_plan(db: Session, user_id: int, plan: str) -> None:
+    owner = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    now = now_naive()
+    start = max(now, owner.plus_until) if owner.plus_until else now
+    owner.plus_plan = plan
+    owner.plus_until = start + timedelta(days=PLANS[plan][1])
 
 
 def charge(db: Session, user_id: int, kop: int, title: str):
@@ -626,6 +648,10 @@ class PaymentRequest(BaseModel):
 class SubscriptionPaymentRequest(BaseModel):
     plan: Literal["month", "year"]
     method: Literal["card", "sbp"] = "card"
+
+
+class StarsInvoiceRequest(BaseModel):
+    offer: Literal["topup_1000", "topup_5000", "topup_10000", "month", "year"]
 
 
 class PaymentWebhook(BaseModel):
@@ -928,6 +954,74 @@ async def telegram_send(chat_id: int, text: str) -> bool:
         return False
 
 
+async def stars_bot_request(method: str, payload: dict):
+    try:
+        async with asyncio.timeout(8), httpx.AsyncClient(timeout=6) as client:
+            response = await client.post(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/{method}", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        if data.get("ok") is True:
+            return data.get("result")
+    except (TimeoutError, httpx.HTTPError, ValueError):
+        pass
+    raise HTTPException(502, "Telegram не смог обработать платёж")
+
+
+def matching_stars_payment(db: Session, details: dict, payer_id: int | None) -> Payment | None:
+    if not payer_id or details.get("currency") != "XTR":
+        return None
+    return db.scalar(select(Payment).where(
+        Payment.provider_id == details.get("invoice_payload"),
+        Payment.method == "stars",
+        Payment.stars_payer_id == payer_id,
+        Payment.stars_amount == details.get("total_amount"),
+    ))
+
+
+async def answer_stars_checkout(db: Session, query: dict) -> None:
+    query_id = query["id"]
+    payment = matching_stars_payment(db, query, (query.get("from") or {}).get("id"))
+    allowed = False
+    if payment and payment.created_at >= now_naive() - STARS_INVOICE_TTL:
+        if payment.status == "processing" and payment.stars_checkout_id == query_id:
+            allowed = True
+        elif payment.status == "pending" and (payment.purpose != "topup" or (SIMULATOR and not BYBIT_LIVE_TRADING)):
+            result = db.execute(update(Payment).where(Payment.id == payment.id, Payment.status == "pending")
+                                .values(status="processing", stars_checkout_id=query_id))
+            allowed = result.rowcount == 1
+            if not allowed:
+                db.refresh(payment)
+                allowed = payment.status == "processing" and payment.stars_checkout_id == query_id
+        db.commit()
+    reply = {"pre_checkout_query_id": query_id, "ok": allowed}
+    if not allowed:
+        reply["error_message"] = "Счёт недействителен или уже использован. Создай новый счёт в Wind Finance."
+    await stars_bot_request("answerPreCheckoutQuery", reply)
+
+
+def confirm_stars_payment(db: Session, details: dict, payer_id: int | None) -> None:
+    payment = matching_stars_payment(db, details, payer_id)
+    charge_id = details.get("telegram_payment_charge_id")
+    if not payment or not isinstance(charge_id, str) or not 1 <= len(charge_id) <= 255:
+        raise HTTPException(400, "Данные платежа Stars не совпадают")
+    try:
+        result = db.execute(update(Payment).where(Payment.id == payment.id, Payment.status == "processing")
+                            .values(status="succeeded", stars_charge_id=charge_id, paid_at=now_naive()))
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Платёж Stars уже привязан к другому счёту")
+    if result.rowcount != 1:
+        db.refresh(payment)
+        if payment.status == "succeeded" and payment.stars_charge_id == charge_id:
+            return
+        raise HTTPException(409, "Платёж Stars не соответствует подтверждённому счёту")
+    if payment.purpose == "subscription":
+        extend_paid_plan(db, payment.user_id, payment.plan)
+    else:
+        credit(db, payment.user_id, payment.amount_kop, "Пополнение учебного баланса · Telegram Stars")
+    db.commit()
+
+
 @app.post("/telegram/link")
 def telegram_link(user: User = Depends(get_current_user)):
     if not TG_BOT_TOKEN or not TG_BOT_USERNAME:
@@ -941,9 +1035,18 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db),
     if not TG_WEBHOOK_SECRET or not secret or not hmac.compare_digest(secret, TG_WEBHOOK_SECRET):
         raise HTTPException(403, "Неверный секрет")
     update_body = await request.json()
+    if "pre_checkout_query" in update_body:
+        await answer_stars_checkout(db, update_body["pre_checkout_query"])
+        return {"ok": True}
     message = update_body.get("message") or {}
+    if "successful_payment" in message:
+        confirm_stars_payment(db, message["successful_payment"], (message.get("from") or {}).get("id"))
+        return {"ok": True}
     text = str(message.get("text") or "")
     chat_id = (message.get("chat") or {}).get("id")
+    if chat_id and text.split(maxsplit=1)[:1] in (["/paysupport"], [f"/paysupport@{TG_BOT_USERNAME}"]):
+        await telegram_send(chat_id, "По вопросам оплаты открой Wind Finance и выбери «Сообщить об ошибке». Укажи номер платежа из чека Telegram.")
+        return {"ok": True}
     if not chat_id or not text.startswith("/start"):
         return {"ok": True}
     parts = text.split(maxsplit=1)
@@ -1447,7 +1550,8 @@ def admin_stats(user: User = Depends(require_admin), db: Session = Depends(get_d
     now = now_naive()
     count = lambda q: db.scalar(q) or 0  # noqa: E731
     paid = lambda purpose, days: count(select(func.sum(Payment.amount_kop)).where(  # noqa: E731
-        Payment.status == "succeeded", Payment.purpose == purpose, Payment.paid_at >= now - timedelta(days=days))) / 100
+        Payment.status == "succeeded", Payment.method != "stars", Payment.purpose == purpose,
+        Payment.paid_at >= now - timedelta(days=days))) / 100
     users_total = count(select(func.count(User.id)))
     plus_active = count(select(func.count(User.id)).where(User.plus_until > now, User.plus_plan != "trial"))
     trials = count(select(func.count(User.id)).where(User.trial_used_at.is_not(None)))
@@ -1706,6 +1810,49 @@ async def create_payment(payload: PaymentRequest, user: User = Depends(get_curre
     return {"payment_id": provider_id, "status": payment.get("status"), "confirmation_url": confirmation_url}
 
 
+def available_stars_prices(user: User) -> dict[str, int]:
+    if not TG_BOT_TOKEN or not TG_WEBHOOK_SECRET or not user.tg_id:
+        return {}
+    return {offer: price for offer, price in STARS_PRICES.items()
+            if offer in PLANS or (SIMULATOR and not BYBIT_LIVE_TRADING)}
+
+
+@app.get("/payments/stars/catalog")
+def stars_catalog(user: User = Depends(get_current_user)):
+    return {"prices": available_stars_prices(user)}
+
+
+@app.post("/payments/stars/invoice", status_code=201)
+async def create_stars_invoice(payload: StarsInvoiceRequest, user: User = Depends(get_current_user),
+                               db: Session = Depends(get_db)):
+    price = available_stars_prices(user).get(payload.offer)
+    if price is None:
+        raise HTTPException(503, "Этот платёж через Telegram Stars пока недоступен")
+    limiter.check(f"stars-invoice:{user.id}", 10, 60)
+    plan = payload.offer if payload.offer in PLANS else None
+    if plan and user.plus_until and user.plus_until > now_naive() + timedelta(days=400):
+        raise HTTPException(409, "Подписка уже оплачена больше чем на год вперёд")
+    rubles = STARS_TOPUPS.get(payload.offer, 0)
+    if plan:
+        title = f"Wind Plus · {PLANS[plan][1]} дней"
+        description = "Доступ к Wind Plus на выбранный срок. Разовая оплата."
+    else:
+        title = f"{rubles:,} учебных ₽".replace(",", " ")
+        description = "Виртуальный баланс инвестиционного симулятора Wind Finance."
+    payment_id = f"stars-{uuid.uuid4().hex}"
+    invoice_url = await stars_bot_request("createInvoiceLink", {
+        "title": title, "description": description, "payload": payment_id, "provider_token": "",
+        "currency": "XTR", "prices": [{"label": title, "amount": price}],
+    })
+    if not isinstance(invoice_url, str) or not invoice_url.startswith("https://t.me/"):
+        raise HTTPException(502, "Telegram не вернул ссылку для оплаты")
+    db.add(Payment(provider_id=payment_id, user_id=user.id, amount_kop=rubles * 100, method="stars",
+                   purpose="subscription" if plan else "topup", plan=plan,
+                   stars_amount=price, stars_payer_id=user.tg_id))
+    db.commit()
+    return {"payment_id": payment_id, "invoice_url": invoice_url}
+
+
 @app.get("/payments/{provider_id}")
 def payment_status(provider_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     payment = db.scalar(select(Payment).where(Payment.provider_id == provider_id, Payment.user_id == user.id))
@@ -1745,14 +1892,7 @@ async def yookassa_webhook(payload: PaymentWebhook, db: Session = Depends(get_db
     if payment.purpose == "subscription":
         if not payment.plan:
             raise HTTPException(500, "У платежа отсутствует тариф")
-        _, days = PLANS[payment.plan]
-        owner = db.get(User, payment.user_id)
-        # продление: оплаченные дни добавляются к текущему сроку, а не сгорают
-        start = max(now_naive(), owner.plus_until) if owner and owner.plus_until else now_naive()
-        db.execute(update(User).where(User.id == payment.user_id).values(
-            plus_plan=payment.plan,
-            plus_until=start + timedelta(days=days),
-        ))
+        extend_paid_plan(db, payment.user_id, payment.plan)
     else:
         credit(db, payment.user_id, payment.amount_kop, f"Пополнение {payment.method}")
     db.commit()
@@ -1953,6 +2093,13 @@ async def fetch_rates() -> dict:
     return {"rates": out, "date": j.get("Date")}
 
 
+async def fetch_rate_history(asset: str, end: date) -> dict:
+    async with httpx.AsyncClient(timeout=8) as client:
+        response = await client.get(CBR_HISTORY_URL, params=history_params(asset, end))
+        response.raise_for_status()
+    return parse_history(asset, end, response.content)
+
+
 MOEX_SHARES = ("SBER", "TMOS", "SBGB")   # акции и фонды на основной доске TQBR
 
 
@@ -2076,6 +2223,17 @@ async def fetch_news() -> dict:
 @app.get("/market/rates")
 async def market_rates():
     return await cached("rates", 600, fetch_rates)
+
+
+@app.get("/market/rates/history")
+async def market_rate_history(asset: Literal["USD", "EUR", "CNY"]):
+    end = datetime.now(CBR_TIMEZONE).date()
+    key = f"rates-history:{asset}"
+    hit = _cache.get(key)
+    if hit and hit[1]["end"] != end.isoformat():
+        # После смены даты обновляем диапазон. При сбое оставляем предыдущую историю.
+        _cache[key] = (0, hit[1])
+    return await cached(key, 3600, lambda: fetch_rate_history(asset, end))
 
 
 @app.get("/market/stocks")

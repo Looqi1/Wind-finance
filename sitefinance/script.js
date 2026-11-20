@@ -1,3 +1,50 @@
+const tg = window.Telegram?.WebApp;
+const inTelegram = Boolean(tg?.initData);
+document.documentElement.classList.toggle('telegram-app', inTelegram);
+if (inTelegram) {
+	document.querySelector('.topbar-actions').prepend(document.querySelector('.agent-pet'));
+}
+
+const onAppView = (views, change) => {
+	const gate = document.getElementById('auth-gate');
+	let isActive;
+	const sync = () => {
+		const active = gate.hidden && views.includes(document.body.dataset.view);
+		if (active === isActive) return;
+		isActive = active;
+		change(active);
+	};
+	const observer = new MutationObserver(sync);
+	observer.observe(document.body, { attributes: true, attributeFilter: ['data-view'] });
+	observer.observe(gate, { attributes: true, attributeFilter: ['hidden'] });
+	sync();
+};
+
+const vendorSources = {
+	lucide: 'https://unpkg.com/lucide@1.57.0/dist/umd/lucide.min.js',
+	LightweightCharts: 'https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js',
+	QRCode: 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+};
+const vendorLoads = new Map();
+const loadVendor = (name) => {
+	if (window[name]) return Promise.resolve(window[name]);
+	if (vendorLoads.has(name)) return vendorLoads.get(name);
+	const script = document.createElement('script');
+	script.src = vendorSources[name];
+	const request = new Promise((resolve, reject) => {
+		const fail = () => {
+			vendorLoads.delete(name);
+			script.remove();
+			reject(new Error('Не удалось загрузить компонент'));
+		};
+		script.onload = () => window[name] ? resolve(window[name]) : fail();
+		script.onerror = fail;
+	});
+	vendorLoads.set(name, request);
+	document.head.append(script);
+	return request;
+};
+
 const profileMenu = document.querySelector('.profile-menu');
 const profileTrigger = document.querySelector('.profile-trigger');
 const profileDropdown = document.querySelector('.profile-dropdown');
@@ -40,20 +87,21 @@ const closeModal = (modal) => {
 	}
 };
 
-modalTriggers.forEach((trigger) => {
-	trigger.addEventListener('click', () => {
-		const modal = document.getElementById(trigger.dataset.modal);
-		if (modal) {
-			modal.hidden = false;
-		}
-	});
-});
+const openTriggeredModal = (trigger) => {
+	const id = trigger.dataset.modal;
+	const demo = isDemoPreview();
+	if (id === 'topup-modal' && demo) return;
+	if (id === 'subscription-modal') document.getElementById('plus-preview').hidden = !demo;
+	if (inTelegram && !demo && (id === 'topup-modal' || id === 'subscription-modal')) loadStarsCatalog();
+	const modal = document.getElementById(id);
+	if (modal) modal.hidden = false;
+};
+modalTriggers.forEach((trigger) => trigger.addEventListener('click', () => openTriggeredModal(trigger)));
 // кнопки, которые появляются позже (например, в пустом портфеле)
 document.addEventListener('click', (event) => {
 	const trigger = event.target.closest('[data-modal]');
 	if (!trigger || [...modalTriggers].includes(trigger)) return;
-	const modal = document.getElementById(trigger.dataset.modal);
-	if (modal) modal.hidden = false;
+	openTriggeredModal(trigger);
 });
 
 document.querySelectorAll('[data-close-modal]').forEach((button) => {
@@ -205,8 +253,8 @@ bybitOptSignup?.addEventListener('click', () => window.setTimeout(() => closeMod
 			});
 		} catch (e) { /* карточка работает и без цен */ }
 	};
-	load();
-	window.setInterval(() => { if (!document.hidden) load(); }, 60000);
+	onAppView(['crypto'], (active) => { if (active) load(); });
+	window.setInterval(() => { if (!document.hidden && document.body.dataset.view === 'crypto') load(); }, 60000);
 })();
 
 document.addEventListener('keydown', (event) => {
@@ -264,7 +312,9 @@ let streamVersion = 0;
 	const selectWallet = (user) => {
 		const ownerId = user && user.id != null ? String(user.id) : null;
 		activeWalletOwner = ownerId;
-		USER_WALLETS = ownerId ? readWallets(ownerId, user.balance) : { ...DEFAULT_WALLETS, RUB: 0 };
+		USER_WALLETS = ownerId && ownerId !== '0'
+			? readWallets(ownerId, user.balance)
+			: { ...DEFAULT_WALLETS, RUB: user?.balance ?? 0 };
 		updateBalanceUI();
 		// В демо-просмотре нет токена: запрос к серверу заведомо вернёт 401.
 		if (ownerId && ownerId !== '0' && window.WindApi) {
@@ -320,9 +370,11 @@ let streamVersion = 0;
 		});
 		// Разбивку по валютам показываем, только если валют больше одной: иначе она дублирует итог.
 		let balancesHtml = `<span class="wallet-label">${chips.length > 1 ? 'Деньги и валюты в рублях' : 'Доступно на балансе'}</span><strong>${formatMoney(totalRub)} ₽</strong>`;
+		const caption = activeWalletOwner === '0' ? 'Учебные средства для пробной копилки'
+			: inTelegram ? 'Средства инвестиционного симулятора' : 'Пополнения зачисляются после подтверждения платежа';
 		balancesHtml += chips.length > 1
 			? `<div class="balances-grid">${chips.join('')}</div>`
-			: `<span class="wallet-caption">${totalRub > 0 ? 'Пополнение зачисляется после подтверждения платежа' : 'Пополни баланс, чтобы начать'}</span>`;
+			: `<span class="wallet-caption">${caption}</span>`;
 		mainBalanceContainer.innerHTML = balancesHtml;
 
 		// Обновление балансов в секции настроек
@@ -431,12 +483,6 @@ let streamVersion = 0;
 		return fromRub / toRub;
 };
 
-	const getDisplayRate = (from, to) => {
-		if (from === 'RUB') return 1 / CURRENCY_RATES[to];
-		if (to === 'RUB') return CURRENCY_RATES[from];
-		return CURRENCY_RATES[from] / CURRENCY_RATES[to];
-	};
-
 	const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', RUB: '₽', CNY: '¥', GBP: '£', AED: 'د.إ' };
 
 	const updateConverter = () => {
@@ -457,9 +503,10 @@ let streamVersion = 0;
 		output.textContent = formatMoney(amount * getConverterRate(from, to) * (1 - p.fee / 100));
 		const pc = (v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 		const perks = [p.plus ? `Plus −${pc(p.plus)}%` : '', p.game ? `игры −${pc(p.game)}%` : ''].filter(Boolean).join(', ');
-		const rate = getDisplayRate(from, to);
+		const rate = getConverterRate(from, to);
 		const rateText = rate < 1 ? rate.toLocaleString('ru-RU', { maximumFractionDigits: 4 }) : formatMoney(rate);
-		note.textContent = `По курсу ${rateText} ${CURRENCY_SYMBOLS[to] || to} за 1 ${from} · комиссия ${pc(p.fee)}%${perks ? ` (${perks})` : ''}`;
+		const isExample = [from, to].some((code) => code !== 'RUB' && !publishedCurrencies.has(code));
+		note.textContent = `${isExample ? 'Пример курса:' : 'По курсу'} ${rateText} ${CURRENCY_SYMBOLS[to] || to} за 1 ${from} · комиссия ${pc(p.fee)}%${perks ? ` (${perks})` : ''}`;
 	};
 
 	const executeConverter = async () => {
@@ -575,7 +622,7 @@ const syncNotificationIndicator = () => {
 	document.querySelector('.notification-button .notif-dot')?.classList.toggle('is-hidden', disabled);
 };
 
-const applyTheme = (isDark) => {
+const applyTheme = (isDark, save = true) => {
 	document.body.classList.toggle('dark-theme', isDark);
 	if (themeToggle) {
 		themeToggle.setAttribute('aria-pressed', String(isDark));
@@ -584,7 +631,13 @@ const applyTheme = (isDark) => {
 			window.lucide.createIcons();
 		}
 	}
-	localStorage.setItem('wind_theme', isDark ? 'dark' : 'light');
+	if (save) localStorage.setItem('wind_theme', isDark ? 'dark' : 'light');
+	if (inTelegram) {
+		const background = getComputedStyle(document.body).getPropertyValue('--bg-shell').trim();
+		tg.setBackgroundColor?.(background);
+		if (tg.isVersionAtLeast?.('6.9')) tg.setHeaderColor?.(background);
+		if (tg.isVersionAtLeast?.('7.10')) tg.setBottomBarColor?.(background);
+	}
 	const themeValue = document.querySelector('[data-setting-theme-value]');
 	if (themeValue) {
 		themeValue.textContent = isDark ? 'Вкл' : 'Выкл';
@@ -593,8 +646,12 @@ const applyTheme = (isDark) => {
 };
 
 if (themeToggle) {
-	const savedTheme = localStorage.getItem('wind_theme');
-	applyTheme(savedTheme === 'dark');
+	const syncTheme = () => {
+		const saved = localStorage.getItem('wind_theme');
+		applyTheme(saved ? saved === 'dark' : inTelegram && tg.colorScheme === 'dark', false);
+	};
+	syncTheme();
+	if (inTelegram) tg.onEvent?.('themeChanged', syncTheme);
 	themeToggle.addEventListener('click', () => applyTheme(!document.body.classList.contains('dark-theme')));
 }
 
@@ -695,7 +752,12 @@ const setAppView = (view) => {
 	if (nextView === 'investments') syncInvSummary();
 	document.body.dataset.view = nextView;
 	closeInvestmentProfile();
-	appNavigation.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${nextView}`));
+	appNavigation.forEach((link) => {
+		const isCurrent = link.getAttribute('href') === `#${nextView}`;
+		link.classList.toggle('active', isCurrent);
+		if (isCurrent) link.setAttribute('aria-current', 'page');
+		else link.removeAttribute('aria-current');
+	});
 	paintViewTitle(nextView);
 	if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
 };
@@ -710,14 +772,17 @@ appNavigation.forEach((link) => {
 	});
 });
 
+const setAgentOpen = (isOpen) => {
+	document.body.classList.toggle('agent-open', isOpen);
+	document.querySelectorAll('[data-agent-toggle][aria-expanded]').forEach((button) => button.setAttribute('aria-expanded', String(isOpen)));
+};
 document.querySelectorAll('[data-agent-toggle]').forEach((toggle) => {
 	toggle.addEventListener('click', () => {
-		const isOpen = document.body.classList.toggle('agent-open');
-		document.querySelectorAll('[data-agent-toggle]').forEach((button) => button.setAttribute('aria-expanded', String(isOpen)));
+		setAgentOpen(!document.body.classList.contains('agent-open'));
 	});
 });
 document.addEventListener('keydown', (event) => {
-	if (event.key === 'Escape') document.body.classList.remove('agent-open');
+	if (event.key === 'Escape') setAgentOpen(false);
 });
 
 
@@ -1552,56 +1617,113 @@ let activeCurrencyField = 'from';
 let converterFromSelect = document.querySelector('.converter-from');
 let converterToSelect = document.querySelector('.converter-to');
 
-const pairSceneConfig = {
-	USD: {
-		pair: 'USD / RUB',
-		unit: 'за 1 доллар',
-		heading: '92,48 ₽',
-		changeText: '▲ 0,34 ₽ · +0,37% · пример',
-		trend: 'positive',
-		chart: [34, 40, 36, 48, 52, 45, 68, 76],
-	},
-	EUR: {
-		pair: 'EUR / RUB',
-		unit: 'за 1 евро',
-		heading: '100,21 ₽',
-		changeText: '▼ 0,12 ₽ · −0,12% · пример',
-		trend: 'negative',
-		chart: [28, 30, 32, 35, 43, 38, 44, 42],
-	},
-	CNY: {
-		pair: 'CNY / RUB',
-		unit: 'за 1 юань',
-		heading: '12,86 ₽',
-		changeText: '▲ 0,08 ₽ · +0,08% · пример',
-		trend: 'positive',
-		chart: [20, 24, 27, 26, 38, 36, 42, 50],
-	},
+const marketPairs = {
+	USD: { unit: 'За 1 доллар США', value: CURRENCY_RATES.USD, prev: 92.14 },
+	EUR: { unit: 'За 1 евро', value: CURRENCY_RATES.EUR, prev: 100.33 },
+	CNY: { unit: 'За 1 китайский юань', value: CURRENCY_RATES.CNY, prev: 12.85 },
+};
+const publishedCurrencies = new Set();
+const marketButtons = document.querySelectorAll('[data-market-currency]');
+const marketFocus = document.querySelector('.focus-card');
+let marketCurrency = 'USD';
+
+const historyPeriods = document.querySelectorAll('[data-rate-days]');
+const historyFigure = document.getElementById('rate-history-figure');
+const historyStatus = document.getElementById('rate-history-status');
+const historyRetry = document.getElementById('rate-history-retry');
+let historyDays = 7;
+let historyData;
+let historyRequest = 0;
+const dayMs = 86400000;
+const historyDate = (value) => value.slice(5).split('-').reverse().join('.');
+let marketPreviewRequest;
+const loadMarketPreview = () => {
+	if (!marketPreviewRequest) {
+		marketPreviewRequest = fetch('assets/market-preview.json', { cache: 'no-cache' })
+			.then((response) => {
+				if (!response.ok) throw new Error('Архив недоступен');
+				return response.json();
+			}).catch((error) => {
+				marketPreviewRequest = null;
+				throw error;
+			});
+	}
+	return marketPreviewRequest;
 };
 
-const updateFocusCard = (currencyCode) => {
-	const config = pairSceneConfig[currencyCode];
-	const focusCard = document.querySelector('.focus-card');
-	if (!focusCard || !config) return;
+const renderRateHistory = () => {
+	if (!historyData) return;
+	const start = Date.parse(historyData.end) - (historyDays - 1) * dayMs;
+	const points = historyData.points.filter((point) => Date.parse(point.date) >= start);
+	historyFigure.hidden = points.length < 2;
+	historyStatus.hidden = !historyFigure.hidden;
+	if (historyFigure.hidden) {
+		historyStatus.textContent = 'За этот период пока мало данных для графика.';
+		return;
+	}
 
-	const focusTag = focusCard.querySelector('.focus-tag');
-	const focusHeading = focusCard.querySelector('h2');
-	const focusTrend = focusCard.querySelector('p');
-	const chartBars = focusCard.querySelectorAll('.chart i');
-	if (focusTag) focusTag.textContent = `Избранная пара · ${config.pair}`;
-	if (focusHeading) {
-		focusHeading.innerHTML = `${config.heading} <span class="unit">${config.unit}</span>`;
+	const first = points[0], last = points.at(-1);
+	const low = Math.min(...points.map((point) => point.value));
+	const high = Math.max(...points.map((point) => point.value));
+	const firstDay = Date.parse(first.date);
+	const span = Date.parse(last.date) - firstDay;
+	const coordinates = points.map(({ date, value }) => {
+		const x = 3 + (Date.parse(date) - firstDay) / span * 314;
+		const y = high === low ? 46 : 8 + (high - value) / (high - low) * 76;
+		return `${x.toFixed(2)},${y.toFixed(2)}`;
+	});
+	document.getElementById('rate-history-line').setAttribute('points', coordinates.join(' '));
+	document.getElementById('rate-y-high').textContent = `${formatMoney(high)} ₽`;
+	document.getElementById('rate-y-low').textContent = high === low ? '' : `${formatMoney(low)} ₽`;
+	document.getElementById('rate-history-summary').textContent =
+		`${historyDate(first.date)} · ${formatMoney(first.value)} ₽ → ${historyDate(last.date)} · ${formatMoney(last.value)} ₽`;
+};
+
+const loadRateHistory = async () => {
+	const request = ++historyRequest;
+	historyData = null;
+	historyFigure.hidden = true;
+	historyStatus.hidden = false;
+	historyStatus.textContent = 'Загружаем котировки…';
+	historyRetry.hidden = true;
+	try {
+		const asset = marketCurrency;
+		const data = apiConfigured ? await WindApi(`/market/rates/history?asset=${asset}`)
+			: (await loadMarketPreview()).history[asset];
+		if (request !== historyRequest) return;
+		historyData = data;
+		renderRateHistory();
+	} catch {
+		if (request !== historyRequest) return;
+		historyData = null;
+		historyFigure.hidden = true;
+		historyStatus.hidden = false;
+		historyStatus.textContent = 'Не удалось загрузить историю курсов ЦБ РФ.';
+		historyRetry.hidden = false;
 	}
-	if (focusTrend) {
-		focusTrend.textContent = config.changeText;
-		focusTrend.classList.remove('positive', 'negative');
-		focusTrend.classList.add(config.trend);
-	}
-	// форма столбиков следует за направлением курса: при падении график снижается
-	focusCard.dataset.trend = config.trend;
-	const shape = config.trend === 'negative' ? [...config.chart].reverse() : config.chart;
-	chartBars.forEach((bar, index) => {
-		bar.style.height = `${shape[index] || 40}%`;
+};
+historyPeriods.forEach((button) => button.addEventListener('click', () => {
+	historyDays = Number(button.dataset.rateDays);
+	historyPeriods.forEach((option) => option.setAttribute('aria-pressed', String(option === button)));
+	renderRateHistory();
+}));
+historyRetry.addEventListener('click', loadRateHistory);
+onAppView(['dashboard'], (active) => { if (active && !historyData) loadRateHistory(); });
+
+const renderMarketPair = () => {
+	const { unit, value, prev, source = 'Пример данных' } = marketPairs[marketCurrency];
+	document.getElementById('market-source').textContent = source;
+	const change = (value - prev) / prev * 100;
+	const sign = change > 0 ? '+' : change < 0 ? '−' : '';
+	marketFocus.querySelector('.focus-unit').textContent = unit;
+	marketFocus.querySelector('.focus-value').textContent = `${formatMoney(value)} ₽`;
+	marketFocus.querySelector('.focus-previous').textContent = `Было ${formatMoney(prev)} ₽`;
+	const trend = marketFocus.querySelector('.focus-change');
+	trend.textContent = `${sign}${formatMoney(Math.abs(change))}%`;
+	trend.classList.toggle('positive', change > 0);
+	trend.classList.toggle('negative', change < 0);
+	marketButtons.forEach((button) => {
+		button.setAttribute('aria-pressed', String(button.dataset.marketCurrency === marketCurrency));
 	});
 };
 
@@ -1613,37 +1735,22 @@ const syncCurrencyButtons = () => {
 		const value = field === 'from' ? sourceValue : targetValue;
 		button.textContent = formatCurrencyCode(value);
 	});
-	const favoriteCards = document.querySelectorAll('.favorite-currency-card');
-	favoriteCards.forEach((card) => {
-		const selected = card.dataset.favoriteCurrency === sourceValue;
-		card.classList.toggle('selected', selected);
-		card.setAttribute('aria-pressed', String(selected));
-	});
-	updateFocusCard(sourceValue);
 };
 
-const selectFavoriteCurrencyPair = (currencyCode) => {
-	if (!converterFromSelect || !converterToSelect) return;
-	converterFromSelect.value = currencyCode;
+marketButtons.forEach((button) => {
+	button.addEventListener('click', () => {
+		if (marketCurrency === button.dataset.marketCurrency) return;
+		marketCurrency = button.dataset.marketCurrency;
+		renderMarketPair();
+		loadRateHistory();
+	});
+});
+document.querySelector('.stats-link').addEventListener('click', () => {
+	converterFromSelect.value = marketCurrency;
 	converterToSelect.value = 'RUB';
 	syncCurrencyButtons();
 	updateConverter();
-
-	const cryptoPairMap = {
-		USD: 'BTCUSDT',
-		EUR: 'ETHUSDT',
-		CNY: 'SOLUSDT',
-	};
-	if (cryptoPair && cryptoPairMap[currencyCode]) {
-		cryptoPair.value = cryptoPairMap[currencyCode];
-		if (typeof loadCryptoCandles === 'function') {
-			loadCryptoCandles();
-		}
-	}
-	if (typeof showSuccess === 'function') {
-		showSuccess(`Выбрана пара ${currencyCode} / RUB · график обновлён`);
-	}
-};
+});
 
 const openCurrencyModal = (field) => {
 	activeCurrencyField = field;
@@ -1662,10 +1769,9 @@ const applyCurrencyChoice = (currencyCode) => {
 		if (currencyModal) currencyModal.hidden = true;
 		return;
 	}
+	const previousCode = targetSelect.value;
 	targetSelect.value = currencyCode;
-	if (converterFromSelect.value === converterToSelect.value) {
-		otherSelect.value = activeCurrencyField === 'from' ? 'RUB' : 'USD';
-	}
+	if (otherSelect.value === currencyCode) otherSelect.value = previousCode;
 	syncCurrencyButtons();
 	updateConverter();
 	if (currencyModal) currencyModal.hidden = true;
@@ -1766,15 +1872,6 @@ if (converter) {
 	document.querySelectorAll('.currency-pill').forEach((button) => {
 		button.addEventListener('click', () => openCurrencyModal(button.dataset.currencyField));
 	});
-	document.querySelectorAll('.favorite-currency-card').forEach((card) => {
-		card.addEventListener('click', () => selectFavoriteCurrencyPair(card.dataset.favoriteCurrency));
-		card.addEventListener('keydown', (event) => {
-			if (event.key === 'Enter' || event.key === ' ') {
-				event.preventDefault();
-				selectFavoriteCurrencyPair(card.dataset.favoriteCurrency);
-			}
-		});
-	});
 	document.querySelectorAll('.currency-choice').forEach((button) => {
 		button.addEventListener('click', () => applyCurrencyChoice(button.dataset.currency));
 	});
@@ -1809,6 +1906,8 @@ const authHelperText = document.querySelector('#auth-helper-text');
 let authMode = 'login';
 let needTotp = false;
 const DEMO_PREVIEW_KEY = 'wind_demo_preview';
+const DEMO_GOALS_KEY = 'wind_demo_goals';
+const isDemoPreview = () => sessionStorage.getItem(DEMO_PREVIEW_KEY) === '1';
 const demoPreviewUser = {
 	id: 0,
 	username: 'Демо-просмотр',
@@ -1816,10 +1915,17 @@ const demoPreviewUser = {
 	plus: false,
 	totp_enabled: false,
 };
+let demoGoals = [];
+try {
+	const stored = JSON.parse(sessionStorage.getItem(DEMO_GOALS_KEY) || '[]');
+	if (Array.isArray(stored)) demoGoals = stored;
+} catch { /* Демо доступно и без сохранённой сессии. */ }
+const demoBalanceKop = () => demoPreviewUser.balance * 100
+	- demoGoals.reduce((sum, goal) => sum + goal.savedKop, 0);
 
 // единая точка обращения к серверу: токен подставляется сам
 const api = async (path, { method = 'GET', body, timeoutMs = 10000 } = {}) => {
-	const token = localStorage.getItem('wind_access_token');
+	const token = isDemoPreview() ? null : localStorage.getItem('wind_access_token');
 	const headers = { 'Content-Type': 'application/json' };
 	if (token) headers.Authorization = `Bearer ${token}`;
 	const controller = new AbortController();
@@ -1850,7 +1956,65 @@ const api = async (path, { method = 'GET', body, timeoutMs = 10000 } = {}) => {
 };
 window.WindApi = api;
 
+let starsPrices = null;
+let starsCatalogError = '';
+let starsCatalogRequest = 0;
+const formatStars = (price) => `${price.toLocaleString('ru-RU')} Stars`;
+const loadStarsCatalog = async () => {
+	const request = ++starsCatalogRequest;
+	starsCatalogError = '';
+	try {
+		if (!tg?.openInvoice || !tg.isVersionAtLeast?.('6.1')) throw new Error('Обнови Telegram, чтобы открыть оплату Stars.');
+		const { prices } = await WindApi('/payments/stars/catalog');
+		if (request !== starsCatalogRequest) return;
+		starsPrices = prices || {};
+	} catch (error) {
+		if (request !== starsCatalogRequest) return;
+		starsPrices = {};
+		starsCatalogError = error.message;
+	}
+	document.dispatchEvent(new Event('wind-stars-catalog'));
+};
+window.addEventListener('wind-logout', () => {
+	starsCatalogRequest++;
+	starsPrices = null;
+	starsCatalogError = '';
+});
+
+let starsCheckoutActive = false;
+const checkoutWithStars = async (offer) => {
+	if (starsCheckoutActive) throw new Error('Сначала закрой текущий счёт Telegram.');
+	starsCheckoutActive = true;
+	const token = localStorage.getItem('wind_access_token');
+	const sameSession = () => !isDemoPreview() && localStorage.getItem('wind_access_token') === token;
+	try {
+		const { invoice_url, payment_id } = await WindApi('/payments/stars/invoice', {
+			method: 'POST', body: { offer },
+		});
+		if (!sameSession()) return 'stale';
+		const invoiceStatus = await new Promise((resolve) => tg.openInvoice(invoice_url, resolve));
+		if (invoiceStatus === 'cancelled') return 'cancelled';
+		if (invoiceStatus === 'failed') throw new Error('Telegram не смог провести оплату.');
+		// Статус из интерфейса Telegram не подтверждает зачисление. Ждём серверный webhook.
+		const deadline = Date.now() + 15000;
+		while (sameSession() && Date.now() < deadline) {
+			const payment = await WindApi(`/payments/${encodeURIComponent(payment_id)}`, { timeoutMs: 4000 }).catch(() => null);
+			if (payment?.status === 'succeeded') return sameSession() ? 'succeeded' : 'stale';
+			await new Promise((resolve) => window.setTimeout(resolve, 800));
+		}
+		return sameSession() ? 'pending' : 'stale';
+	} finally {
+		starsCheckoutActive = false;
+	}
+};
+const starsPaymentMessage = (status) => status === 'cancelled' ? 'Оплата отменена.'
+	: 'Платёж ожидает подтверждения. Проверь баланс или подписку позже.';
+
 const updateProfile = (user) => {
+	document.getElementById('wallet-demo').hidden = user.id !== 0;
+	document.body.classList.toggle('demo-preview', user.id === 0);
+	document.getElementById('demo-goal-shortcut').hidden = user.id !== 0;
+	document.getElementById('wallet-plus-button').textContent = user.id === 0 ? 'Пример Wind Plus' : 'Wind Plus';
 	document.querySelectorAll('.profile-name').forEach((el) => { el.textContent = user.username; });
 	document.querySelectorAll('.dropdown-user strong').forEach((el) => { el.textContent = user.username; });
 	document.querySelectorAll('[data-profile-id]').forEach((el) => {
@@ -1876,8 +2040,8 @@ const setFieldLabel = (input, text) => {
 };
 
 const AUTH_MODES = {
-	login: { title: 'Войти в аккаунт', submit: 'Войти', helper: 'Войди, чтобы продолжить спокойный обзор портфеля.' },
-	register: { title: 'Создать аккаунт', submit: 'Зарегистрироваться', helper: 'Создай профиль — и я помогу собрать первый спокойный портфель.' },
+	login: { title: 'Войти в аккаунт', submit: 'Войти', helper: 'Включи двухфакторную защиту в настройках после входа.' },
+	register: { title: 'Создать аккаунт', submit: 'Зарегистрироваться', helper: 'Укажи почту, к которой у тебя есть доступ.' },
 	forgot: { title: 'Восстановить пароль', submit: 'Отправить ссылку', helper: 'Пришлём на почту ссылку для нового пароля. Она действует 30 минут.' },
 	reset: { title: 'Новый пароль', submit: 'Сохранить пароль', helper: 'Придумай новый пароль: минимум 8 символов, лучше с цифрами и знаками.' },
 };
@@ -1918,7 +2082,7 @@ const wakeServer = () => {
 	// бесплатный хостинг засыпает: первый запрос будит сервер, пока человек вводит пароль
 	return fetch(`${apiBase}/health`, { cache: 'no-store' }).then((r) => { serverAwake = r.ok; return r.ok; }).catch(() => false);
 };
-const wakePromise = wakeServer();
+if (!inTelegram && !localStorage.getItem('wind_access_token') && !isDemoPreview()) wakeServer();
 // подсказка «сервер просыпается», если запрос идёт дольше 3 секунд
 const withWakeHint = async (promise, label) => {
 	const timer = window.setTimeout(() => {
@@ -1928,7 +2092,7 @@ const withWakeHint = async (promise, label) => {
 	try { return await promise; } finally { window.clearTimeout(timer); }
 };
 if (!apiConfigured) {
-	setNotice('Сервер ещё не подключён к этому сайту, поэтому вход и регистрация недоступны. Нажми «Войти как demo», чтобы посмотреть приложение.', 'warn');
+	setNotice('Вход и регистрация станут доступны после подключения сервера. Сейчас можно открыть демо.', 'warn');
 }
 
 document.querySelectorAll('[data-auth-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.authMode)));
@@ -1966,30 +2130,47 @@ document.querySelector('.auth-showcase')?.addEventListener('pointerleave', (even
 	if (card) card.style.transform = '';
 });
 
-demoLoginButton?.addEventListener('click', () => {
-	sessionStorage.setItem(DEMO_PREVIEW_KEY, '1');
-	updateProfile(demoPreviewUser);
+const showDemo = () => {
+	updateProfile({ ...demoPreviewUser, balance: demoBalanceKop() / 100 });
 	authGate.hidden = true;
+};
+demoLoginButton?.addEventListener('click', () => {
+	telegramLoginRequest++;
+	sessionStorage.setItem(DEMO_PREVIEW_KEY, '1');
+	window.history.replaceState(null, '', '#dashboard');
+	setAppView('dashboard');
+	showDemo();
 	authForm.reset();
 });
 
 const showAuth = () => { authGate.hidden = false; setAuthMode('login'); };
-const isDemoPreview = () => sessionStorage.getItem(DEMO_PREVIEW_KEY) === '1';
 
-// вход через Telegram Mini App
-const tg = window.Telegram && window.Telegram.WebApp;
+const telegramLoginButton = document.getElementById('telegram-login-button');
+telegramLoginButton.hidden = !inTelegram;
+let telegramLoginRequest = 0;
 const tgLogin = async () => {
-	if (!tg || !tg.initData) return false;
+	if (!inTelegram || telegramLoginButton.disabled || authForm.querySelector('.auth-submit').disabled) return;
+	const request = ++telegramLoginRequest;
+	telegramLoginButton.disabled = true;
+	setNotice('Входим через Telegram…', 'wait');
 	try {
-		tg.ready();
-		tg.expand();
-		const r = await api('/auth/telegram', { method: 'POST', body: { init_data: tg.initData }, timeoutMs: 15000 });
+		const r = await api('/auth/telegram', { method: 'POST', body: { init_data: tg.initData }, timeoutMs: 70000 });
+		if (request !== telegramLoginRequest) return;
 		localStorage.setItem('wind_access_token', r.access_token);
+		sessionStorage.removeItem(DEMO_PREVIEW_KEY);
 		updateProfile(r.user);
+		setNotice('');
 		authGate.hidden = true;
-		return true;
-	} catch (e) { return false; }
+	} catch (e) {
+		if (request !== telegramLoginRequest) return;
+		const detail = e.status === 401 ? 'Открой приложение заново из чата с ботом.'
+			: 'Можно повторить попытку, войти по почте или открыть демо.';
+		setNotice(`Не удалось войти через Telegram. ${detail}`, 'warn');
+	} finally {
+		telegramLoginButton.disabled = false;
+	}
 };
+telegramLoginButton.addEventListener('click', tgLogin);
 
 const checkSession = async () => {
 	const params = new URLSearchParams(window.location.search);
@@ -2004,8 +2185,13 @@ const checkSession = async () => {
 		return;
 	}
 	if (isDemoPreview()) {
-		updateProfile(demoPreviewUser);
-		authGate.hidden = true;
+		showDemo();
+		return;
+	}
+	if (inTelegram) {
+		localStorage.removeItem('wind_access_token');
+		showAuth();
+		await tgLogin();
 		return;
 	}
 	if (localStorage.getItem('wind_access_token') && apiConfigured) {
@@ -2021,12 +2207,12 @@ const checkSession = async () => {
 			else if (e.status === undefined) { showAuth(); setNotice('Сервер не ответил. Проверь интернет и попробуй войти ещё раз.', 'warn'); return; }
 		}
 	}
-	if (await tgLogin()) return;
 	showAuth();
 };
 
 authForm.addEventListener('submit', async (event) => {
 	event.preventDefault();
+	telegramLoginRequest++;
 	authError.textContent = '';
 	const submitButton = authForm.querySelector('.auth-submit');
 	const submitLabel = submitButton.querySelector('#auth-submit-label');
@@ -2123,10 +2309,17 @@ document.querySelector('.logout')?.addEventListener('click', (event) => {
 	event.preventDefault();
 	sessionStorage.removeItem(DEMO_PREVIEW_KEY);
 	localStorage.removeItem('wind_access_token');
+	document.body.classList.remove('demo-preview');
+	document.getElementById('wallet-demo').hidden = true;
+	document.getElementById('demo-goal-shortcut').hidden = true;
 	window.dispatchEvent(new Event('wind-logout'));
 	showAuth();
 });
 
+if (inTelegram) {
+	tg.ready?.();
+	tg.expand?.();
+}
 checkSession();
 
 const formatCryptoPrice = (price) => {
@@ -2167,11 +2360,14 @@ const loadCryptoCandles = async () => {
 	}
 
 	const symbol = cryptoPair.value;
+	const interval = activeInterval;
 	closeBybitStream();
+	const request = streamVersion;
 	cryptoPriceLabel.textContent = 'Загрузка свечей...';
 	try {
-		const response = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${activeInterval}&limit=100`);
+		const response = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=100`);
 		const payload = await response.json();
+		if (request !== streamVersion) return;
 		if (payload.retCode !== 0) {
 			throw new Error(payload.retMsg);
 		}
@@ -2189,8 +2385,9 @@ const loadCryptoCandles = async () => {
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candles[candles.length - 1].close)} USDT`;
 		cryptoUpdated.textContent = `Котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 		cryptoChart.timeScale().fitContent();
-		connectBybitStream(symbol, activeInterval);
+		connectBybitStream(symbol, interval);
 	} catch (error) {
+		if (request !== streamVersion) return;
 		cryptoPriceLabel.textContent = 'Не удалось загрузить данные';
 		cryptoUpdated.textContent = 'Проверь соединение';
 	}
@@ -2236,22 +2433,36 @@ const connectBybitStream = (symbol, interval) => {
 		cryptoUpdated.textContent = `LIVE · котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 	});
 	bybitSocket.addEventListener('close', () => {
-		if (currentVersion === streamVersion) {
-			window.setTimeout(() => connectBybitStream(cryptoPair.value, activeInterval), 3000);
-		}
+		if (currentVersion === streamVersion) window.setTimeout(() => {
+			if (currentVersion === streamVersion) connectBybitStream(symbol, interval);
+		}, 3000);
 	});
 };
 
-if (cryptoChartElement && window.LightweightCharts) {
-	createCryptoChart();
-	initChartTooltip();
-	loadCryptoCandles();
-	cryptoPair.addEventListener('change', loadCryptoCandles);
+if (cryptoChartElement && cryptoPair) {
+	const showCrypto = async () => {
+		try {
+			if (!cryptoChart) await loadVendor('LightweightCharts');
+			if (document.body.dataset.view !== 'crypto' || !document.getElementById('auth-gate').hidden) return;
+			if (!cryptoChart) {
+				createCryptoChart();
+				initChartTooltip();
+			}
+			loadCryptoCandles();
+		} catch {
+			cryptoPriceLabel.textContent = 'Не удалось загрузить график';
+		}
+	};
+	onAppView(['crypto'], (active) => {
+		if (active) showCrypto();
+		else closeBybitStream();
+	});
+	cryptoPair.addEventListener('change', showCrypto);
 	timeframeButtons.forEach((button) => {
 		button.addEventListener('click', () => {
 			activeInterval = button.dataset.interval;
 			timeframeButtons.forEach((item) => item.classList.toggle('active', item === button));
-			loadCryptoCandles();
+			showCrypto();
 		});
 	});
 }
@@ -2333,7 +2544,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	};
 
 	const Wallet = {
-		get: () => balance,
+		get: () => activeWalletOwner === '0' ? demoBalanceKop() / 100 : balance,
 		format: fmt,
 		load: async () => apply(await window.WindApi('/wallet')),
 		add(amount, title) {
@@ -2357,8 +2568,61 @@ if (cryptoChartElement && window.LightweightCharts) {
 		saveWallets();
 	});
 
-	window.addEventListener('wind-auth', (e) => { apply({ balance: e.detail.balance }); });
+	window.addEventListener('wind-auth', (e) => {
+		if (e.detail.id !== 0) apply({ balance: e.detail.balance });
+	});
 })();
+
+if (inTelegram) {
+	const panel = document.getElementById('stars-topup');
+	const options = document.getElementById('stars-topup-options');
+	const status = document.getElementById('stars-topup-status');
+	panel.hidden = false;
+	let busy = false;
+
+	const payTopup = async (offer) => {
+		if (busy || isDemoPreview()) return;
+		busy = true;
+		options.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+		status.textContent = 'Открываем счёт Telegram…';
+		try {
+			const result = await checkoutWithStars(offer);
+			if (result === 'succeeded') {
+				await Wallet.load().catch(() => {});
+				closeModal(panel.closest('.modal'));
+				showSuccess('Учебный баланс пополнен');
+			} else if (result !== 'stale') {
+				status.textContent = starsPaymentMessage(result);
+			}
+		} catch (error) {
+			status.textContent = error.message;
+		} finally {
+			busy = false;
+			options.querySelectorAll('button').forEach((button) => { button.disabled = false; });
+		}
+	};
+
+	document.addEventListener('wind-stars-catalog', () => {
+		if (busy) return;
+		options.replaceChildren();
+		for (const amount of [1000, 5000, 10000]) {
+			const offer = `topup_${amount}`;
+			const price = starsPrices?.[offer];
+			if (!price) continue;
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'button';
+			const label = document.createElement('span');
+			label.textContent = `${Wallet.format(amount)} на баланс`;
+			const priceLabel = document.createElement('strong');
+			priceLabel.textContent = formatStars(price);
+			button.append(label, priceLabel);
+			button.addEventListener('click', () => payTopup(offer));
+			options.append(button);
+		}
+		status.textContent = starsCatalogError || (options.childElementCount ? '' : 'Пополнение через Telegram Stars пока недоступно.');
+	});
+}
 
 
 
@@ -2718,15 +2982,16 @@ if (cryptoChartElement && window.LightweightCharts) {
 	// выбранная в терминале пара подставляется сама
 	if (typeof cryptoPair !== 'undefined' && cryptoPair) {
 		const sync = () => setSymbol(cryptoPair.value);
-		sync();
 		cryptoPair.addEventListener('change', sync);
 	}
 
 	buildQuick();
 	updateQuick();
 	render();
-	check();
-	setInterval(check, 10000);
+	onAppView(['crypto'], (active) => { if (active) check(); });
+	setInterval(() => {
+		if (!document.hidden && (alerts.length || document.body.dataset.view === 'crypto')) check();
+	}, 10000);
 	syncFromServer();
 	setInterval(syncFromServer, 60000); // подтянуть то, что сработало на сервере (например, пока вкладка спала)
 })();
@@ -2936,7 +3201,10 @@ if (cryptoChartElement && window.LightweightCharts) {
 		if (scan && newsUpdatedAt) scan.textContent = `Обновлено ${ago(newsUpdatedAt)}`;
 	};
 
+	let newsLoading = false;
 	const loadRemoteNews = async () => {
+		if (newsLoading) return;
+		newsLoading = true;
 		try {
 			const data = await window.WindApi('/market/news', { timeoutMs: 30000 });
 			newsLoadedAt = Date.now();
@@ -2953,6 +3221,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 			const speech = $('agent-speech-text');
 			if (speech && !newsItems.length) speech.textContent = 'Новости сейчас недоступны — попробую обновить чуть позже.';
 			console.warn('Новости не обновились:', error.message);
+		} finally {
+			newsLoading = false;
 		}
 	};
 	// обновляем ленту, если она устарела: по таймеру, при открытии агента и при возврате на вкладку
@@ -2961,7 +3231,9 @@ if (cryptoChartElement && window.LightweightCharts) {
 		if (document.body.classList.contains('agent-open')) { refreshIfStale(); markSeen(); }
 		paintBadge();
 	}).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-	document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshIfStale(); });
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden && document.body.classList.contains('agent-open')) refreshIfStale();
+	});
 	window.setInterval(paintScan, 60000);
 
 	const LESSONS = [
@@ -3149,8 +3421,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	});
 	bindNewsCards();
 	window.WindNews = { refresh: loadRemoteNews };
-	loadRemoteNews();
-	window.setInterval(() => { if (!document.hidden) loadRemoteNews(); }, NEWS_REFRESH_MS);
+	window.setInterval(() => { if (!document.hidden && document.body.classList.contains('agent-open')) loadRemoteNews(); }, NEWS_REFRESH_MS);
 	const refreshButton = $('news-refresh');
 	refreshButton?.addEventListener('click', async () => {
 		refreshButton.disabled = true;
@@ -3518,14 +3789,14 @@ if (cryptoChartElement && window.LightweightCharts) {
 	// ---------- что появляется с анимацией ----------
 	const REVEAL = [
 		'.topbar', '.brand', '.nav a', '.sidebar-bottom',
-		'.wallet-bar', '.focus-card', '.stats-card', '.stat-row', '#converter .converter', '.course', '.section-heading',
+		'.wallet-bar', '.stats-card', '#converter .converter', '.section-heading',
 		'.crypto-terminal', '.alerts-card', '.crypto-news-feature', '.crypto-news-item', '.edu-progress', '.edu-card',
 		'.profile-hero', '.portfolio-card', '.portfolio-item', '.ledger-row',
 		'.settings-card', '.setting-item', '.insight-item', '.cg-card',
 	].join(',');
 
 	// какие числа «набегают»
-	const NUMS = '.wallet-balance strong, .stat-value, .course .rate-change, .portfolio-summary strong, .settings-summary strong, .portfolio-side span, .portfolio-side em, .ledger-row b';
+	const NUMS = '.wallet-balance strong, .portfolio-summary strong, .settings-summary strong, .portfolio-side span, .portfolio-side em, .ledger-row b';
 
 	const parse = (text) => {
 		const m = text.trim().match(/^([^\d]*)(\d[\d\s\u00a0\u202f]*(?:,\d+)?)([^\d]*)$/);
@@ -3622,7 +3893,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	const TITLES = { card: 'Оплата картой', sbp: 'Оплата через СБП' };
 	const fmt = (n) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 
-	let method = 'card', rub = 5000, busy = false, payTimeout = 0, sbpTimer = 0, sbpSeq = 0, sbpQr = null, sbpDemo = true;
+	let method = 'card', rub = 5000, busy = false, payTimeout = 0, sbpTimer = 0, sbpSeq = 0, sbpDemo = true;
 	modal.querySelectorAll('#pay-card-panel .pay-card, #pay-card-panel .pay-field, #pay-card-panel .pay-demo-note').forEach((el) => { el.hidden = true; });
 
 	const getRub = () => {
@@ -3774,16 +4045,17 @@ if (cryptoChartElement && window.LightweightCharts) {
 		if (typeof d.confirmation_url !== 'string' || !/^https:\/\//i.test(d.confirmation_url)) throw new Error('Платёжный сервис вернул неверную ссылку');
 		return { url: d.confirmation_url, demo: false, paymentId: d.payment_id };
 	};
-	const drawSbpQr = (text) => {
+	const drawSbpQr = async (text, request) => {
 		const box = $('pay-sbp-qr');
-		if (!window.QRCode) { box.textContent = 'QR недоступен: не загрузилась библиотека'; return; }
-		if (!sbpQr) {
-			box.textContent = '';
-			sbpQr = new QRCode(box, { text, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-		} else {
-			sbpQr.clear();
-			sbpQr.makeCode(text);
+		box.textContent = 'Загружаем QR…';
+		try { await loadVendor('QRCode'); }
+		catch {
+			if (request === sbpSeq) box.textContent = 'Открой ссылку для оплаты через СБП';
+			return;
 		}
+		if (request !== sbpSeq || modal.hidden) return;
+		box.textContent = '';
+		new QRCode(box, { text, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
 	};
 	const runTimer = (ms) => {
 		clearInterval(sbpTimer);
@@ -3816,7 +4088,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 		linkEl.textContent = inv.url;
 		if (!inv.demo) linkEl.href = inv.url;
 		sbpNote.hidden = !inv.demo;
-		drawSbpQr(inv.url);
+		drawSbpQr(inv.url, id);
 		runTimer(10 * 60 * 1000);
 	};
 
@@ -3859,6 +4131,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 	};
 
 	const open = (m) => {
+		if (inTelegram || isDemoPreview()) return;
 		rub = getRub();
 		$('pay-sum').textContent = `${fmt(rub)} ₽`;
 		submitLabel.textContent = `Оплатить ${fmt(rub)} ₽`;
@@ -3934,25 +4207,39 @@ if (cryptoChartElement && window.LightweightCharts) {
 		trialAvailable = Boolean(e.detail && e.detail.trial_available) && Boolean(localStorage.getItem('wind_access_token'));
 		applyPlan();
 	});
-	window.addEventListener('wind-logout', () => { state = null; applyPlan(); });
+	window.addEventListener('wind-logout', () => { state = null; trialAvailable = false; applyPlan(); });
 	let plan = 'month';
+	let checkoutBusy = false;
 	const isPlus = () => !!state && state.until > Date.now();
 
 	const m = { sub: $('plus-subscribe'), status: $('plus-status'), plans: modal.querySelectorAll('[data-plan]') };
-		const renderModal = () => {
+	const renderModal = () => {
 		const on = isPlus();
-		m.plans.forEach((b) => { b.classList.toggle('active', b.dataset.plan === plan); b.disabled = false; });
-		const cost = PLANS[plan].cost;
-		// Оплата идёт картой/СБП через ЮKassa, а не с баланса. Активную подписку можно продлить.
-		m.sub.disabled = false;
-		m.sub.textContent = on ? `Продлить на ${plan === 'year' ? 'год' : 'месяц'} · ${Wallet.format(cost)} →` : `Оформить за ${Wallet.format(cost)} →`;
-		m.status.textContent = on
-			? `Активна до ${new Date(state.until).toLocaleDateString('ru-RU')} · автосписаний нет`
-			: 'Оплата картой или СБП · без автосписаний';
+		if (inTelegram && !starsPrices?.[plan]) plan = starsPrices?.month ? 'month' : 'year';
+		m.plans.forEach((button) => {
+			const key = button.dataset.plan;
+			const price = starsPrices?.[key];
+			button.classList.toggle('active', key === plan && (!inTelegram || Boolean(price)));
+			button.disabled = checkoutBusy || (inTelegram && !price);
+			if (inTelegram) {
+				button.querySelector('strong').textContent = price ? formatStars(price) : '—';
+				button.querySelector('small').textContent = `на ${PLANS[key].days} дней`;
+			}
+		});
+		const price = inTelegram ? starsPrices?.[plan] : PLANS[plan].cost;
+		const amount = price ? (inTelegram ? formatStars(price) : Wallet.format(price)) : '';
+		m.sub.disabled = checkoutBusy || !price;
+		m.sub.textContent = amount ? `${on ? 'Продлить за' : 'Оформить за'} ${amount}` : 'Оформить Wind Plus';
+		if (checkoutBusy) return;
+		const paymentCopy = !inTelegram ? 'Оплата через ЮKassa · без автосписаний'
+			: starsCatalogError || (price ? 'Разовая оплата в Telegram Stars'
+				: starsPrices ? 'Оплата Wind Plus пока недоступна.' : 'Загружаем тарифы Telegram Stars…');
+		m.status.textContent = on ? `Активна до ${new Date(state.until).toLocaleDateString('ru-RU')} · ${paymentCopy}` : paymentCopy;
 		m.status.classList.remove('warn');
 		const trialBtn = $('plus-trial');
 		if (trialBtn) trialBtn.hidden = on || !trialAvailable;
 	};
+	document.addEventListener('wind-stars-catalog', renderModal);
 	const applyPlan = () => {
 		const on = isPlus();
 		const name = on ? 'Wind Plus' : 'Free';
@@ -3967,6 +4254,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 
 	m.plans.forEach((b) => b.addEventListener('click', () => { plan = b.dataset.plan; renderModal(); }));
 	$('plus-trial')?.addEventListener('click', async (event) => {
+		if (isDemoPreview()) return;
 		const btn = event.currentTarget;
 		btn.disabled = true;
 		try {
@@ -3983,14 +4271,34 @@ if (cryptoChartElement && window.LightweightCharts) {
 		}
 	});
 	m.sub.addEventListener('click', async () => {
-		m.sub.disabled = true;
+		if (isDemoPreview() || checkoutBusy) return;
+		checkoutBusy = true;
+		renderModal();
+		m.status.textContent = 'Открываем счёт…';
+		let feedback = '';
 		try {
-			const d = await WindApi('/subscription/payment', { method: 'POST', body: { plan, method: 'card' } });
-			window.location.assign(d.confirmation_url);
-		} catch (e) {
-			m.sub.disabled = false;
-			m.status.textContent = e.message;
-			m.status.classList.add('warn');
+			if (inTelegram) {
+				const result = await checkoutWithStars(plan);
+				if (result === 'succeeded') {
+					const user = await WindApi('/auth/me').catch(() => null);
+					if (user?.plus) {
+						setPlus(user.plus);
+						applyPlan();
+					}
+					showSuccess('Оплата Wind Plus подтверждена');
+				} else if (result !== 'stale') {
+					feedback = starsPaymentMessage(result);
+				}
+			} else {
+				const d = await WindApi('/subscription/payment', { method: 'POST', body: { plan, method: 'card' } });
+				window.location.assign(d.confirmation_url);
+			}
+		} catch (error) {
+			feedback = error.message;
+		} finally {
+			checkoutBusy = false;
+			renderModal();
+			if (feedback) m.status.textContent = feedback;
 		}
 	});
 
@@ -5050,8 +5358,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 	// ================= СИМУЛЯТОР / РЕГИОН =================
 	window.addEventListener('wind-auth', (e) => {
 		if (e.detail && e.detail.simulator) {
-			const c = document.querySelector('#topup-modal .modal-copy');
-			if (c) c.textContent = 'Демо-пополнение виртуального баланса. Реальные деньги не списываются, платёжные данные вводить не нужно.';
+			const c = document.querySelector('#topup-modal .modal-copy.web-payment');
+			if (c) c.textContent = 'Это пополнение учебного баланса. Оплата проходит на стороне ЮKassa.';
 		}
 	});
 
@@ -5082,7 +5390,8 @@ if (cryptoChartElement && window.LightweightCharts) {
 				tf.status.textContent = '';
 				tf.secret.textContent = d.secret;
 				tf.setup.hidden = false;
-				if (window.QRCode) {
+				const QR = await loadVendor('QRCode').catch(() => null);
+				if (QR && !tf.modal.hidden && !tf.setup.hidden) {
 					if (!qr) { tf.qr.textContent = ''; qr = new QRCode(tf.qr, { text: d.uri, width: 180, height: 180, colorDark: '#17201d', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M }); }
 					else { qr.clear(); qr.makeCode(d.uri); }
 				}
@@ -5137,7 +5446,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 			} catch (e) { showSuccess(e.message, 'error'); }
 			finally { claim.disabled = false; }
 		});
-		window.addEventListener('wind-auth', refresh);
+		onAppView(['game'], (active) => { if (active) refresh(); });
 		document.querySelector('[data-game-tab="drop"]')?.addEventListener('click', refresh);
 	}
 
@@ -5166,51 +5475,31 @@ if (cryptoChartElement && window.LightweightCharts) {
 	})();
 
 	// ================= РЕАЛЬНЫЕ КУРСЫ (ЦБ РФ) И АКЦИИ (МОСБИРЖА) =================
-	const setNum = (node, text) => {
-		if (!node) return;
-		node.textContent = text;
-		if (node.dataset.fxFinal !== undefined) { node.dataset.fxFinal = text; node._fx = null; }
-	};
 	const loadRates = async () => {
 		try {
-			const { rates: r, date } = await WindApi('/market/rates');
-			const source = document.getElementById('market-source');
-			const rateDate = typeof date === 'string' ? date.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
-			if (source && ['USD', 'EUR', 'CNY'].every((code) => r[code])) {
-				source.textContent = rateDate ? `ЦБ РФ · ${rateDate[3]}.${rateDate[2]}.${rateDate[1]}` : 'ЦБ РФ';
+			const { rates, date } = apiConfigured ? await WindApi('/market/rates') : (await loadMarketPreview()).quotes;
+			const validQuotes = Object.entries(rates).filter(([code, quote]) =>
+				code !== 'RUB' && Object.hasOwn(CURRENCY_RATES, code) &&
+				Number.isFinite(quote?.value) && quote.value > 0 &&
+				Number.isFinite(quote.prev) && quote.prev > 0
+			);
+			for (const [code, { value, prev, date: published }] of validQuotes) {
+				const rateDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(published || date || '');
+				const source = rateDate ? `ЦБ РФ · ${rateDate[3]}.${rateDate[2]}.${rateDate[1]}` : 'ЦБ РФ';
+				CURRENCY_RATES[code] = value;
+				publishedCurrencies.add(code);
+				if (Object.hasOwn(marketPairs, code)) Object.assign(marketPairs[code], { value, prev, source });
 			}
-			['USD', 'EUR', 'CNY', 'GBP', 'AED'].forEach((c) => { if (r[c]) CURRENCY_RATES[c] = r[c].value; });
-			const sign = (v) => (v >= 0 ? '+' : '−');
-			document.querySelectorAll('.favorite-currency-card').forEach((card) => {
-				const c = card.dataset.favoriteCurrency, x = r[c];
-				if (!x) return;
-				const diff = x.value - x.prev, pct = (diff / x.prev) * 100;
-				card.querySelector('p').textContent = `1 ${c} = ${fmt2(x.value)} RUB`;
-				const ch = card.querySelector('.rate-change');
-				setNum(ch, `${sign(pct)}${fmt2(Math.abs(pct))}%`);
-				ch.classList.toggle('positive', pct >= 0);
-				ch.classList.toggle('negative', pct < 0);
-				if (pairSceneConfig[c]) Object.assign(pairSceneConfig[c], {
-					heading: `${fmt2(x.value)} ₽`,
-					changeText: `${diff >= 0 ? '▲' : '▼'} ${fmt2(Math.abs(diff))} ₽ · ${sign(pct)}${fmt2(Math.abs(pct))}% к предыдущему курсу`,
-					trend: diff >= 0 ? 'positive' : 'negative',
-				});
-			});
-			const rows = document.querySelectorAll('.stats-card .stat-value');
-			['USD', 'EUR', 'CNY'].forEach((c, i) => {
-				const x = r[c];
-				if (!x || !rows[i]) return;
-				const pct = ((x.value - x.prev) / x.prev) * 100;
-				setNum(rows[i], `${sign(pct)}${fmt2(Math.abs(pct))}%`);
-				rows[i].classList.toggle('positive', pct >= 0);
-				rows[i].classList.toggle('negative', pct < 0);
-			});
-			syncCurrencyButtons();
+			renderMarketPair();
+			updateBalanceUI();
 			updateConverter();
-		} catch (e) { /* остаются прежние курсы */ }
+		} catch {
+			// Сохраняем предыдущие данные и дату их публикации.
+		}
 	};
 
 	const loadStocks = async () => {
+		if (!apiConfigured) return;
 		try {
 			const d = await WindApi('/market/stocks');
 			const map = { IMOEX: d.IMOEX, SBER: d.SBER, ETFRU: d.TMOS, BONDS: d.SBGB };
@@ -5245,15 +5534,19 @@ if (cryptoChartElement && window.LightweightCharts) {
 		} catch (e) { /* остаются прежние значения */ }
 	};
 
-	loadStocks();
-	window.addEventListener('wind-auth', () => { loadRates(); loadStocks(); });
-	setInterval(loadRates, 5 * 60 * 1000);
-	setInterval(loadStocks, 60 * 1000);
+	window.addEventListener('wind-auth', loadRates);
+	onAppView(['investments'], (active) => { if (active) loadStocks(); });
+	setInterval(() => {
+		if (!document.hidden && document.getElementById('auth-gate').hidden) loadRates();
+	}, 5 * 60 * 1000);
+	setInterval(() => {
+		if (!document.hidden && document.body.dataset.view === 'investments' && document.getElementById('auth-gate').hidden) loadStocks();
+	}, 60 * 1000);
 })();
 
-if (window.lucide) {
-	lucide.createIcons();
-}
+const paintIcons = () => loadVendor('lucide').then((icons) => icons.createIcons()).catch(() => {});
+if (window.requestIdleCallback) window.requestIdleCallback(paintIcons, { timeout: 800 });
+else window.setTimeout(paintIcons, 200);
 
 // ================= КОПИЛКИ =================
 (() => {
@@ -5268,11 +5561,46 @@ if (window.lucide) {
 		if (text != null) el.textContent = text;
 		return el;
 	};
-	const authed = () => Boolean(localStorage.getItem('wind_access_token'));
+	const goalSession = () => isDemoPreview() ? 'demo' : localStorage.getItem('wind_access_token');
 	const empty = (text) => grid.replaceChildren(mk('div', 'goals-empty', text));
+	const description = document.getElementById('goals-description');
 
-	const afterMoney = (data) => {
-		window.Wallet?.load().catch(() => {});
+	const demoGoalData = () => ({ goals: demoGoals.map((goal) => {
+		const remaining = Math.max(0, goal.targetKop - goal.savedKop);
+		const months = goal.deadline
+			? Math.max(1, Math.round((Date.parse(goal.deadline) - Date.now()) / (30.44 * dayMs))) : null;
+		return {
+			id: goal.id, title: goal.title, deadline: goal.deadline,
+			target: goal.targetKop / 100, saved: goal.savedKop / 100,
+			progress: Math.min(100, goal.savedKop / goal.targetKop * 100),
+			monthly_needed: months ? remaining / 100 / months : null,
+			done: remaining === 0,
+		};
+	}) });
+
+	const saveDemoGoals = (goals) => {
+		demoGoals = goals;
+		try { sessionStorage.setItem(DEMO_GOALS_KEY, JSON.stringify(goals)); }
+		catch { /* При недоступном хранилище копилки живут до перезагрузки. */ }
+		USER_WALLETS.RUB = demoBalanceKop() / 100;
+		updateBalanceUI();
+		return demoGoalData();
+	};
+
+	const changeDemoGoal = (id, action, amount) => {
+		const goal = demoGoals.find((item) => item.id === id);
+		if (!goal) throw new Error('Копилка не найдена');
+		if (action === 'close') return saveDemoGoals(demoGoals.filter((item) => item.id !== id));
+		const kop = Math.round(amount * 100);
+		if (!Number.isSafeInteger(kop) || kop <= 0) throw new Error('Введи сумму больше нуля');
+		if (action === 'deposit' && kop > demoBalanceKop()) throw new Error('Недостаточно учебных средств');
+		if (action === 'withdraw' && kop > goal.savedKop) throw new Error('В копилке нет такой суммы');
+		return saveDemoGoals(demoGoals.map((item) => item.id === id
+			? { ...item, savedKop: item.savedKop + (action === 'deposit' ? kop : -kop) } : item));
+	};
+
+	const afterMoney = (data, demo) => {
+		if (!demo) window.Wallet?.load().catch(() => {});
 		render(data);
 	};
 
@@ -5280,17 +5608,24 @@ if (window.lucide) {
 		const row = mk('form', 'goal-move');
 		row.hidden = true;
 		const input = mk('input');
-		input.type = 'number'; input.min = '1'; input.step = '1'; input.inputMode = 'numeric'; input.placeholder = 'Сумма, ₽'; input.required = true;
-		const ok = mk('button', 'button', 'OK');
+		input.type = 'number'; input.min = '1'; input.max = '100000000'; input.step = '1';
+		input.inputMode = 'numeric'; input.placeholder = 'Сумма, ₽'; input.required = true;
+		input.setAttribute('aria-label', 'Сумма, ₽');
+		const ok = mk('button', 'button', 'Подтвердить');
 		ok.type = 'submit';
 		row.append(input, ok);
 		row.addEventListener('submit', async (event) => {
 			event.preventDefault();
+			const session = goalSession();
+			if (!session) return;
 			ok.disabled = true;
 			try {
-				const data = await WindApi(`/goals/${goal.id}/${row.dataset.action}`, { method: 'POST', body: { amount: Number(input.value) } });
-				afterMoney(data);
-				showSuccess(row.dataset.action === 'deposit' ? `В копилку «${goal.title}» отложено ${fmt(input.value)} ₽` : `Из копилки снято ${fmt(input.value)} ₽`);
+				const demo = session === 'demo', action = row.dataset.action, amount = Number(input.value);
+				const data = demo ? changeDemoGoal(goal.id, action, amount)
+					: await WindApi(`/goals/${goal.id}/${action}`, { method: 'POST', body: { amount } });
+				if (goalSession() !== session) return;
+				afterMoney(data, demo);
+				showSuccess(action === 'deposit' ? `В копилку «${goal.title}» отложено ${fmt(amount)} ₽` : `Из копилки снято ${fmt(amount)} ₽`);
 			} catch (e) {
 				showSuccess(e.message, 'error');
 				ok.disabled = false;
@@ -5310,14 +5645,26 @@ if (window.lucide) {
 		close.type = 'button';
 		close.setAttribute('aria-label', 'Закрыть копилку и вернуть деньги на баланс');
 		close.addEventListener('click', async () => {
+			const session = goalSession();
+			if (!session) return;
 			if (close.dataset.armed !== '1') {
 				close.dataset.armed = '1';
 				close.textContent = 'Закрыть?';
 				window.setTimeout(() => { close.dataset.armed = ''; close.textContent = '×'; }, 3000);
 				return;
 			}
-			try { afterMoney(await WindApi(`/goals/${goal.id}`, { method: 'DELETE' })); showSuccess('Копилка закрыта, деньги вернулись на баланс'); }
-			catch (e) { showSuccess(e.message, 'error'); }
+			close.disabled = true;
+			try {
+				const demo = session === 'demo';
+				const data = demo ? changeDemoGoal(goal.id, 'close')
+					: await WindApi(`/goals/${goal.id}`, { method: 'DELETE' });
+				if (goalSession() !== session) return;
+				afterMoney(data, demo);
+				showSuccess('Копилка закрыта, деньги вернулись на баланс');
+			} catch (e) {
+				close.disabled = false;
+				showSuccess(e.message, 'error');
+			}
 		});
 		head.append(icon, title, close);
 
@@ -5353,31 +5700,78 @@ if (window.lucide) {
 		if (window.lucide) window.lucide.createIcons();
 	};
 
+	const showGoalForm = (show) => {
+		form.hidden = !show;
+		toggle.setAttribute('aria-expanded', String(show));
+	};
 	const load = async () => {
-		if (!authed()) { empty('Копилки доступны после входа в аккаунт.'); return; }
-		try { render(await WindApi('/goals')); } catch (e) { empty('Не удалось загрузить копилки.'); }
+		const session = goalSession(), demo = session === 'demo';
+		toggle.hidden = !session;
+		description.textContent = demo ? 'Попробуй отложить виртуальные рубли на свою цель' : 'План накоплений к выбранной дате';
+		const deadline = form.querySelector('#goal-deadline');
+		deadline.min = new Date().toLocaleDateString('sv-SE');
+		if (demo) {
+			render(demoGoalData());
+			return;
+		}
+		if (toggle.hidden) {
+			showGoalForm(false);
+			empty('Копилки доступны после входа в аккаунт.');
+			return;
+		}
+		try {
+			const data = await WindApi('/goals');
+			if (goalSession() === session) render(data);
+		} catch {
+			if (goalSession() === session) empty('Не удалось загрузить копилки.');
+		}
 	};
 
 	toggle?.addEventListener('click', () => {
-		if (!authed()) { showSuccess('Войди в аккаунт, чтобы создать копилку', 'error'); return; }
-		form.hidden = !form.hidden;
+		if (!goalSession()) return;
+		showGoalForm(form.hidden);
 		if (!form.hidden) form.querySelector('#goal-title').focus();
+	});
+	document.getElementById('demo-goal-shortcut').addEventListener('click', () => {
+		if (!isDemoPreview()) return;
+		showGoalForm(true);
+		form.querySelector('#goal-title').focus();
 	});
 	form.addEventListener('submit', async (event) => {
 		event.preventDefault();
-		const deadline = form.querySelector('#goal-deadline').value;
+		const session = goalSession();
+		if (!session) return;
+		const submit = event.submitter || form.querySelector('button[type="submit"]');
+		submit.disabled = true;
 		try {
-			const data = await WindApi('/goals', { method: 'POST', body: {
-				title: form.querySelector('#goal-title').value,
+			const date = form.querySelector('#goal-deadline').value;
+			const values = {
+				title: form.querySelector('#goal-title').value.trim(),
 				target: Number(form.querySelector('#goal-target').value),
-				deadline: deadline ? `${deadline}T23:59:00` : null,
-			} });
+				deadline: date ? `${date}T23:59:00` : null,
+			};
+			if (!values.title) throw new Error('Введи название копилки');
+			let data;
+			if (session === 'demo') {
+				if (demoGoals.length >= 10) throw new Error('Можно вести до 10 копилок одновременно');
+				if (values.deadline && Date.parse(values.deadline) <= Date.now()) throw new Error('Срок должен быть в будущем');
+				data = saveDemoGoals([...demoGoals, {
+					id: crypto.randomUUID(), title: values.title, deadline: values.deadline,
+					targetKop: Math.round(values.target * 100), savedKop: 0,
+				}]);
+			} else {
+				data = await WindApi('/goals', { method: 'POST', body: values });
+			}
+			if (goalSession() !== session) return;
 			form.reset();
-			form.hidden = true;
+			showGoalForm(false);
+			toggle.focus();
 			render(data);
 			showSuccess('Копилка создана');
 		} catch (e) {
 			showSuccess(e.message, 'error');
+		} finally {
+			submit.disabled = false;
 		}
 	});
 	window.addEventListener('wind-auth', load);
@@ -5454,7 +5848,7 @@ if (window.lucide) {
 	};
 
 	const loadHistory = async () => {
-		if (!chart || !authed()) return;
+		if (!chart || !authed() || !document.body.classList.contains('show-investment-profile')) return;
 		try { drawChart((await WindApi(`/invest/history?days=${days}`)).points); }
 		catch (e) { chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.')); }
 	};
@@ -5464,11 +5858,10 @@ if (window.lucide) {
 		loadHistory();
 	}));
 
-	window.addEventListener('wind-auth', () => { loadBoard(); loadHistory(); });
-	window.addEventListener('wind-portfolio', () => { loadBoard(); loadHistory(); });
-	document.querySelector('.nav a[href="#investments"]')?.addEventListener('click', loadBoard);
-	setInterval(() => { if (document.body.dataset.view === 'investments') loadBoard(); }, 120000);
-	loadBoard();
+	const boardVisible = () => document.getElementById('auth-gate').hidden && document.body.dataset.view === 'investments';
+	window.addEventListener('wind-portfolio', () => { if (boardVisible()) { loadBoard(); loadHistory(); } });
+	onAppView(['investments'], (active) => { if (active) { loadBoard(); loadHistory(); } });
+	setInterval(() => { if (!document.hidden && boardVisible()) loadBoard(); }, 120000);
 })();
 
 // ================= АДМИНКА =================
@@ -5527,8 +5920,8 @@ if (window.lucide) {
 (() => {
 	const STEPS = [
 		{ title: 'Привет! Я Винд', text: 'Твой помощник в Wind Finance. За минуту покажу, где баланс, инвестиции, крипта и игры. Можно пропустить и вернуться к обучению в настройках.' },
-		{ view: 'dashboard', target: '.wallet-bar', title: 'Баланс и пополнение', text: 'Здесь твой баланс. «Пополнить» принимает карту или СБП, а «Wind Plus» открывает подписку с расширенной аналитикой.' },
-		{ view: 'dashboard', target: '.focus-card', title: 'Курс валюты', text: 'Здесь видно изменение курса к предыдущему значению. Столбики иллюстрируют динамику.' },
+		{ view: 'dashboard', target: '.wallet-bar', title: 'Баланс', text: 'Здесь видны средства, доступные для сделок в симуляторе и накоплений в копилках.' },
+		{ view: 'dashboard', target: '.stats-card', title: 'Курсы валют', text: 'Выбери пару и посмотри историю курса за 7 или 30 дней. «Рассчитать сумму» откроет эту пару в конвертере.' },
 		{ view: 'dashboard', target: '#goals', title: 'Копилки', text: 'Поставь цель и срок, например «Отпуск к лету», и я посчитаю, сколько откладывать каждый месяц.' },
 		{ view: 'investments', target: '.asset-grid', title: 'Инвестиции', text: 'Индекс, акции, фонды и облигации по реальным котировкам Мосбиржи. Покупки идут с виртуального баланса: это тренажёр, учиться можно без риска.' },
 		{ view: 'investments', target: '[data-open-investment-profile]', title: 'Твой портфель', text: 'Здесь доходность, история сделок и график стоимости портфеля. А в «Топ недели» видно, кто из игроков в плюсе.' },
@@ -5538,7 +5931,7 @@ if (window.lucide) {
 		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Четыре игры про рынок: копи опыт, выполняй задание дня и собирай награды. Заодно научишься читать графики и распознавать мошенников.' },
 		{ view: 'dashboard', target: '.agent-pet', title: 'А это я', text: 'Нажми на меня в любой момент: покажу свежие новости по России, США, крипте и экономике. Значок с цифрой значит, что есть непрочитанные.' },
 		{ view: 'dashboard', target: '.profile-trigger', title: 'Профиль и настройки', text: 'Тема, основная валюта, двухфакторная защита и твой ID. Там же можно пройти это обучение заново.' },
-		{ view: 'dashboard', title: 'Готово!', text: 'Ты знаешь всё самое важное. Начни с пополнения или загляни в «Инвестиции»: это самый живой раздел.', last: true },
+		{ view: 'dashboard', title: 'Готово!', text: 'Попробуй создать копилку или загляни в «Инвестиции».', last: true },
 	];
 	const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 	let root = null, spot = null, card = null, idx = 0, user = null, startedThisLoad = false, raf = 0;
@@ -5689,7 +6082,7 @@ if (window.lucide) {
 
 	window.addEventListener('wind-auth', (e) => {
 		user = e.detail || null;
-		if (startedThisLoad || !user) return;
+		if (startedThisLoad || !user || isDemo(user) || inTelegram) return;
 		let done = false;
 		try { done = tourStorage(user).getItem(doneKey(user)) === '1'; } catch (err) { done = false; }
 		if (!done) {
@@ -5697,11 +6090,76 @@ if (window.lucide) {
 			window.setTimeout(() => {
 				const gate = document.getElementById('auth-gate');
 				if (gate && !gate.hidden) { startedThisLoad = false; return; }
-				start();
+				if (welcomeDialog.open) welcomeDialog.addEventListener('close', () => { if (gate.hidden) start(); }, { once: true });
+				else start();
 			}, 900);
 		}
 	});
 	window.addEventListener('wind-logout', () => { startedThisLoad = false; end(false); });
 	document.getElementById('tour-restart')?.addEventListener('click', start);
-	window.WindTour = { start };
+	window.WindTour = { start, close: () => end(true) };
 })();
+
+const welcomeDialog = document.getElementById('wind-welcome');
+const dismissWelcome = () => {
+	if (!welcomeDialog.open || welcomeDialog.hasAttribute('data-closing')) return;
+	if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		welcomeDialog.close();
+		return;
+	}
+	welcomeDialog.setAttribute('data-closing', '');
+	window.setTimeout(() => welcomeDialog.close(), 240);
+};
+welcomeDialog.querySelectorAll('[data-close-welcome]').forEach((button) => button.addEventListener('click', dismissWelcome));
+welcomeDialog.addEventListener('cancel', (event) => {
+	event.preventDefault();
+	dismissWelcome();
+});
+window.requestAnimationFrame(() => {
+	if (authMode === 'reset' || typeof welcomeDialog.showModal !== 'function') return;
+	try {
+		if (sessionStorage.getItem('wind_welcome_seen')) return;
+	} catch { /* Приветствие всё равно можно открыть. */ }
+	const mascot = document.querySelector('.agent-pet').getBoundingClientRect();
+	welcomeDialog.style.setProperty('--welcome-x', `${mascot.left + mascot.width / 2}px`);
+	welcomeDialog.style.setProperty('--welcome-y', `${mascot.top + mascot.height / 2}px`);
+	welcomeDialog.showModal();
+	try { sessionStorage.setItem('wind_welcome_seen', '1'); } catch { /* Хранилище недоступно. */ }
+});
+
+if (inTelegram && tg.BackButton && tg.isVersionAtLeast?.('6.1')) {
+	const openModal = () => document.querySelector('.modal:not([hidden])');
+	const overlayOpen = () => welcomeDialog.open || openModal() || document.body.classList.contains('agent-open')
+		|| document.body.classList.contains('tour-on');
+	const syncBackButton = () => {
+		if (overlayOpen() || (authGate.hidden && document.body.dataset.view !== 'dashboard')) tg.BackButton.show();
+		else tg.BackButton.hide();
+	};
+	tg.BackButton.onClick(() => {
+		if (welcomeDialog.open) {
+			dismissWelcome();
+			return;
+		}
+		const modal = openModal();
+		if (modal) {
+			closeModal(modal);
+			return;
+		}
+		if (document.body.classList.contains('tour-on')) {
+			window.WindTour.close();
+			return;
+		}
+		if (document.body.classList.contains('agent-open')) {
+			setAgentOpen(false);
+			return;
+		}
+		const view = document.body.classList.contains('show-investment-profile') ? 'investments' : 'dashboard';
+		window.history.replaceState(null, '', `#${view}`);
+		setAppView(view);
+	});
+	const backObserver = new MutationObserver(syncBackButton);
+	backObserver.observe(document.body, { attributes: true, attributeFilter: ['data-view', 'class'] });
+	[authGate, ...modals].forEach((node) => backObserver.observe(node, { attributes: true, attributeFilter: ['hidden'] }));
+	backObserver.observe(welcomeDialog, { attributes: true, attributeFilter: ['open'] });
+	syncBackButton();
+}

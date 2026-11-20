@@ -1,2 +1,3 @@
 # генерируется workflow деплоя из переменной BACKEND_URL
 sitefinance/config.js
+frontend/tests/__pycache__/

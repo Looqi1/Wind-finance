@@ -112,6 +112,41 @@ def test_exchange_uses_latest_rate_snapshot():
     assert response.json()["fee_pct"] == "1.0"
 
 
+def test_cbr_history_normalizes_nominal_and_caches_sorted_dates(monkeypatch):
+    from datetime import datetime, timedelta
+    from functools import partial
+
+    import httpx
+    from app import main
+
+    requests = []
+
+    def cbr_response(request):
+        requests.append(request)
+        assert request.url.path == "/scripts/XML_dynamic.asp"
+        assert request.url.params["VAL_NM_RQ"] == "R01375"
+        start = datetime.strptime(request.url.params["date_req1"], "%d/%m/%Y").date()
+        end = datetime.strptime(request.url.params["date_req2"], "%d/%m/%Y").date()
+        assert end - start == timedelta(days=29)
+        return httpx.Response(200, content=f"""<?xml version="1.0" encoding="windows-1251"?>
+<ValCurs name="Курс валюты">
+ <Record Date="{end:%d.%m.%Y}"><Nominal>10</Nominal><Value>125,0000</Value></Record>
+ <Record Date="{start:%d.%m.%Y}"><Nominal>1</Nominal><Value>12,1000</Value></Record>
+</ValCurs>""".encode("cp1251"))
+
+    transport = httpx.MockTransport(cbr_response)
+    monkeypatch.setattr(main.httpx, "AsyncClient", partial(httpx.AsyncClient, transport=transport))
+    response = client.get("/market/rates/history?asset=CNY")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset"] == "CNY"
+    assert [point["value"] for point in payload["points"]] == [12.1, 12.5]
+    assert payload["points"][0]["date"] < payload["points"][1]["date"] == payload["end"]
+    assert client.get("/market/rates/history?asset=CNY").json() == payload
+    assert client.get("/market/rates/history?asset=BTC").status_code == 422
+    assert len(requests) == 1
+
+
 def test_totp_secret_is_encrypted_at_rest():
     token = register("totp@example.com", "totp-user")
     headers = {"Authorization": "Bearer " + token}
@@ -366,3 +401,92 @@ def test_partner_clicks_are_counted_for_admin(monkeypatch):
     monkeypatch.setattr(main, "ADMIN_USER_IDS", {me["id"]})
     partner = client.get("/admin/stats", headers=headers).json()["partner"]
     assert partner["signup_30d"] == 1 and partner["trade_30d"] == 1 and partner["users_30d"] == 1
+
+
+@pytest.mark.parametrize("offer,price,expected_balance", [
+    ("topup_1000", 75, 25500),
+    ("month", 125, 24500),
+])
+def test_stars_checkout_fulfills_paid_invoice_once(monkeypatch, offer, price, expected_balance):
+    from datetime import timedelta
+    from app import main
+
+    monkeypatch.setattr(main, "TG_BOT_TOKEN", "mock-bot-token")
+    monkeypatch.setattr(main, "TG_WEBHOOK_SECRET", "mock-webhook-secret")
+    monkeypatch.setattr(main, "STARS_PRICES", {offer: price})
+    calls = []
+
+    async def bot_request(method, payload):
+        calls.append((method, payload))
+        return "https://t.me/$test-invoice" if method == "createInvoiceLink" else True
+
+    monkeypatch.setattr(main, "stars_bot_request", bot_request)
+    headers = auth(register("stars@example.com", "stars-user"))
+    user_id = client.get("/auth/me", headers=headers).json()["id"]
+    initial_until = main.now_naive() + timedelta(days=7)
+    with SessionLocal() as db:
+        user = db.get(main.User, user_id)
+        user.tg_id = 123456
+        user.plus_plan = "trial"
+        user.plus_until = initial_until
+        db.commit()
+
+    assert client.get("/payments/stars/catalog", headers=headers).json() == {"prices": {offer: price}}
+    invoice = client.post("/payments/stars/invoice", headers=headers, json={"offer": offer})
+    assert invoice.status_code == 201
+    payment_id = invoice.json()["payment_id"]
+    invoice_body = calls[-1][1]
+    assert invoice_body["currency"] == "XTR"
+    assert invoice_body["payload"] == payment_id
+    assert invoice_body["prices"][0]["amount"] == price
+
+    webhook = {"X-Telegram-Bot-Api-Secret-Token": "mock-webhook-secret"}
+    details = {"invoice_payload": payment_id, "total_amount": price, "currency": "XTR"}
+    query = {"id": "checkout", "from": {"id": 123456}, **details}
+    wrong_payer = {**query, "from": {"id": 999999}}
+    assert client.post("/telegram/webhook", json={"pre_checkout_query": query}).status_code == 403
+    assert client.post("/telegram/webhook", headers=webhook, json={"pre_checkout_query": wrong_payer}).status_code == 200
+    assert calls[-1][1]["ok"] is False
+    assert client.post("/telegram/webhook", headers=webhook, json={"pre_checkout_query": query}).status_code == 200
+    assert calls[-1][1]["ok"] is True
+    assert client.post("/telegram/webhook", headers=webhook, json={"pre_checkout_query": query}).status_code == 200
+    assert calls[-1][1]["ok"] is True
+    assert client.post("/telegram/webhook", headers=webhook, json={
+        "pre_checkout_query": {**query, "id": "second-checkout"},
+    }).status_code == 200
+    assert calls[-1][1]["ok"] is False
+    assert client.get("/wallet", headers=headers).json()["balance"] == 24500
+
+    successful = {**details, "telegram_payment_charge_id": "test-charge"}
+    wrong_amount = {**successful, "total_amount": price + 1}
+    assert client.post("/telegram/webhook", headers=webhook, json={
+        "message": {"from": query["from"], "successful_payment": wrong_amount},
+    }).status_code == 400
+    confirmation = {"message": {"from": query["from"], "successful_payment": successful}}
+    for _ in range(2):
+        assert client.post("/telegram/webhook", headers=webhook, json=confirmation).status_code == 200
+    payment = client.get(f"/payments/{payment_id}", headers=headers).json()
+    assert payment["status"] == "succeeded"
+    assert payment["balance"] == expected_balance
+
+    with SessionLocal() as db:
+        user = db.get(main.User, user_id)
+        extra = timedelta(days=30 if offer == "month" else 0)
+        assert user.plus_until == initial_until + extra
+        assert user.plus_plan == ("month" if offer == "month" else "trial")
+
+
+def test_stars_catalog_excludes_wallet_topups_when_live_trading_is_enabled(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main, "TG_BOT_TOKEN", "mock-bot-token")
+    monkeypatch.setattr(main, "TG_WEBHOOK_SECRET", "mock-webhook-secret")
+    monkeypatch.setattr(main, "STARS_PRICES", {"topup_1000": 75, "month": 125})
+    monkeypatch.setattr(main, "BYBIT_LIVE_TRADING", True)
+    headers = auth(register("live@example.com", "live-user"))
+    user_id = client.get("/auth/me", headers=headers).json()["id"]
+    with SessionLocal() as db:
+        db.get(main.User, user_id).tg_id = 123456
+        db.commit()
+    assert client.get("/payments/stars/catalog", headers=headers).json() == {"prices": {"month": 125}}
+    assert client.post("/payments/stars/invoice", headers=headers, json={"offer": "topup_1000"}).status_code == 503
