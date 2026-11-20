@@ -1598,10 +1598,10 @@ const updateFocusCard = (currencyCode) => {
 		focusTrend.classList.add(config.trend);
 	}
 	// форма столбиков следует за направлением курса: при падении график снижается
+	focusCard.dataset.trend = config.trend;
 	const shape = config.trend === 'negative' ? [...config.chart].reverse() : config.chart;
 	chartBars.forEach((bar, index) => {
 		bar.style.height = `${shape[index] || 40}%`;
-		bar.style.background = config.trend === 'positive' ? 'rgba(36,120,91,.52)' : 'rgba(203,101,85,.52)';
 	});
 };
 
@@ -1615,7 +1615,9 @@ const syncCurrencyButtons = () => {
 	});
 	const favoriteCards = document.querySelectorAll('.favorite-currency-card');
 	favoriteCards.forEach((card) => {
-		card.classList.toggle('selected', card.dataset.favoriteCurrency === sourceValue);
+		const selected = card.dataset.favoriteCurrency === sourceValue;
+		card.classList.toggle('selected', selected);
+		card.setAttribute('aria-pressed', String(selected));
 	});
 	updateFocusCard(sourceValue);
 };

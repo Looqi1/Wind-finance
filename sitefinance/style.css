@@ -227,23 +227,19 @@ body.agent-open .news-page > #learn-news { transition-delay: .26s; }
 	.agent-pet, .agent-pet-face, .agent-pet-face::before, .agent-pet-face::after, .agent-pet-dot, .agent-pet-aura, .agent-character-glow, .agent-character-body, .agent-character-spark { animation: none; }
 	.agent-backdrop, .news-page, .news-page > * { transition-duration: .01ms; }
 }
-body[data-view="investments"] main > .wallet-bar,
 body[data-view="investments"] main > .hero-grid,
 body[data-view="investments"] main > .content-grid,
 body[data-view="investments"] main > #crypto,
-body[data-view="settings"] main > .wallet-bar,
 body[data-view="settings"] main > .hero-grid,
 body[data-view="settings"] main > .content-grid,
 body[data-view="settings"] main > #crypto,
 body[data-view="settings"] main > #investments,
-body[data-view="crypto"] main > .wallet-bar,
 body[data-view="crypto"] main > .hero-grid,
 body[data-view="crypto"] main > .content-grid,
 body[data-view="crypto"] main > #investments,
 body[data-view="dashboard"] main > #investments,
 body[data-view="dashboard"] main > #crypto,
 body[data-view="dashboard"] main > #game,
-body[data-view="converter"] main > .wallet-bar,
 body[data-view="converter"] main > .hero-grid,
 body[data-view="converter"] main > #investments,
 body[data-view="converter"] main > #crypto,
@@ -254,7 +250,6 @@ body[data-view="settings"] #investments,
 body[data-view="settings"] #crypto { display: none; }
 body[data-view="converter"] main > #converter { display: block; }
 body[data-view="converter"] main > .content-grid { grid-template-columns: minmax(0, 720px); margin-top: 0; }
-body[data-view="game"] main > .wallet-bar,
 body[data-view="game"] main > .hero-grid,
 body[data-view="game"] main > .content-grid,
 body[data-view="game"] main > #investments,
@@ -262,7 +257,6 @@ body[data-view="game"] main > #crypto,
 body[data-view="game"] main > #converter { display: none; }
 body[data-view="game"] main > #game { display: block; }
 body[data-view="settings"] main > #settings { display: block; }
-body.show-investment-profile main > .wallet-bar,
 body.show-investment-profile main > .hero-grid,
 body.show-investment-profile main > .content-grid,
 body.show-investment-profile main > #investments,
@@ -2858,4 +2852,185 @@ main > .market-section > .section-heading h2 { display: block; }
 	.wallet-actions .button { min-width: 0; }
 	.focus-illustration { width: 48%; }
 	.section-heading { flex-wrap: wrap; }
+}
+
+/* Финансовый обзор */
+:root {
+	--bg-shell: #f2f5ef;
+	--sidebar-bg: #fbfcf9;
+	--muted: #53685e;
+	--line: #dce6dd;
+	--radius-card: 20px;
+	--shadow-card: 0 4px 16px rgba(20, 52, 39, .05);
+	--wind-surface:
+		repeating-linear-gradient(130deg, transparent 0 24px, rgba(200, 248, 214, .07) 24px 25px),
+		radial-gradient(ellipse at 92% 0%, #2b604a, transparent 68%),
+		#102e24;
+	--wind-white: #f3fff5;
+	--wind-mint: #bcefc9;
+}
+
+body { background-image: none; }
+body.dark-theme { color-scheme: dark; }
+.app { grid-template-columns: 212px minmax(0, 1fr); }
+main { min-width: 0; }
+.nav a { color: var(--muted); }
+.nav a.active, body.dark-theme .nav a.active {
+	background: var(--pill-up-bg);
+	color: var(--green);
+	box-shadow: none;
+}
+.brand-mark { background: #176447; }
+
+.hero-grid {
+	grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr);
+	grid-template-areas: 'wallet rates' 'pair rates';
+	gap: 16px;
+}
+.hero-grid .wallet-bar { grid-area: wallet; }
+.hero-grid .focus-card { grid-area: pair; }
+.hero-grid .stats-card { grid-area: rates; }
+
+.hero-grid .wallet-bar,
+.auth-showcase,
+body.dark-theme .auth-showcase {
+	background: var(--wind-surface);
+	color: var(--wind-white);
+	border-color: #315f4d;
+}
+.hero-grid .wallet-bar {
+	align-items: flex-start;
+	flex-direction: column;
+	gap: 16px;
+	min-width: 0;
+	margin: 0;
+	padding: clamp(16px, 2vw, 26px);
+}
+.wallet-balance { gap: 5px; }
+.hero-grid .wallet-balance > strong {
+	color: var(--wind-white);
+	font-size: clamp(1.75rem, 4vw, 3.25rem);
+	line-height: 1.05;
+	overflow-wrap: anywhere;
+}
+.hero-grid :is(.wallet-label, .wallet-caption, .balance-item small) { color: var(--wind-mint); }
+.hero-grid .balance-item {
+	background: rgba(255, 255, 255, .1);
+	border-color: rgba(255, 255, 255, .2);
+	overflow-wrap: anywhere;
+}
+.hero-grid .wallet-actions .button {
+	min-width: 0;
+	border: 1px solid #67917c;
+	background: #234b3b;
+	color: var(--wind-white);
+	box-shadow: none;
+}
+.hero-grid .wallet-actions .button-light {
+	border-color: var(--wind-mint);
+	background: var(--wind-mint);
+	color: #103324;
+}
+.hero-grid .wallet-actions .button:focus-visible { outline-color: var(--wind-white); }
+
+.focus-card {
+	min-height: 0;
+	padding: clamp(16px, 2vw, 26px);
+	border-color: var(--line);
+	background: linear-gradient(125deg, #f4fcf5, #dcf1e4);
+	--chart-bar: #33946e;
+	--chart-bar-end: #176447;
+}
+body.dark-theme .hero-grid .focus-card {
+	background: linear-gradient(125deg, #142a23, #203d30);
+	--chart-bar: #55b890;
+	--chart-bar-end: #a0edbc;
+}
+.hero-grid .focus-card[data-trend="negative"] {
+	--chart-bar: #c87868;
+	--chart-bar-end: #e49182;
+}
+.focus-card::after { display: none; }
+.focus-illustration { width: 48%; opacity: .82; }
+.focus-tag { margin-bottom: 7px; }
+.focus-card h2 { margin-bottom: 6px; font-size: clamp(1.625rem, 3vw, 2.5rem); }
+.focus-card p { max-width: 56%; margin-bottom: 12px; line-height: 1.35; }
+.hero-grid .focus-card .positive { color: #176447; }
+.hero-grid .focus-card .negative { color: #a43f31; }
+body.dark-theme .hero-grid .focus-card .positive { color: #a0edbc; }
+body.dark-theme .hero-grid .focus-card .negative { color: #ffad9a; }
+.focus-card .chart { width: 50%; height: 42px; margin-top: 0; }
+.focus-card .chart i { min-width: 0; background: var(--chart-bar); }
+.focus-card .chart i:last-child { background: var(--chart-bar-end); }
+.focus-card .chart-labels { width: auto; max-width: 56%; }
+
+.stats-card {
+	container: market / inline-size;
+	min-width: 0;
+	padding: clamp(16px, 2vw, 24px);
+	border-color: var(--line);
+}
+.stats-card .stat-row { min-height: 62px; }
+.stats-head { margin-bottom: 16px; }
+.stats-head h3 { font-size: 1.25rem; }
+.stat-label small { font-size: .8125rem; }
+.stats-link { min-height: 44px; margin-top: 16px; border-radius: 12px; }
+
+@container market (inline-size < 270px) {
+	.stats-head { display: grid; gap: 4px; }
+	.stats-card .stat-row { gap: 8px; }
+	.stats-card .stat-label { gap: 8px; }
+	.stats-card .asset-icon { width: 32px; height: 32px; }
+}
+
+#rates { container: favorites / inline-size; }
+#rates .course-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#rates .favorite-currency-card {
+	gap: 10px;
+	border-color: var(--line);
+	background: var(--card);
+}
+#rates .favorite-currency-card.selected {
+	border-color: var(--green);
+	box-shadow: inset 0 0 0 1px var(--green);
+}
+#rates .rate-change { font-size: .8125rem; }
+#rates .favorite-currency-card:focus-visible {
+	outline: 2px solid var(--green);
+	outline-offset: 3px;
+}
+
+@container favorites (inline-size < 50rem) {
+	#rates .course-list { grid-template-columns: minmax(0, 1fr); }
+	#rates .favorite-currency-card .mini-chart { height: 24px; }
+}
+
+.auth-showcase .auth-brand,
+.auth-showcase .auth-showcase-copy h1,
+.auth-showcase .auth-mini-portfolio > strong { color: var(--wind-white); }
+.auth-showcase .auth-showcase-copy > p:last-child,
+.auth-showcase :is(.auth-mini-head, .auth-mini-assets, .auth-mini-assets b, .auth-mini-gain) { color: var(--wind-mint); }
+.auth-showcase .auth-mini-portfolio {
+	border-color: #67917c;
+	background: rgba(12, 35, 27, .66);
+}
+.auth-showcase .auth-sparkline { border-color: rgba(188, 239, 201, .25); }
+.auth-showcase .auth-sparkline i { background: #599778; }
+.auth-showcase .auth-sparkline i:last-child { background: var(--wind-mint); }
+
+@media (max-width: 850px) {
+	.app { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+	.hero-grid { grid-template: 'wallet' 'pair' 'rates' / minmax(0, 1fr); }
+	.content-grid { margin-top: 24px; }
+	.focus-card p, .focus-card .chart-labels { max-width: 63%; }
+}
+@media (max-width: 620px) {
+	.nav a.active, body.dark-theme .nav a.active { border-radius: 12px; }
+	.nav a { margin-block: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.hero-grid .chart i, #rates .favorite-currency-card { transition: none; }
+	#rates .favorite-currency-card:is(:hover, :focus-visible) { transform: none; }
 }
