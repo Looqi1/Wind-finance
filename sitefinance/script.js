@@ -1557,7 +1557,7 @@ const pairSceneConfig = {
 		pair: 'USD / RUB',
 		unit: 'за 1 доллар',
 		heading: '92,48 ₽',
-		changeText: '▲ 0,34 ₽ · +0,37% за сегодня',
+		changeText: '▲ 0,34 ₽ · +0,37% · пример',
 		trend: 'positive',
 		chart: [34, 40, 36, 48, 52, 45, 68, 76],
 	},
@@ -1565,7 +1565,7 @@ const pairSceneConfig = {
 		pair: 'EUR / RUB',
 		unit: 'за 1 евро',
 		heading: '100,21 ₽',
-		changeText: '▼ 0,12 ₽ · −0,12% за сегодня',
+		changeText: '▼ 0,12 ₽ · −0,12% · пример',
 		trend: 'negative',
 		chart: [28, 30, 32, 35, 43, 38, 44, 42],
 	},
@@ -1573,7 +1573,7 @@ const pairSceneConfig = {
 		pair: 'CNY / RUB',
 		unit: 'за 1 юань',
 		heading: '12,86 ₽',
-		changeText: '▲ 0,08 ₽ · +0,08% за сегодня',
+		changeText: '▲ 0,08 ₽ · +0,08% · пример',
 		trend: 'positive',
 		chart: [20, 24, 27, 26, 38, 36, 42, 50],
 	},
@@ -1949,11 +1949,6 @@ const updatePasswordMeter = () => {
 };
 passwordField.addEventListener('input', updatePasswordMeter);
 
-document.querySelector('[data-auth-tip]')?.addEventListener('click', (event) => {
-	const chip = event.currentTarget;
-	if (authHelperText) authHelperText.textContent = chip.dataset.authTip;
-	authHelper?.classList.remove('is-hidden');
-});
 document.querySelector('#auth-helper-close')?.addEventListener('click', () => authHelper?.classList.add('is-hidden'));
 
 document.querySelector('.auth-showcase')?.addEventListener('pointermove', (event) => {
@@ -5176,7 +5171,12 @@ if (cryptoChartElement && window.LightweightCharts) {
 	};
 	const loadRates = async () => {
 		try {
-			const r = (await WindApi('/market/rates')).rates;
+			const { rates: r, date } = await WindApi('/market/rates');
+			const source = document.getElementById('market-source');
+			const rateDate = typeof date === 'string' ? date.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+			if (source && ['USD', 'EUR', 'CNY'].every((code) => r[code])) {
+				source.textContent = rateDate ? `ЦБ РФ · ${rateDate[3]}.${rateDate[2]}.${rateDate[1]}` : 'ЦБ РФ';
+			}
 			['USD', 'EUR', 'CNY', 'GBP', 'AED'].forEach((c) => { if (r[c]) CURRENCY_RATES[c] = r[c].value; });
 			const sign = (v) => (v >= 0 ? '+' : '−');
 			document.querySelectorAll('.favorite-currency-card').forEach((card) => {
@@ -5190,7 +5190,7 @@ if (cryptoChartElement && window.LightweightCharts) {
 				ch.classList.toggle('negative', pct < 0);
 				if (pairSceneConfig[c]) Object.assign(pairSceneConfig[c], {
 					heading: `${fmt2(x.value)} ₽`,
-					changeText: `${diff >= 0 ? '▲' : '▼'} ${fmt2(Math.abs(diff))} ₽ · ${sign(pct)}${fmt2(Math.abs(pct))}% за сегодня`,
+					changeText: `${diff >= 0 ? '▲' : '▼'} ${fmt2(Math.abs(diff))} ₽ · ${sign(pct)}${fmt2(Math.abs(pct))}% к предыдущему курсу`,
 					trend: diff >= 0 ? 'positive' : 'negative',
 				});
 			});
@@ -5521,12 +5521,12 @@ if (window.lucide) {
 	document.getElementById('admin-refresh')?.addEventListener('click', load);
 })();
 
-// ================= АГЕНТ-ГИД: обучение по сайту при первом входе (в демо — каждый раз) =================
+// ================= АГЕНТ-ГИД: обучение по сайту при первом входе =================
 (() => {
 	const STEPS = [
 		{ title: 'Привет! Я Винд', text: 'Твой помощник в Wind Finance. За минуту покажу, где баланс, инвестиции, крипта и игры. Можно пропустить и вернуться к обучению в настройках.' },
-		{ view: 'dashboard', target: '.wallet-bar', title: 'Баланс и пополнение', text: 'Здесь твой баланс. «Пополнить» принимает карту или СБП, а «Подписка» открывает Wind Plus с расширенной аналитикой.' },
-		{ view: 'dashboard', target: '.focus-card', title: 'Курс дня', text: 'Главная валютная пара с графиком за день. Курсы обновляются по данным ЦБ и рынка.' },
+		{ view: 'dashboard', target: '.wallet-bar', title: 'Баланс и пополнение', text: 'Здесь твой баланс. «Пополнить» принимает карту или СБП, а «Wind Plus» открывает подписку с расширенной аналитикой.' },
+		{ view: 'dashboard', target: '.focus-card', title: 'Курс валюты', text: 'Здесь видно изменение курса к предыдущему значению. Столбики иллюстрируют динамику.' },
 		{ view: 'dashboard', target: '#goals', title: 'Копилки', text: 'Поставь цель и срок, например «Отпуск к лету», и я посчитаю, сколько откладывать каждый месяц.' },
 		{ view: 'investments', target: '.asset-grid', title: 'Инвестиции', text: 'Индекс, акции, фонды и облигации по реальным котировкам Мосбиржи. Покупки идут с виртуального баланса: это тренажёр, учиться можно без риска.' },
 		{ view: 'investments', target: '[data-open-investment-profile]', title: 'Твой портфель', text: 'Здесь доходность, история сделок и график стоимости портфеля. А в «Топ недели» видно, кто из игроков в плюсе.' },
@@ -5542,6 +5542,7 @@ if (window.lucide) {
 	let root = null, spot = null, card = null, idx = 0, user = null, startedThisLoad = false, raf = 0;
 
 	const isDemo = (u) => Boolean(u) && (u.id === 0 || String(u.email || '').toLowerCase() === 'demo@example.com');
+	const tourStorage = (u) => isDemo(u) ? sessionStorage : localStorage;
 	const doneKey = (u) => `wind_tour_done_${u && u.id != null ? u.id : 'guest'}`;
 	const visible = (el) => el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
 
@@ -5648,7 +5649,9 @@ if (window.lucide) {
 
 	const end = (markDone) => {
 		if (!root) return;
-		if (markDone && user && !isDemo(user)) { try { localStorage.setItem(doneKey(user), '1'); } catch (e) { /* без хранилища покажем снова */ } }
+		if (markDone && user) {
+			try { tourStorage(user).setItem(doneKey(user), '1'); } catch (e) { /* без хранилища покажем снова */ }
+		}
 		root.remove();
 		root = null;
 		document.body.classList.remove('tour-on');
@@ -5686,8 +5689,8 @@ if (window.lucide) {
 		user = e.detail || null;
 		if (startedThisLoad || !user) return;
 		let done = false;
-		try { done = localStorage.getItem(doneKey(user)) === '1'; } catch (err) { done = false; }
-		if (isDemo(user) || !done) {
+		try { done = tourStorage(user).getItem(doneKey(user)) === '1'; } catch (err) { done = false; }
+		if (!done) {
 			startedThisLoad = true;
 			window.setTimeout(() => {
 				const gate = document.getElementById('auth-gate');
