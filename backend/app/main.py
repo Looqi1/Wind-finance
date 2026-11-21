@@ -43,7 +43,7 @@ from .cbr_history import CBR_HISTORY_URL, CBR_TIMEZONE, history_params, parse_hi
 # ---------------- настройки ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONT_DIR = BASE_DIR.parent / "sitefinance"
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'windfinance2.db'}")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'windfinance-local.db'}")
 ENV = os.getenv("WINDFINANCE_ENV", "dev")
 SECRET_KEY = os.getenv("WINDFINANCE_SECRET_KEY") or ("dev-only-change-this-secret" if ENV == "dev" else "")
 if not SECRET_KEY:

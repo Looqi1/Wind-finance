@@ -7,12 +7,14 @@ FastAPI backend for authentication, server-side asset balances, exchange operati
 ```bash
 cd backend
 python3 -m pip install -r requirements.txt
-WINDFINANCE_SECRET_KEY="$(openssl rand -hex 32)" \
-WINDFINANCE_ENV=dev \
-uvicorn app.main:app --reload --host 0.0.0.0 --port 5500
+export WINDFINANCE_ENV=dev WINDFINANCE_SIMULATOR=1 WINDFINANCE_LIVE_TRADING=0
+python3 -m alembic upgrade head
+python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5500
 ```
 
-Interactive API docs: `http://localhost:5500/docs`.
+Open the site at `http://localhost:5500/` and the API docs at
+`http://localhost:5500/docs`. The app and Alembic use the same local database,
+`backend/windfinance-local.db`. Set `DATABASE_URL` to use a different database.
 
 ## Free Render demo
 

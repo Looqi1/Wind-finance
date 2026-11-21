@@ -1,4 +1,5 @@
 windfinance.db
+windfinance-local.db*
 __pycache__/
 *.py[cod]
 .env
