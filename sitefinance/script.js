@@ -711,6 +711,14 @@ const paintViewTitle = (view) => {
 };
 
 // сводка над инвест-карточками повторяет значения из профиля портфеля
+const investmentFilters = document.querySelectorAll('[data-invest-filter]');
+investmentFilters.forEach(button => button.addEventListener('click', () => {
+	investmentFilters.forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+	document.querySelectorAll('#investments .invest-card').forEach(card => {
+		card.hidden = button.dataset.investFilter !== 'all' && card.dataset.kind !== button.dataset.investFilter;
+	});
+}));
+
 const syncInvSummary = () => {
 	const source = document.querySelectorAll('#investment-profile .portfolio-summary strong');
 	document.querySelectorAll('[data-inv-summary]').forEach((tile) => {
@@ -5746,6 +5754,7 @@ if (inTelegram) {
 			document.querySelectorAll('.invest-card').forEach((card) => {
 				const x = map[card.dataset.assetCode];
 				if (!x || x.price == null) return; // вне торгов биржа может не отдавать значения
+				card.querySelector('.asset-gain').textContent = 'Данные Мосбиржи';
 				card.dataset.price = String(x.price);
 				const value = card.querySelector('.asset-value');
 				if (value) value.textContent = card.dataset.assetCode === 'IMOEX' ? `${fmt2(x.price)} пт.` : `${Number(x.price).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} ₽`;

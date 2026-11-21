@@ -3341,3 +3341,23 @@ button.courier-tile { cursor: pointer; touch-action: manipulation; }
 @media(prefers-reduced-motion: reduce) {
 	.courier-plane, [data-kind="wind"] .courier-glyph { transition: none; }
 }
+
+.invest-overview { padding:clamp(16px,3vw,32px); border-radius:22px; color:#f2fff4; background:repeating-radial-gradient(ellipse at 110% -100%,transparent 0 24px,#bceec41c 25px,transparent 26px 39px),linear-gradient(115deg,#112f2a,#285b48); }
+.invest-overview header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.invest-overview h2,.catalog-title { margin:0; font-size:1.25rem; }
+.invest-overview .portfolio-link { min-height:44px; padding:0 14px; border:1px solid #85b29a; background:#d4f1ce; color:#173d30; border-radius:12px; }
+.invest-overview .inv-summary { margin:18px 0 0; }
+.invest-overview .inv-summary-tile { padding:0; border:0; background:transparent; box-shadow:none; color:inherit; }
+.invest-overview .asset-icon { display:none; }
+.invest-overview .inv-summary-tile span:not(.asset-icon) { color:#c0dccc; font-size:.8rem; letter-spacing:0; text-transform:none; }
+.invest-overview .inv-summary-tile strong { color:inherit; white-space:normal; overflow-wrap:anywhere; }
+.invest-overview .inv-summary-tile:first-child strong { font-size:clamp(1.65rem,4vw,2.6rem); }
+.catalog-title { margin:22px 0 8px; }
+.invest-filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+.invest-filters button { min-height:44px; padding:0 13px; border:1px solid var(--line); border-radius:12px; color:var(--ink); background:var(--card); font:inherit; cursor:pointer; }
+.invest-filters [aria-pressed=true] { background:#225943; color:white; }
+.invest-ticker { color:var(--green); font-size:.8rem; font-weight:750; letter-spacing:.06em; }
+#investments .mini-chart { display:none; }
+#investments .inv-body { display:block; }
+#investments .buy-asset-button { min-height:44px; }
+@media(max-width:420px){#investments .inv-id>.asset-icon { display:none; } #investments .inv-title h3 { overflow-wrap:anywhere; } }

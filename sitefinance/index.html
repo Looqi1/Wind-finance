@@ -177,21 +177,23 @@
 			</section>
 
 			<section class="market-section" id="investments">
-				<div class="section-heading"><div><h2>Инвестиции</h2><p>Твой портфель · доходность за месяц</p></div><button type="button" class="portfolio-link" data-open-investment-profile>Открыть портфель →</button></div>
-				<div class="inv-summary" aria-label="Сводка портфеля">
+				<div class="invest-overview"><header><h2>Учебный портфель</h2><button type="button" class="portfolio-link" data-open-investment-profile>Открыть портфель</button></header><div class="inv-summary" aria-label="Сводка портфеля">
 					<div class="inv-summary-tile"><span class="asset-icon teal"><i data-lucide="wallet"></i></span><div><span>Стоимость портфеля</span><strong data-inv-summary="0">—</strong></div></div>
 					<div class="inv-summary-tile"><span class="asset-icon amber"><i data-lucide="trending-up"></i></span><div><span>Доход по активам</span><strong data-inv-summary="1">—</strong></div></div>
 					<div class="inv-summary-tile"><span class="asset-icon purple"><i data-lucide="percent"></i></span><div><span>Доходность</span><strong data-inv-summary="2">—</strong></div></div>
 				</div>
+				</div>
+				<h2 class="catalog-title">Инструменты</h2>
+				<div class="invest-filters" role="group" aria-label="Тип инструмента"><button type="button" data-invest-filter="all" aria-pressed="true">Все</button><button type="button" data-invest-filter="index" aria-pressed="false">Индекс</button><button type="button" data-invest-filter="stock" aria-pressed="false">Акции</button><button type="button" data-invest-filter="fund" aria-pressed="false">Фонды</button></div>
 				<div class="asset-grid">
-					<article class="card asset-card invest-card" style="--i:0" data-asset-code="IMOEX" data-asset-name="Индекс Мосбиржи" data-price="2495.86" data-unit="ед.">
+					<article class="card asset-card invest-card" style="--i:0" data-asset-code="IMOEX" data-kind="index" data-asset-name="Индекс Мосбиржи" data-price="2495.86" data-unit="ед.">
 						<div class="inv-head">
 							<div class="inv-id">
 								<span class="asset-icon teal"><i data-lucide="landmark"></i></span>
 								<div class="inv-title">
-									<span class="asset-badge badge-popular"><i data-lucide="flame"></i> Популярное</span>
+									<span class="invest-ticker">IMOEX</span>
 									<h3>Индекс Мосбиржи</h3>
-									<span class="asset-gain">Котировка Мосбиржи</span>
+									<span class="asset-gain">Пример цены</span>
 								</div>
 							</div>
 							<div class="inv-right">
@@ -210,14 +212,14 @@
 						<button class="buy-asset-button" type="button" data-buy-asset><i data-lucide="shopping-bag"></i><span>Купить</span></button>
 					</article>
 
-					<article class="card asset-card invest-card" style="--i:1" data-asset-code="SBER" data-asset-name="Сбербанк" data-price="298.56" data-unit="акц.">
+					<article class="card asset-card invest-card" style="--i:1" data-asset-code="SBER" data-kind="stock" data-asset-name="Сбербанк" data-price="298.56" data-unit="акц.">
 						<div class="inv-head">
 							<div class="inv-id">
 								<span class="asset-icon amber"><i data-lucide="factory"></i></span>
 								<div class="inv-title">
-									<span class="asset-badge badge-popular"><i data-lucide="flame"></i> Популярное</span>
+									<span class="invest-ticker">SBER</span>
 									<h3>Сбербанк</h3>
-									<span class="asset-gain">Котировка Мосбиржи</span>
+									<span class="asset-gain">Пример цены</span>
 								</div>
 							</div>
 							<div class="inv-right">
@@ -236,14 +238,14 @@
 						<button class="buy-asset-button" type="button" data-buy-asset><i data-lucide="shopping-bag"></i><span>Купить</span></button>
 					</article>
 
-					<article class="card asset-card invest-card" style="--i:2" data-asset-code="ETFRU" data-asset-name="ETF на индекс МосБиржи" data-price="6.25" data-unit="паёв">
+					<article class="card asset-card invest-card" style="--i:2" data-asset-code="ETFRU" data-kind="fund" data-asset-name="ETF на индекс МосБиржи" data-price="6.25" data-unit="паёв">
 						<div class="inv-head">
 							<div class="inv-id">
 								<span class="asset-icon purple"><i data-lucide="briefcase-business"></i></span>
 								<div class="inv-title">
-									<span class="asset-badge badge-new"><i data-lucide="sparkles"></i> Новое</span>
+									<span class="invest-ticker">TMOS</span>
 									<h3>ETF на индекс МосБиржи</h3>
-									<span class="asset-gain">TMOS · дивиденды реинвестируются</span>
+									<span class="asset-gain">Пример цены</span>
 								</div>
 							</div>
 							<div class="inv-right">
@@ -262,14 +264,14 @@
 						<button class="buy-asset-button" type="button" data-buy-asset><i data-lucide="shopping-bag"></i><span>Купить</span></button>
 					</article>
 
-					<article class="card asset-card invest-card" style="--i:3" data-asset-code="BONDS" data-asset-name="Фонд гособлигаций" data-price="15.47" data-unit="паёв">
+					<article class="card asset-card invest-card" style="--i:3" data-asset-code="BONDS" data-kind="fund" data-asset-name="Фонд гособлигаций" data-price="15.47" data-unit="паёв">
 						<div class="inv-head">
 							<div class="inv-id">
 								<span class="asset-icon orange"><i data-lucide="trending-up"></i></span>
 								<div class="inv-title">
-									<span class="asset-badge badge-stable"><i data-lucide="shield-check"></i> Надёжное</span>
+									<span class="invest-ticker">SBGB</span>
 									<h3>Фонд гособлигаций</h3>
-									<span class="asset-gain">SBGB · купоны реинвестируются</span>
+									<span class="asset-gain">Пример цены</span>
 								</div>
 							</div>
 							<div class="inv-right">
