@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 330" fill="none">
+  <defs>
+    <linearGradient id="air" x1="0" y1=".9" x2="1" y2="0" gradientUnits="objectBoundingBox">
+      <stop stop-color="#81efca" stop-opacity=".03"/>
+      <stop offset=".48" stop-color="#89f0ce" stop-opacity=".9"/>
+      <stop offset=".83" stop-color="#cfef97" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#cdfbaf" stop-opacity=".18"/>
+    </linearGradient>
+    <linearGradient id="foil" x2=".72" y2="1">
+      <stop stop-color="#fcffe6"/><stop offset=".24" stop-color="#c1f3b8"/>
+      <stop offset=".48" stop-color="#75c3a4"/><stop offset=".72" stop-color="#326a64"/><stop offset="1" stop-color="#163f3e"/>
+    </linearGradient>
+    <radialGradient id="face" cx=".35" cy=".18" r=".95">
+      <stop stop-color="#437966"/><stop offset=".48" stop-color="#204f46"/><stop offset="1" stop-color="#0c302e"/>
+    </radialGradient>
+    <path id="flow" d="M-74 295C70 349 140 230 218 190S355 211 517 22"/>
+    <g id="ribbons" stroke="url(#air)" stroke-width="1.4">
+      <use href="#flow"/><use href="#flow" y="6"/><use href="#flow" y="12"/><use href="#flow" y="18"/>
+      <use href="#flow" y="24"/><use href="#flow" y="30"/><use href="#flow" y="36"/><use href="#flow" y="42"/>
+    </g>
+  </defs>
+  <use href="#ribbons" transform="translate(-5 -93) rotate(5 270 165)" opacity=".6"/>
+  <g transform="translate(289 158) rotate(14)">
+    <circle r="128" stroke="#a8eacf" stroke-opacity=".22" stroke-dasharray="1 6"/>
+    <circle r="120" stroke="#9aeac2" stroke-opacity=".25"/>
+    <path d="M-114-40a121 121 0 0 1 73-74M95 74a121 121 0 0 1-48 37" stroke="#d4eeb2" stroke-width="2"/>
+    <g transform="scale(.88 1)">
+      <circle cx="5" cy="6" r="94" fill="#578978" stroke="#8ac8a8" stroke-width="1.5"/>
+      <circle r="94" fill="url(#foil)"/><circle r="87" fill="url(#face)" stroke="#c7fbc5" stroke-width="1.5"/>
+      <circle r="80" stroke="#96c7a5" stroke-opacity=".55" stroke-dasharray="1.4 4"/>
+      <g fill="url(#foil)" stroke="#ceefb8" stroke-width=".7" fill-rule="evenodd">
+        <path d="M-20-49h8v10h9v-10h8v11c28 3 33 25 15 36 25 7 21 36-12 41v12H0V40h-10v11h-8V40h-21l3-10h8l6-59h-11l1-10h11zm12 21-2 21h8c20 0 23-21 4-21zm-3 31-2 26h12c24 0 26-26 3-26z"/>
+      </g>
+    </g>
+  </g>
+  <use href="#ribbons" transform="translate(5 7) rotate(-4 270 165)"/>
+  <circle cx="412" cy="141" r="2.5" fill="#d2ffd6"/><circle cx="140" cy="249" r="2" fill="#cbf9d7"/>
+</svg>
