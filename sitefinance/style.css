@@ -2439,7 +2439,7 @@ body.dark-theme .news-read { color: #0d1714; }
 	position: absolute;
 	z-index: -1;
 	inset: 0 0 0 44%;
-	background: url("assets/crypto-compass.svg") right center / contain no-repeat;
+	background: url("assets/crypto-compass.svg?v=2") right center / contain no-repeat;
 	pointer-events: none;
 }
 .bp-main { max-width: 54%; }
@@ -3179,7 +3179,6 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 	50% { transform: translate(7%,-6%) rotate(9deg); }
 }
 @media (prefers-reduced-motion: no-preference) {
-	.crypto-compass { animation: wind-drift 1.8s ease-in-out 1; }
 	.agent-pet-face { animation: wind-drift 5.8s ease-in-out infinite; }
 	.wind-welcome[open] .welcome-robot {
 		animation: wind-arrival .85s .12s cubic-bezier(.22,.76,.25,1) both, wind-drift 4.8s .97s ease-in-out infinite;
