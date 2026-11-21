@@ -716,6 +716,7 @@ const openInvestmentProfile = () => {
 	if (topbarEyebrow) topbarEyebrow.textContent = 'Инвестиции';
 	if (topbarTitle) topbarTitle.textContent = 'Мой портфель';
 	window.scrollTo({ top: 0, behavior: 'instant' });
+	window.dispatchEvent(new Event('wind-portfolio-open'));
 };
 
 const closeInvestmentProfile = () => {
@@ -750,6 +751,17 @@ windMotion.addEventListener?.('change', () => {
 const windResponse = (element) => playWindEffect(element, [
 	{ scale: '1' }, { scale: '.95', offset: .27 }, { scale: '1.035', offset: .69 }, { scale: '1' },
 ], 340);
+const revealPlot = (element, duration) => playWindEffect(element, [
+	{ clipPath: 'inset(0 100% 0 0)', opacity: .55 },
+	{ clipPath: 'inset(0 0% 0 0)', opacity: 1 },
+], duration);
+const drawPlotLine = (element, duration) => playWindEffect(element, [
+	{ strokeDashoffset: 1 }, { strokeDashoffset: 0 },
+], duration);
+const settlePlotPoint = (element, duration) => playWindEffect(element, [
+	{ opacity: 0, scale: '.65' }, { opacity: 0, scale: '.65', offset: .72 },
+	{ opacity: 1, scale: '1.35', offset: .9 }, { opacity: 1, scale: '1' },
+], duration);
 const paintViewTitle = (view) => {
 	const [eyebrow, title] = viewTitles[view] || viewTitles.dashboard;
 	if (topbarEyebrow) topbarEyebrow.textContent = eyebrow;
@@ -1748,14 +1760,17 @@ const renderRateHistory = () => {
 	const line = document.getElementById('rate-history-line');
 	const area = document.getElementById('rate-history-area');
 	const end = document.getElementById('rate-history-end');
+	const halo = document.getElementById('rate-history-halo');
 	const [x, y] = coordinates.at(-1).split(',');
 	line.setAttribute('points', coordinates.join(' '));
 	area.setAttribute('points', `3,92 ${coordinates.join(' ')} ${x},92`);
-	end.setAttribute('cx', x);
-	end.setAttribute('cy', y);
-	playWindEffect(line, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], 690);
-	playWindEffect(area, [{ opacity: .15, scale: '1 .55' }, { opacity: 1, scale: '1 1' }], 720);
-	playWindEffect(end, [{ opacity: 0 }, { opacity: 0, offset: .7 }, { opacity: 1 }], 720);
+	for (const marker of [end, halo]) {
+		marker.setAttribute('cx', x);
+		marker.setAttribute('cy', y);
+		settlePlotPoint(marker, 850);
+	}
+	drawPlotLine(line, 690);
+	revealPlot(area, 780);
 	document.getElementById('rate-y-high').textContent = `${formatMoney(high)} ₽`;
 	document.getElementById('rate-y-low').textContent = high === low ? '' : `${formatMoney(low)} ₽`;
 	document.getElementById('rate-history-summary').textContent =
@@ -2415,10 +2430,13 @@ const formatCryptoPrice = (price) => {
 
 function cryptoChartPalette() {
 	const dark = document.body.classList.contains('dark-theme');
-	const grid = { color: dark ? '#243c33' : '#eef3ef' };
+	const grid = { color: dark ? '#3c3a2f' : '#f1e5d4' };
+	const borderColor = dark ? '#574831' : '#e9d6bb';
 	return {
-		layout: { background: { color: dark ? '#14231d' : '#ffffff' }, textColor: dark ? '#bbd8c9' : '#516b5e' },
+		layout: { background: { color: dark ? '#22241e' : '#fffaf3' }, textColor: dark ? '#ead1ad' : '#715539' },
 		grid: { vertLines: grid, horzLines: grid },
+		rightPriceScale: { borderColor },
+		timeScale: { borderColor, timeVisible: true, secondsVisible: false },
 	};
 }
 
@@ -2432,8 +2450,6 @@ const createCryptoChart = () => {
 		height: cryptoChartElement.clientHeight,
 		...cryptoChartPalette(),
 		crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-		rightPriceScale: { borderColor: '#dfe7df' },
-		timeScale: { borderColor: '#dfe7df', timeVisible: true, secondsVisible: false },
 	});
 
 	const candleOptions = { upColor: '#2d9b6f', downColor: '#d97867', borderVisible: false, wickUpColor: '#2d9b6f', wickDownColor: '#d97867' };
@@ -2478,6 +2494,7 @@ const loadCryptoCandles = async () => {
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candles[candles.length - 1].close)} USDT`;
 		cryptoUpdated.textContent = `Котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 		cryptoChart.timeScale().fitContent();
+		revealPlot(cryptoChartElement, 640);
 		connectBybitStream(symbol, interval);
 	} catch (error) {
 		if (request !== streamVersion) return;
@@ -4947,8 +4964,14 @@ if (inTelegram) {
 				const col = c.c >= c.o ? '#89e0bf' : '#ff9c87';
 				ctx.globalAlpha = al;
 				ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
-				ctx.beginPath(); ctx.moveTo(x, y(c.h)); ctx.lineTo(x, y(c.l)); ctx.stroke();
-				ctx.fillRect(x - cw * 0.28, y(Math.max(c.o, c.c)), cw * 0.56, Math.max(2, Math.abs(y(c.o) - y(c.c))));
+				const open = y(c.o);
+				const ease = 1 - (1 - al) ** 3;
+				const close = open + (y(c.c) - open) * ease;
+				ctx.beginPath();
+				ctx.moveTo(x, open + (y(c.h) - open) * ease);
+				ctx.lineTo(x, open + (y(c.l) - open) * ease);
+				ctx.stroke();
+				ctx.fillRect(x - cw * 0.28, Math.min(open, close), cw * 0.56, Math.max(2, Math.abs(open - close)));
 			});
 			ctx.globalAlpha = 1;
 			if (a.mark) {
@@ -4956,7 +4979,7 @@ if (inTelegram) {
 				const pts = a.cs.slice(a.hi);
 				const yT = y(Math.max(...pts.map((c) => c.h))) - 8, yB = y(Math.min(...pts.map((c) => c.l))) + 8;
 				ctx.save();
-				ctx.shadowColor = '#f4c95d'; ctx.shadowBlur = 10 + 8 * Math.sin(a.t * 5);
+				ctx.shadowColor = '#f4c95d'; ctx.shadowBlur = 14;
 				ctx.strokeStyle = '#e0a82e'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
 				ctx.strokeRect(x0, yT, x1 - x0, yB - yT);
 				ctx.restore();
@@ -4986,20 +5009,15 @@ if (inTelegram) {
 			fb.hidden = true;
 			stage.append(bar, box, mk('p', 'gm-question', 'Какой это паттерн?'), opts, fb);
 
-			const a = { cs: c.cs, hi: c.hi, pat: c.pat, reveal: 0, mark: false, t: 0, dpr: fit(cv) };
-			new ResizeObserver(() => { a.dpr = fit(cv); }).observe(cv);
-			let last = performance.now();
+			const a = { cs: c.cs, hi: c.hi, pat: c.pat, reveal: reduce ? c.cs.length : 0, mark: false, dpr: fit(cv) };
+			new ResizeObserver(() => { a.dpr = fit(cv); drawChart(cv, a); }).observe(cv);
+			const started = performance.now();
 			const loop = (now) => {
-				const dt = Math.min(0.05, (now - last) / 1000);
-				last = now;
-				if (root.offsetParent) {
-					a.t += dt;
-					if (a.reveal < a.cs.length) a.reveal = Math.min(a.cs.length, a.reveal + dt * (reduce ? 100 : 9));
-					drawChart(cv, a);
-				}
-				raf = requestAnimationFrame(loop);
+				a.reveal = Math.min(a.cs.length, (now - started) / 90);
+				drawChart(cv, a);
+				if (a.reveal < a.cs.length) raf = requestAnimationFrame(loop);
 			};
-			raf = requestAnimationFrame(loop);
+			if (!reduce) raf = requestAnimationFrame(loop);
 
 			const names = shuffle([c.pat.name].concat(shuffle(PATTERNS.filter((p) => p !== c.pat)).slice(0, 2).map((p) => p.name)));
 			names.forEach((n) => {
@@ -5014,6 +5032,8 @@ if (inTelegram) {
 					});
 					a.mark = true;
 					a.reveal = a.cs.length;
+				stop();
+				drawChart(cv, a);
 					stamp.hidden = false;
 					stamp.className = `gm-stamp ${ok ? 'ok' : 'bad'}`;
 					stamp.textContent = ok ? 'РАСКРЫТО' : 'УЛИКА УПУЩЕНА';
@@ -5130,6 +5150,14 @@ if (inTelegram) {
 				ctx.lineTo(hx, hy);
 			}
 			ctx.stroke();
+			ctx.lineTo(hx, h);
+			ctx.lineTo(X(0), h);
+			ctx.closePath();
+			const fill = ctx.createLinearGradient(0, 0, 0, h);
+			fill.addColorStop(0, `${color}4d`);
+			fill.addColorStop(1, `${color}00`);
+			ctx.fillStyle = fill;
+			ctx.fill();
 			ctx.save();
 			ctx.shadowColor = color; ctx.shadowBlur = 14; ctx.fillStyle = color;
 			ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.fill();
@@ -5971,6 +5999,7 @@ else window.setTimeout(paintIcons, 200);
 (() => {
 	const list = document.getElementById('invest-board-list');
 	const chart = document.getElementById('portfolio-chart');
+	const chartSubtitle = document.getElementById('portfolio-chart-sub');
 	const authed = () => Boolean(localStorage.getItem('wind_access_token'));
 	const mk = (tag, cls, text) => {
 		const el = document.createElement(tag);
@@ -6004,7 +6033,13 @@ else window.setTimeout(paintIcons, 200);
 		}
 	};
 
-	let days = 90;
+	const demoHistory = [
+		[349, 10000, 10000], [276, 11200, 11000], [190, 12350, 12000], [115, 15000, 15000],
+		[87, 15600, 15000], [73, 14800, 15000], [52, 17400, 16500], [34, 17150, 16500],
+		[28, 18000, 17000], [22, 17400, 17000], [17, 18300, 17500], [10, 18600, 17500],
+		[5, 18450, 17500], [0, 19600, 18000],
+	];
+	let days = 90, historyRevision = 0;
 	const drawChart = (points) => {
 		if (!chart) return;
 		if (points.length < 2) {
@@ -6015,39 +6050,74 @@ else window.setTimeout(paintIcons, 200);
 		const values = points.flatMap((p) => [p.invested, p.cost]);
 		const min = Math.min(...values), max = Math.max(...values);
 		const span = max - min || 1;
-		const x = (i) => P + (i / (points.length - 1)) * (W - P * 2);
-		const y = (v) => H - P - ((v - min) / span) * (H - P * 2);
+		const start = Date.parse(points[0].day);
+		const daySpan = Date.parse(points.at(-1).day) - start;
+		const x = (i) => P + (daySpan ? (Date.parse(points[i].day) - start) / daySpan : i / (points.length - 1)) * (W - P * 2);
+		const y = (v) => max === min ? H / 2 : H - P - ((v - min) / span) * (H - P * 2);
 		const line = (key) => points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
 		const last = points[points.length - 1];
 		const up = last.invested >= last.cost;
-		const area = `${line('invested')} L${x(points.length - 1).toFixed(1)} ${H - P} L${x(0).toFixed(1)} ${H - P} Z`;
+		const lastX = x(points.length - 1).toFixed(1);
+		const lastY = y(last.invested).toFixed(1);
+		const area = `${line('invested')} L${lastX} ${H - P} L${x(0).toFixed(1)} ${H - P} Z`;
 		chart.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Стоимость портфеля по дням">
 			<defs><linearGradient id="pf-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".22"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
-			<path d="${area}" fill="url(#pf-fill)" stroke="none"/>
+			<path class="plot-grid" d="M0 8H640 M0 49H640 M0 90H640 M0 131H640 M0 172H640"/>
+			<path d="${area}" class="pf-area" fill="url(#pf-fill)" stroke="none"/>
 			<path d="${line('cost')}" class="pf-cost" fill="none"/>
-			<path d="${line('invested')}" class="pf-value" fill="none"/>
+			<path d="${line('invested')}" class="pf-value" fill="none" pathLength="1"/>
+			<ellipse class="plot-halo" cx="${lastX}" cy="${lastY}" rx="9" ry="7"/>
+			<ellipse class="pf-end" cx="${lastX}" cy="${lastY}" rx="5" ry="4"/>
 		</svg>`;
 		chart.classList.toggle('down', !up);
+		playWindEffect(chart.querySelector('.pf-cost'), [
+			{ clipPath: 'inset(0 100% 0 0) view-box', opacity: .35 },
+			{ clipPath: 'inset(0 0 0 0) view-box', opacity: 1 },
+		], 445);
+		drawPlotLine(chart.querySelector('.pf-value'), 820);
+		revealPlot(chart.querySelector('.pf-area'), 875);
+		chart.querySelectorAll('.pf-end, .plot-halo').forEach(marker => settlePlotPoint(marker, 950));
 		const fmt = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
-		const first = new Date(points[0].day).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+		const first = new Date(points[0].day).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 		const legend = mk('div', 'portfolio-chart-legend');
 		legend.append(mk('span', 'pf-legend-value', `Стоимость: ${fmt(last.invested)}`), mk('span', 'pf-legend-cost', `Вложено: ${fmt(last.cost)}`), mk('span', '', `с ${first}`));
 		chart.append(legend);
 	};
 
 	const loadHistory = async () => {
-		if (!chart || !authed() || !document.body.classList.contains('show-investment-profile')) return;
-		try { drawChart((await WindApi(`/invest/history?days=${days}`)).points); }
-		catch (e) { chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.')); }
+		if (!chart || !document.body.classList.contains('show-investment-profile')) return;
+		const request = ++historyRevision;
+		const demo = isDemoPreview();
+		chartSubtitle.textContent = demo ? 'Учебный пример · стоимость и вложения' : 'Стоимость инвестиций по дням';
+		if (demo) {
+			const sampleDate = Date.UTC(2026, 0, 15);
+			drawChart(demoHistory.filter(([age]) => age < days).map(([age, invested, cost]) => ({
+				day: new Date(sampleDate - age * dayMs).toISOString().slice(0, 10), invested, cost,
+			})));
+			return;
+		}
+		if (!authed()) { chart.replaceChildren(); return; }
+		const isCurrent = () => historyRevision === request && authed() && document.body.classList.contains('show-investment-profile');
+		try {
+			const data = await WindApi(`/invest/history?days=${days}`);
+			if (isCurrent()) drawChart(data.points);
+		} catch {
+			if (isCurrent()) chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.'));
+		}
 	};
 	document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((b) => b.addEventListener('click', () => {
 		days = Number(b.dataset.days);
-		document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((x) => x.classList.toggle('active', x === b));
+		document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((x) => {
+			x.classList.toggle('active', x === b);
+			x.setAttribute('aria-pressed', String(x === b));
+		});
 		loadHistory();
 	}));
 
 	const boardVisible = () => document.getElementById('auth-gate').hidden && document.body.dataset.view === 'investments';
-	window.addEventListener('wind-portfolio', () => { if (boardVisible()) { loadBoard(); loadHistory(); } });
+	window.addEventListener('wind-portfolio-open', loadHistory);
+	window.addEventListener('wind-portfolio', () => { if (boardVisible()) { loadBoard(); if (!isDemoPreview()) loadHistory(); } });
+	window.addEventListener('wind-logout', () => { historyRevision++; chart?.replaceChildren(); });
 	onAppView(['investments'], (active) => { if (active) { loadBoard(); loadHistory(); } });
 	setInterval(() => { if (!document.hidden && boardVisible()) loadBoard(); }, 120000);
 })();

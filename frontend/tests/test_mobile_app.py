@@ -170,6 +170,24 @@ def test_sign_in_then_select_history_and_open_converter(open_app):
     assert not errors
 
 
+def test_demo_portfolio_chart_shows_sample_history_and_switches_period(open_app):
+    page, requests, errors = open_app(width=320, backend=False)
+    page.get_by_role("button", name="Попробовать демо").click()
+    page.locator('.nav a[href="#investments"]').click()
+    page.get_by_role("button", name="Открыть портфель").click()
+    expect(page.locator("#portfolio-chart-sub")).to_contain_text("Учебный пример")
+    chart = page.locator("#portfolio-chart")
+    path = chart.locator(".pf-value")
+    expect(chart.get_by_role("img")).to_be_visible()
+    before = path.get_attribute("d")
+    page.locator('#portfolio-chart-range [data-days="30"]').click()
+    expect(path).not_to_have_attribute("d", before)
+    expect(page.locator('#portfolio-chart-range [data-days="30"]')).to_have_attribute("aria-pressed", "true")
+    assert path.evaluate("element => element.getAnimations().length") == 0
+    assert not any(request[1] == "/invest/history" for request in requests)
+    assert not errors
+
+
 def test_demo_goal_moves_only_virtual_money_and_survives_reload(open_app):
     page, requests, errors = open_app(width=320)
     page.get_by_role("button", name="Попробовать демо").click()

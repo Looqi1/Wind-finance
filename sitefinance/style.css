@@ -3513,3 +3513,122 @@ body.dark-theme #converter .converter-output { background: #1c3c57; color: #e2f6
 	.fx-ready [data-fx]:not(.in-view) { opacity: 1; }
 	.fx-ready [data-fx].in-view { animation: none; }
 }
+
+/* Общая геометрия и линии ветра для всех разделов. */
+body {
+	--section-ink: var(--section-accent);
+	--section-tint: var(--section-soft);
+	--section-border: color-mix(in srgb, var(--section-accent) 24%, var(--line));
+}
+body.dark-theme {
+	--section-ink: var(--section-light);
+	--section-tint: color-mix(in srgb, var(--section-light) 12%, var(--card));
+	--section-border: color-mix(in srgb, var(--section-light) 33%, var(--line));
+}
+body[data-view="settings"] {
+	--section-accent: #4b637e;
+	--section-light: #a9c9e8;
+	--section-soft: #e3ecf5;
+}
+.topbar {
+	position: relative;
+	z-index: 3;
+	isolation: isolate;
+	align-items: center;
+	gap: 10px;
+	min-height: 96px;
+	margin-bottom: 18px;
+	padding: clamp(14px, 2.25vw, 28px);
+	border: 1px solid var(--section-border);
+	border-radius: 22px;
+	background: linear-gradient(115deg, var(--section-tint) 0%, color-mix(in srgb, var(--section-tint) 55%, var(--card)) 48%, var(--card) 88%);
+}
+.topbar::before {
+	position: absolute;
+	z-index: -1;
+	inset: 0;
+	border-radius: inherit;
+	background: repeating-radial-gradient(ellipse 355px 105px at 95% 150%, transparent 0 10px, var(--section-border) 11px 12px, transparent 13px 21px);
+	mask-image: linear-gradient(110deg, transparent 34%, #000);
+	pointer-events: none;
+	content: '';
+}
+.topbar-title .eyebrow { letter-spacing: .095em; }
+.topbar-title h1 { line-height: 1.06; overflow-wrap: anywhere; }
+.topbar-actions { flex-shrink: 0; }
+.topbar :is(.icon-button, .profile-trigger) { border-color: var(--section-border); }
+.topbar .wind-avatar { background: var(--section-tint); color: var(--section-ink); }
+.topbar :is(.icon-button, .profile-trigger):hover { background: var(--section-tint); }
+main > :is(.market-section, .settings-page):not(.news-page) { margin-top: 0; }
+main > :is(#investments, #crypto, #converter, #game, #settings) .card {
+	border-color: var(--section-border);
+}
+#investments .invest-card { border-top-color: var(--section-ink); }
+#investments .invest-card[data-kind="stock"] { border-top-color: #cd8a5e; }
+#investments .invest-card[data-kind="fund"] { border-top-color: #9d82da; }
+:where(#converter, #investments, #crypto, #game, #settings) .section-heading h2 { color: var(--section-ink); }
+#crypto .crypto-market-heading h2 { color: var(--section-ink); }
+#crypto .timeframes, #portfolio-chart-range { background: var(--section-tint); }
+#portfolio-chart-range button { min-width: 44px; min-height: 40px; font-size: .8125rem; }
+:is(#crypto, #investment-profile) .timeframes button.active {
+	color: var(--section-ink);
+	background: var(--card);
+}
+:is(#crypto, #investment-profile) .timeframes button.active:focus-visible { outline-color: var(--section-ink); }
+#investments .buy-asset-button,
+#converter .currency-pill.active,
+#game .gh-sound { border-color: var(--section-border); }
+#game > .section-heading { margin-bottom: 10px; }
+#game-tabs > button { border-color: var(--section-border); }
+#game-tabs > button.active { border-color: transparent; }
+
+.plot-grid {
+	fill: none;
+	stroke: currentColor;
+	stroke-opacity: .18;
+	stroke-dasharray: 3 5;
+	vector-effect: non-scaling-stroke;
+}
+.plot-halo { fill: currentColor; fill-opacity: .16; }
+.plot-halo, #rate-history-end, .pf-end { transform-box: fill-box; transform-origin: center; }
+#rate-history-end, .pf-end { fill: currentColor; stroke: var(--card); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.portfolio-chart { color: var(--section-ink); }
+.portfolio-chart.down { color: var(--coral); }
+.portfolio-chart svg {
+	overflow: visible;
+	border-radius: 13px;
+	background: linear-gradient(180deg, var(--section-tint), transparent);
+}
+.portfolio-chart .pf-value { stroke-dasharray: 1; stroke-linecap: round; }
+.portfolio-chart .pf-cost { stroke-linecap: round; }
+.portfolio-chart-legend { color: inherit; }
+.portfolio-chart-legend span:not(.pf-legend-value) { color: var(--muted); }
+.pf-legend-value::before {
+	display: inline-block;
+	width: 14px;
+	margin-right: 6px;
+	border-top: 2px solid currentColor;
+	vertical-align: middle;
+	content: '';
+}
+.crypto-plot { background: var(--section-tint); }
+
+@media (max-width: 620px) {
+	.topbar {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 2px 12px;
+		min-height: 82px;
+		padding: 9px 13px 13px;
+		border-radius: 19px;
+	}
+	.topbar-title { display: contents; }
+	.topbar-title .eyebrow { margin: 0; }
+	.topbar-title h1 { font-size: clamp(1.2rem, 5.8vw, 1.65rem); }
+	.topbar-title h1 { grid-row: 2; grid-column: 1 / -1; }
+	.topbar-actions { grid-row: 1; grid-column: 2; gap: 5px; }
+}
+@media (max-width: 360px) {
+	.topbar { padding-inline: 10px; }
+	.telegram-app .topbar .icon-button { width: 38px; }
+}
