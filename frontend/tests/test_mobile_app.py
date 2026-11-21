@@ -98,7 +98,6 @@ def open_app(browser):
                 "/Wind-finance/": "index.html",
                 "/Wind-finance/style.css": "style.css",
                 "/Wind-finance/script.js": "script.js",
-                "/Wind-finance/assets/wind-mail-coast.webp": "assets/wind-mail-coast.webp",
                 "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
             }
@@ -500,47 +499,21 @@ def test_agent_uses_wind_motion_while_fetching_news(open_app):
     assert not errors
 
 
-def test_courier_mobile_routes_rewards_and_existing_games(open_app):
+def test_mobile_game_library_and_saved_stars(open_app):
     page, _, errors = open_app(width=320, backend=False)
     page.evaluate("localStorage.setItem('wind_game_stars', JSON.stringify({drop: 2}))")
     page.reload(wait_until="domcontentloaded")
     page.get_by_role("button", name="Попробовать демо").click()
     page.locator('.nav a[href="#game"]').click()
-    courier = page.get_by_role("tabpanel", name="Почта ветра", exact=False)
-    expect(courier).to_be_visible()
-    expect(page.locator("#gh-stars")).to_have_text("2 / 15")
-    courier.get_by_role("button", name="Начать рейс").click()
-    launch = courier.get_by_role("button", name="Запустить планер")
-    launch.click()
-    expect(courier.get_by_role("status")).to_contain_text("гроза")
-    routes = [
-        {5: "восток", 6: "север", 2: "восток"},
-        {5: "юг", 9: "восток", 10: "восток", 11: "север", 7: "север"},
-        {9: "юг", 13: "восток", 14: "восток", 15: "север", 11: "север", 7: "север"},
-    ]
-    for number, directions in enumerate(routes, 1):
-        for index, direction in directions.items():
-            tile = courier.locator(".courier-tile").nth(index)
-            for _ in range(3):
-                if direction in tile.get_attribute("aria-label"):
-                    break
-                tile.click()
-        launch.click()
-        expect(courier.get_by_role("status")).to_have_text("Письмо у маяка!")
-        courier.get_by_role("button", name="Завершить смену" if number == 3 else "Следующий рейс").click()
-    expect(courier.get_by_text("Почта доставлена")).to_be_visible()
-    expect(page.locator("#gh-stars")).to_have_text("4 / 15")
-    assert page.evaluate("JSON.parse(localStorage.wind_game_profile).played.courier") == 1
-    courier.get_by_role("button", name="Сыграть ещё раз").click()
-    expect(courier.get_by_text("Рейс 1 из 3")).to_be_visible()
+    expect(page.locator("[data-game-tab]")).to_have_count(4)
     for game in ["drop", "candles", "risk", "scam"]:
         tab = page.locator(f'[data-game-tab="{game}"]')
         tab.click()
         expect(tab).to_have_attribute("aria-selected", "true")
         expect(page.locator(f'[data-game-panel="{game}"]')).to_be_visible()
     page.locator('[data-game-tab="scam"]').press("Home")
-    expect(courier).to_be_visible()
+    expect(page.locator("#game-panel-drop")).to_be_visible()
     page.reload(wait_until="domcontentloaded")
-    expect(page.locator("#gh-stars")).to_have_text("4 / 15")
+    expect(page.locator("#gh-stars")).to_have_text("2 / 12")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert not errors
