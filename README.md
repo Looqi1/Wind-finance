@@ -14,6 +14,21 @@ Without `BACKEND_URL`, the demo uses the bundled Bank of Russia history. The
 Pages build refreshes the snapshot when the public archive is available, and
 the dashboard shows the publication date next to each quote.
 
+## DADA Cloud backend
+
+Deploy from the repository root with the **Dockerfile** framework and port
+**8000**. The container installs Python dependencies, applies Alembic migrations,
+and starts FastAPI. Keep its Dockerfile startup command.
+
+Attach PostgreSQL so the platform provides `DATABASE_URL`, and set
+`WINDFINANCE_SECRET_KEY` to a random secret of at least 32 characters in the
+application's runtime environment. The image defaults to simulator mode and allows
+requests from `https://looqi1.github.io`.
+
+Open the application's public HTTPS URL with `/health` appended to verify the
+API. Then set the GitHub repository variable `BACKEND_URL` to that HTTPS origin
+and run the Pages workflow again.
+
 ## Telegram Mini App
 
 1. Deploy the FastAPI backend and set `TELEGRAM_BOT_TOKEN` to the token of the bot that will open the Mini App. Store the token on the backend. Keep `WINDFINANCE_SIMULATOR=1` and `WINDFINANCE_LIVE_TRADING=0` for the learning experience.
