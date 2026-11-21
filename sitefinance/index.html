@@ -7,10 +7,10 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f2f5ef">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=46">
+	<link rel="stylesheet" href="style.css?v=48">
 	<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 	<script defer src="config.js"></script>
-	<script defer src="script.js?v=47"></script>
+	<script defer src="script.js?v=48"></script>
 </head>
 <body>
 	<div class="app">
@@ -26,7 +26,7 @@
 		</aside>
 
 		<button class="agent-pet" type="button" data-agent-toggle aria-label="Помощник Винд" aria-expanded="false" aria-controls="news">
-			<span class="agent-pet-aura"></span><span class="agent-pet-face"><i data-lucide="brain-circuit"></i><b></b></span><span class="agent-pet-label">Wind рядом</span><span class="agent-pet-dot"></span><span class="agent-pet-badge" id="agent-pet-badge" hidden></span>
+			<span class="agent-pet-aura"></span><span class="agent-pet-face"><b></b></span><span class="agent-pet-label">Wind рядом</span><span class="agent-pet-dot"></span><span class="agent-pet-badge" id="agent-pet-badge" hidden></span>
 		</button>
 		<button class="agent-backdrop" type="button" data-agent-toggle aria-label="Закрыть панель агента"></button>
 		<main id="dashboard">
@@ -360,36 +360,46 @@
 			</section>
 
 			<section class="market-section" id="crypto">
-				<div class="section-heading"><div><h2>Криптовалюты</h2><p>Котировки и свечи с Bybit · спотовый рынок</p></div><span class="live-badge"><i></i> В СЕТИ</span></div>
-				<article class="card crypto-terminal">
-					<div class="chart-toolbar"><div class="chart-symbol"><span class="asset-icon orange"><i data-lucide="bitcoin"></i></span><div><strong id="crypto-symbol-label">BTC / USDT</strong><span id="crypto-price-label">Загрузка цены...</span></div></div><div class="chart-controls"><select id="crypto-pair" aria-label="Выбрать криптовалютную пару"><option value="BTCUSDT">BTC / USDT</option><option value="ETHUSDT">ETH / USDT</option><option value="SOLUSDT">SOL / USDT</option></select><div class="timeframes" role="group" aria-label="Таймфрейм"><button type="button" data-interval="15">15м</button><button type="button" class="active" data-interval="60">1ч</button><button type="button" data-interval="240">4ч</button><button type="button" data-interval="D">1д</button></div></div></div>
-					<div id="crypto-chart" aria-label="Свечной график криптовалюты"></div>
-					<div class="chart-source"><span><i></i> Котировки Bybit</span><span id="crypto-updated">Обновление...</span></div>
-					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy"><i data-lucide="arrow-up-right"></i> Купить на Bybit</button><button class="trade-button sell-button" type="button" data-trade="sell"><i data-lucide="arrow-down-right"></i> Продать на Bybit</button></div>
-				</article>
-				<article class="card bybit-partner-card" id="bybit-partner">
+				<article class="bybit-partner-card" id="bybit-partner" aria-labelledby="partner-title">
+					<div class="crypto-compass" aria-hidden="true"></div>
 					<div class="bp-main">
-						<span class="bybit-partner-label"><i data-lucide="handshake"></i> Wind Finance × Bybit</span>
-						<h3>Открой аккаунт на Bybit через Wind</h3>
-						<p>Регистрация занимает пару минут. Новые пользователи получают приветственные бонусы Bybit, а графики, новости и ценовые уведомления остаются здесь, в Wind.</p>
-						<ol class="bp-steps">
-							<li><b>1</b><span>Зарегистрируйся по кнопке</span></li>
-							<li><b>2</b><span>Пройди проверку и пополни счёт</span></li>
-							<li><b>3</b><span>Торгуй, а анализируй в Wind</span></li>
-						</ol>
+						<span class="bybit-partner-label">Wind <span>×</span> Bybit</span>
+						<h2 id="partner-title">Торговля<br>на Bybit</h2>
+						<p>Следи за ценами в Wind. Для покупки и продажи криптовалюты открой аккаунт на бирже.</p>
 						<div class="bp-actions">
-							<a class="button bybit-partner-button" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Создать аккаунт Bybit <span>→</span></a>
-							<button type="button" class="bp-copy" id="bybit-ref-copy" title="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
+							<a class="button bybit-partner-button" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Создать аккаунт Bybit</a>
+							<button type="button" class="bp-copy" id="bybit-ref-copy" aria-label="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
 						</div>
-						<small>Партнёрская ссылка: Bybit платит Wind Finance часть комиссии с твоих сделок. Для тебя комиссии не меняются. Wind не принимает деньги и не хранит криптовалюту. Торговля связана с риском потери средств.</small>
-					</div>
-					<div class="bp-art" aria-hidden="true">
-						<div class="bp-coin"><i data-lucide="bitcoin"></i></div>
-						<div class="bp-chip up">BTC <span id="bp-btc">—</span></div>
-						<div class="bp-chip">ETH <span id="bp-eth">—</span></div>
+						<small>Партнёрская ссылка. Wind может получить часть торговой комиссии. Торговля связана с риском потери средств.</small>
 					</div>
 				</article>
-
+				<div class="crypto-market-heading"><h2>Котировки</h2><span>Bybit Spot · USDT</span></div>
+				<article class="card crypto-terminal" aria-label="Спотовые котировки Bybit">
+					<fieldset id="crypto-pair"><legend class="sr-only">Выбрать криптовалютную пару</legend>
+						<label class="market-pair">
+							<input type="radio" name="spot-pair" value="BTCUSDT" checked>
+							<span class="market-coin btc" aria-hidden="true">₿</span>
+							<strong>BTC</strong><span class="market-quote" data-quote="BTCUSDT">—</span>
+						</label>
+						<label class="market-pair">
+							<input type="radio" name="spot-pair" value="ETHUSDT">
+							<span class="market-coin eth" aria-hidden="true">♦</span>
+							<strong>ETH</strong><span class="market-quote" data-quote="ETHUSDT">—</span>
+						</label>
+						<label class="market-pair">
+							<input type="radio" name="spot-pair" value="SOLUSDT">
+							<span class="market-coin sol" aria-hidden="true">≋</span>
+							<strong>SOL</strong><span class="market-quote" data-quote="SOLUSDT">—</span>
+						</label>
+					</fieldset>
+					<div class="chart-toolbar">
+						<div class="chart-symbol"><div><strong id="crypto-symbol-label">BTC / USDT</strong><span id="crypto-price-label">Загрузка цены…</span></div></div>
+						<div class="timeframes" role="group" aria-label="Интервал свечи"><button type="button" data-interval="15" aria-pressed="false">15м</button><button type="button" class="active" data-interval="60" aria-pressed="true">1ч</button><button type="button" data-interval="240" aria-pressed="false">4ч</button><button type="button" data-interval="D" aria-pressed="false">1д</button></div>
+					</div>
+					<div id="crypto-chart" aria-label="Свечной график криптовалюты"></div>
+					<div class="chart-source"><span id="crypto-updated" role="status">Загружаем свечи Bybit…</span><button type="button" id="crypto-retry" hidden>Повторить загрузку</button></div>
+					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy">Купить на Bybit</button><button class="trade-button sell-button" type="button" data-trade="sell">Продать на Bybit</button></div>
+				</article>
 
 				<article class="card alerts-card" id="price-alerts">
 					<div class="alerts-head">
@@ -481,7 +491,7 @@
 			<section class="market-section news-page" id="news">
 				<button class="agent-drawer-close" type="button" data-agent-toggle aria-label="Закрыть агента"><i data-lucide="x"></i></button>
 				<div class="agent-intro">
-					<div class="agent-character"><span class="agent-character-glow"></span><span class="agent-character-body"><i data-lucide="brain-circuit"></i><b></b></span><span class="agent-character-spark spark-one">✦</span><span class="agent-character-spark spark-two">✦</span></div>
+					<div class="agent-character"><span class="agent-character-glow"></span><span class="agent-character-body"><b></b></span><span class="agent-stream" aria-hidden="true"><i></i><i></i><i></i></span></div>
 					<div class="agent-speech"><span class="agent-kicker">Винд · аналитик</span><h2>Я посмотрел рынок<br>за тебя.</h2><p id="agent-speech-text">Собираю свежие новости по России, США, крипте и экономике…</p><div class="agent-speech-meta"><span><i></i> На связи</span><span id="agent-last-scan">Данные загружаются</span></div></div>
 				</div>
 				<div class="agent-controls"><div><h3 id="learn-title">Рынки сегодня</h3><p id="learn-sub">Россия · США · крипта · экономика</p></div><button class="agent-refresh" type="button" id="news-refresh" aria-label="Обновить аналитику"><i data-lucide="rotate-cw"></i></button></div>
@@ -724,7 +734,7 @@
 			<div class="bybit-choice">
 				<a class="bybit-option primary" id="bybit-opt-signup" data-bybit-signup="trade-modal" href="#" target="_blank" rel="noopener noreferrer sponsored">
 					<span class="bybit-option-icon"><i data-lucide="user-plus"></i></span>
-					<span><strong>Нет, создать аккаунт</strong><small>Регистрация через Wind и бонусы для новичков</small></span>
+					<span><strong>Нет, создать аккаунт</strong><small>Партнёрская регистрация через Wind</small></span>
 					<i data-lucide="arrow-up-right"></i>
 				</a>
 				<a class="bybit-option" id="bybit-opt-trade" href="#" target="_blank" rel="noopener noreferrer">
@@ -943,6 +953,7 @@
 		<div class="welcome-stage">
 			<div class="welcome-art" aria-hidden="true">
 				<span class="welcome-orbit"></span>
+				<span class="agent-stream" aria-hidden="true"><i></i><i></i><i></i></span>
 				<div class="welcome-robot">
 					<span class="welcome-antenna"></span>
 					<div class="welcome-face"><span></span><span></span><b></b></div>

@@ -98,6 +98,7 @@ def open_app(browser):
                 "/Wind-finance/": "index.html",
                 "/Wind-finance/style.css": "style.css",
                 "/Wind-finance/script.js": "script.js",
+                "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
             }
             if path in files:
@@ -450,4 +451,49 @@ def test_pages_demo_shows_dated_quotes_when_backend_is_unconfigured(open_app):
     page.get_by_role("button", name="30 дней").click()
     assert len(page.locator("#rate-history-line").get_attribute("points").split()) > 2
     assert not any(path.startswith("/market/") for _, path, _, _ in requests)
+    assert not errors
+
+
+def test_mobile_crypto_pair_controls_trade_alert_and_partner_link(open_app):
+    page, _, errors = open_app(width=320, backend=False)
+    page.get_by_role("button", name="Попробовать демо").click()
+    page.locator('.nav a[href="#crypto"]').click()
+    signup = page.locator('#bybit-partner [data-bybit-signup]')
+    expect(signup).to_be_in_viewport()
+    assert signup.get_attribute("href").startswith("https://www.bybit.com/invite?ref=")
+    page.locator(".market-pair").filter(has_text="ETH").click()
+    expect(page.locator('input[value="ETHUSDT"]')).to_be_checked()
+    expect(page.locator("#crypto-symbol-label")).to_have_text("ETH / USDT")
+    expect(page.locator("#alert-coins .active")).to_have_text("ETH")
+    page.locator('[data-interval="240"]').click()
+    expect(page.locator('[data-interval="240"]')).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#crypto-retry")).to_be_visible()
+    page.get_by_role("button", name="Купить на Bybit").click()
+    expect(page.locator("#bybit-trade-title")).to_have_text("Купить ETH на Bybit")
+    expect(page.locator("#bybit-opt-trade")).to_have_attribute("href", "https://www.bybit.com/trade/spot/ETH/USDT")
+    expect(page.locator("#bybit-opt-signup")).to_have_attribute("href", signup.get_attribute("href"))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not errors
+
+
+def test_agent_uses_wind_motion_while_fetching_news(open_app):
+    page, _, errors = open_app(welcome=True)
+    page.emulate_media(reduced_motion="no-preference")
+    pending = []
+    page.route("**/market/news", lambda route: pending.append(route))
+    page.get_by_role("button", name="Попробовать демо").click()
+    robot = page.locator(".welcome-robot")
+    expect(robot).to_be_visible()
+    assert "wind-arrival" in robot.evaluate("node => getComputedStyle(node).animationName")
+    page.get_by_role("button", name="Продолжить").click()
+    page.get_by_role("button", name="Помощник Винд").click()
+    expect(page.locator("#news")).to_have_attribute("aria-busy", "true")
+    body = page.locator(".agent-character-body")
+    expect(body).to_have_css("animation-name", "wind-search")
+    assert pending
+    pending[0].fulfill(json={"items": [], "counts": {}})
+    expect(page.locator("#news")).to_have_attribute("aria-busy", "false")
+    expect(body).to_have_css("animation-name", "wind-drift")
+    page.emulate_media(reduced_motion="reduce")
+    expect(body).to_have_css("animation-name", "none")
     assert not errors

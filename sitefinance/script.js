@@ -212,7 +212,7 @@ const bybitOptTrade = document.getElementById('bybit-opt-trade');
 const bybitOptSignup = document.getElementById('bybit-opt-signup');
 document.querySelectorAll('[data-trade]').forEach((button) => {
 	button.addEventListener('click', () => {
-		const symbol = (document.getElementById('crypto-pair')?.value || 'BTCUSDT').toUpperCase();
+		const symbol = selectedCryptoPair();
 		const side = button.dataset.trade === 'sell' ? 'sell' : 'buy';
 		const base = symbol.replace(/(USDT|USDC)$/, '');
 		if (!bybitTradeModal) {
@@ -235,28 +235,6 @@ bybitOptTrade?.addEventListener('click', () => {
 });
 bybitOptSignup?.addEventListener('click', () => window.setTimeout(() => closeModal(bybitTradeModal), 150));
 
-// живые цены в партнёрской карточке
-(() => {
-	const btc = document.getElementById('bp-btc');
-	const eth = document.getElementById('bp-eth');
-	if (!btc || !eth) return;
-	const fmt = (v) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: Number(v) > 1000 ? 0 : 2 })}`;
-	const load = async () => {
-		try {
-			const res = await Promise.all(['BTCUSDT', 'ETHUSDT'].map((s) => fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}`).then((r) => r.json())));
-			[btc, eth].forEach((el, i) => {
-				const t = res[i]?.result?.list?.[0];
-				if (!t) return;
-				el.textContent = fmt(t.lastPrice);
-				el.parentElement.classList.toggle('up', Number(t.price24hPcnt) >= 0);
-				el.parentElement.classList.toggle('down', Number(t.price24hPcnt) < 0);
-			});
-		} catch (e) { /* карточка работает и без цен */ }
-	};
-	onAppView(['crypto'], (active) => { if (active) load(); });
-	window.setInterval(() => { if (!document.hidden && document.body.dataset.view === 'crypto') load(); }, 60000);
-})();
-
 document.addEventListener('keydown', (event) => {
 	if (event.key === 'Escape') {
 		modals.forEach(closeModal);
@@ -265,12 +243,13 @@ document.addEventListener('keydown', (event) => {
 
 const cryptoChartElement = document.querySelector('#crypto-chart');
 const cryptoPair = document.querySelector('#crypto-pair');
+const selectedCryptoPair = () => cryptoPair.querySelector('input:checked').value;
+const cryptoRetry = document.getElementById('crypto-retry');
 const cryptoPriceLabel = document.querySelector('#crypto-price-label');
 const cryptoSymbolLabel = document.querySelector('#crypto-symbol-label');
 const cryptoUpdated = document.querySelector('#crypto-updated');
 const timeframeButtons = document.querySelectorAll('[data-interval]');
 let activeInterval = '60';
-let activeCryptoPrice = 0;
 let cryptoChart;
 let candleSeries;
 let bybitSocket;
@@ -624,6 +603,7 @@ const syncNotificationIndicator = () => {
 
 const applyTheme = (isDark, save = true) => {
 	document.body.classList.toggle('dark-theme', isDark);
+	cryptoChart?.applyOptions(cryptoChartPalette());
 	if (themeToggle) {
 		themeToggle.setAttribute('aria-pressed', String(isDark));
 		themeToggle.innerHTML = isDark ? '<i data-lucide="sun"></i>' : '<i data-lucide="moon"></i>';
@@ -2327,6 +2307,15 @@ const formatCryptoPrice = (price) => {
 	return Number(price).toLocaleString('ru-RU', { maximumFractionDigits: digits });
 };
 
+function cryptoChartPalette() {
+	const dark = document.body.classList.contains('dark-theme');
+	const grid = { color: dark ? '#243c33' : '#eef3ef' };
+	return {
+		layout: { background: { color: dark ? '#14231d' : '#ffffff' }, textColor: dark ? '#bbd8c9' : '#516b5e' },
+		grid: { vertLines: grid, horzLines: grid },
+	};
+}
+
 const createCryptoChart = () => {
 	if (!cryptoChartElement || !window.LightweightCharts) {
 		return;
@@ -2335,8 +2324,7 @@ const createCryptoChart = () => {
 	cryptoChart = LightweightCharts.createChart(cryptoChartElement, {
 		width: cryptoChartElement.clientWidth,
 		height: cryptoChartElement.clientHeight,
-		layout: { background: { color: '#ffffff' }, textColor: '#71807b' },
-		grid: { vertLines: { color: '#f0f4f0' }, horzLines: { color: '#f0f4f0' } },
+		...cryptoChartPalette(),
 		crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
 		rightPriceScale: { borderColor: '#dfe7df' },
 		timeScale: { borderColor: '#dfe7df', timeVisible: true, secondsVisible: false },
@@ -2359,13 +2347,13 @@ const loadCryptoCandles = async () => {
 		return;
 	}
 
-	const symbol = cryptoPair.value;
+	const symbol = selectedCryptoPair();
 	const interval = activeInterval;
 	closeBybitStream();
 	const request = streamVersion;
 	cryptoPriceLabel.textContent = 'Загрузка свечей...';
 	try {
-		const response = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=100`);
+		const response = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=100`, { signal: AbortSignal.timeout(12000) });
 		const payload = await response.json();
 		if (request !== streamVersion) return;
 		if (payload.retCode !== 0) {
@@ -2380,8 +2368,7 @@ const loadCryptoCandles = async () => {
 			close: Number(close),
 		}));
 		candleSeries.setData(candles);
-		cryptoSymbolLabel.textContent = `${symbol.slice(0, -4)} / USDT`;
-		activeCryptoPrice = candles[candles.length - 1].close;
+		cryptoChartElement.style.visibility = '';
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candles[candles.length - 1].close)} USDT`;
 		cryptoUpdated.textContent = `Котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 		cryptoChart.timeScale().fitContent();
@@ -2389,7 +2376,7 @@ const loadCryptoCandles = async () => {
 	} catch (error) {
 		if (request !== streamVersion) return;
 		cryptoPriceLabel.textContent = 'Не удалось загрузить данные';
-		cryptoUpdated.textContent = 'Проверь соединение';
+		showChartUnavailable();
 	}
 };
 
@@ -2428,7 +2415,6 @@ const connectBybitStream = (symbol, interval) => {
 			close: Number(update.close),
 		};
 		candleSeries.update(candle);
-		activeCryptoPrice = candle.close;
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candle.close)} USDT`;
 		cryptoUpdated.textContent = `LIVE · котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 	});
@@ -2439,8 +2425,20 @@ const connectBybitStream = (symbol, interval) => {
 	});
 };
 
+const showChartUnavailable = () => {
+	cryptoChartElement.hidden = true;
+	cryptoUpdated.textContent = 'Свечи Bybit сейчас недоступны.';
+	cryptoRetry.hidden = false;
+};
+
 if (cryptoChartElement && cryptoPair) {
 	const showCrypto = async () => {
+		cryptoRetry.hidden = true;
+		cryptoChartElement.hidden = false;
+		cryptoChartElement.style.visibility = 'hidden';
+		cryptoSymbolLabel.textContent = `${selectedCryptoPair().slice(0, -4)} / USDT`;
+		cryptoPriceLabel.textContent = 'Загрузка свечей…';
+		cryptoUpdated.textContent = 'Загружаем свечи Bybit…';
 		try {
 			if (!cryptoChart) await loadVendor('LightweightCharts');
 			if (document.body.dataset.view !== 'crypto' || !document.getElementById('auth-gate').hidden) return;
@@ -2451,17 +2449,22 @@ if (cryptoChartElement && cryptoPair) {
 			loadCryptoCandles();
 		} catch {
 			cryptoPriceLabel.textContent = 'Не удалось загрузить график';
+			showChartUnavailable();
 		}
 	};
 	onAppView(['crypto'], (active) => {
 		if (active) showCrypto();
 		else closeBybitStream();
 	});
+	cryptoRetry.addEventListener('click', showCrypto);
 	cryptoPair.addEventListener('change', showCrypto);
 	timeframeButtons.forEach((button) => {
 		button.addEventListener('click', () => {
 			activeInterval = button.dataset.interval;
-			timeframeButtons.forEach((item) => item.classList.toggle('active', item === button));
+			timeframeButtons.forEach((item) => {
+				item.classList.toggle('active', item === button);
+				item.setAttribute('aria-pressed', String(item === button));
+			});
 			showCrypto();
 		});
 	});
@@ -2727,12 +2730,23 @@ if (inTelegram) {
 	};
 	const icon = (name) => { const i = document.createElement('i'); i.setAttribute('data-lucide', name); return i; };
 
+	const quoteNodes = new Map(Array.from(document.querySelectorAll('[data-quote]'), node => [node.dataset.quote, node]));
+	let nextQuoteRefresh = 0;
+
 	const fetchPrice = async (s) => {
-		const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}`);
-		const price = Number((await r.json()).result.list[0].lastPrice);
-		if (!(price > 0)) throw new Error('bad price');
-		prices[s] = price;
-		return price;
+		const node = quoteNodes.get(s);
+		try {
+			const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}`, { signal: AbortSignal.timeout(8000) });
+			const data = await response.json();
+			const price = Number(data.result?.list?.[0]?.lastPrice);
+			if (!response.ok || data.retCode !== 0 || !(price > 0)) throw new Error('Цена недоступна');
+			prices[s] = price;
+			if (node) node.textContent = formatCryptoPrice(price);
+			return price;
+		} catch (error) {
+			if (node) node.textContent = '—';
+			throw error;
+		}
 	};
 
 	// ---- живая цена выбранной монеты ----
@@ -2925,8 +2939,12 @@ if (inTelegram) {
 
 	const check = async () => {
 		const before = prices[symbol];
-		const symbols = [...new Set([symbol, ...alerts.map((a) => a.symbol)])];
-		await Promise.all(symbols.map((s) => fetchPrice(s).catch(() => {})));
+		const symbols = new Set([symbol, ...alerts.map((a) => a.symbol)]);
+		if (authGate.hidden && document.body.dataset.view === 'crypto' && Date.now() >= nextQuoteRefresh) {
+			for (const pair of quoteNodes.keys()) symbols.add(pair);
+			nextQuoteRefresh = Date.now() + 60000;
+		}
+		await Promise.all(Array.from(symbols, (s) => fetchPrice(s).catch(() => {})));
 		const after = prices[symbol];
 		showCurrent(before && after && before !== after ? (after > before ? 'tick-up' : 'tick-down') : undefined);
 
@@ -2981,14 +2999,19 @@ if (inTelegram) {
 
 	// выбранная в терминале пара подставляется сама
 	if (typeof cryptoPair !== 'undefined' && cryptoPair) {
-		const sync = () => setSymbol(cryptoPair.value);
+		const sync = () => setSymbol(selectedCryptoPair());
 		cryptoPair.addEventListener('change', sync);
 	}
 
 	buildQuick();
 	updateQuick();
 	render();
-	onAppView(['crypto'], (active) => { if (active) check(); });
+	onAppView(['crypto'], (active) => {
+		if (active) {
+			nextQuoteRefresh = 0;
+			check();
+		}
+	});
 	setInterval(() => {
 		if (!document.hidden && (alerts.length || document.body.dataset.view === 'crypto')) check();
 	}, 10000);
@@ -3205,6 +3228,7 @@ if (inTelegram) {
 	const loadRemoteNews = async () => {
 		if (newsLoading) return;
 		newsLoading = true;
+		$('news').setAttribute('aria-busy', 'true');
 		try {
 			const data = await window.WindApi('/market/news', { timeoutMs: 30000 });
 			newsLoadedAt = Date.now();
@@ -3219,10 +3243,12 @@ if (inTelegram) {
 			if (speech && data.items[0]) speech.textContent = `Свежее: «${data.items[0].title}». Ниже — всё главное по темам.`;
 		} catch (error) {
 			const speech = $('agent-speech-text');
+			if (!newsUpdatedAt) $('agent-last-scan').textContent = 'Нет свежих данных';
 			if (speech && !newsItems.length) speech.textContent = 'Новости сейчас недоступны — попробую обновить чуть позже.';
 			console.warn('Новости не обновились:', error.message);
 		} finally {
 			newsLoading = false;
+			$('news').setAttribute('aria-busy', 'false');
 		}
 	};
 	// обновляем ленту, если она устарела: по таймеру, при открытии агента и при возврате на вкладку
