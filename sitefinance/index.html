@@ -753,10 +753,25 @@
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
 			<div class="plus-hero">
 				<span class="plus-hero-icon"><i data-lucide="wind"></i></span>
-				<div><p class="eyebrow">Wind Plus</p><h2 id="subscription-title">Больше данных, меньше догадок</h2></div>
+				<div><p class="eyebrow">Wind Plus</p><h2 id="subscription-title">Что будет с моей позицией?</h2></div>
 			</div>
+			<section class="plus-lab" aria-label="Сценарии Wind Plus">
+				<p class="lab-demo">Интерактивное демо · учебные суммы</p>
+				<h3>Проверка сценария</h3>
+				<p>Задай размер позиции и посмотри, как изменение цены повлияет на результат.</p>
+				<label>Размер позиции, ₽ <input id="lab-capital" type="number" inputmode="decimal" min="0.01" max="1000000000" step="any" value="10000"></label>
+				<label for="lab-change">Изменение цены <strong id="lab-percent">−5%</strong></label>
+				<input id="lab-change" type="range" min="-30" max="30" value="-5">
+				<div class="lab-result" aria-live="polite"><span>Прибыль или убыток</span><strong id="lab-profit"></strong><small id="lab-total"></small></div>
+				<details><summary>Рассчитать размер позиции по риску</summary>
+					<label>Допустимый убыток, ₽ <input id="lab-budget" type="number" inputmode="decimal" min="0.01" max="1000000000" step="any" value="500"></label>
+					<label>Снижение цены до выхода, % <input id="lab-stop" type="number" inputmode="decimal" min="0.01" max="100" step="any" value="5"></label>
+					<output id="lab-size" aria-live="polite"></output>
+				</details>
+				<small>Расчёт для покупки без плеча. Комиссии и проскальзывание не учтены.</small>
+			</section>
 			<section class="plus-preview" id="plus-preview" aria-label="Примеры Wind Plus" hidden>
-				<p class="modal-copy">Примеры на учебных данных. Можно открыть каждый блок.</p>
+				<p class="modal-copy">Ещё в Plus · примеры на учебных данных</p>
 				<details open>
 					<summary>Анализ рынка</summary>
 					<p><strong>BTC · RSI 56</strong> — в этом примере индикатор находится между уровнями перепроданности и перекупленности.</p>
@@ -771,11 +786,12 @@
 				</details>
 				<details>
 					<summary>Ценовые уведомления</summary>
-					<p><strong>BTC выше 70 000 USDT</strong> — пример уведомления, которое срабатывает при достижении порога.</p>
+					<p><strong>BTC выше 70 000 USDT</strong> — попробуй пересечь порог на учебной цене.</p><button type="button" id="lab-alert">Повысить цену до 70 100 USDT</button><p id="lab-alert-state" role="status">Цена 69 900 USDT · ожидаем сигнал</p>
 				</details>
 			</section>
 			<p class="modal-copy">Анализ рынка, радар новых инвестиций и отслеживание криптовалют в одной подписке.</p>
 			<ul class="plus-features">
+				<li><span><i data-lucide="calculator"></i></span><div><strong>Сценарии позиции</strong><small>Расчёт прибыли, убытка и размера позиции по заданному риску</small></div></li>
 				<li><span><i data-lucide="activity"></i></span><div><strong>Анализ рынка</strong><small>RSI, MACD, тренд, уровни поддержки и сопротивления и вывод простым языком по BTC, ETH и SOL</small></div></li>
 				<li><span><i data-lucide="radar"></i></span><div><strong>Радар крипторынка</strong><small>Лидеры роста и падения за 24 часа, обновление каждые 30 секунд</small></div></li>
 				<li><span><i data-lucide="sparkles"></i></span><div><strong>Новые листинги</strong><small>Узнаешь сразу, когда на бирже появляется новая пара</small></div></li>

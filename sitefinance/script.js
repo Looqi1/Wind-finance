@@ -75,6 +75,31 @@ if (profileMenu && profileTrigger && profileDropdown) {
 	});
 }
 
+const labField = id => document.getElementById('lab-' + id);
+const labMoney = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 });
+const labValue = id => {
+	const field = labField(id);
+	return field.validity.valid && field.value !== '' ? field.valueAsNumber : NaN;
+};
+const updateScenario = () => {
+	const capital = labValue('capital');
+	const change = labValue('change');
+	const profit = capital * change / 100;
+	labField('percent').textContent = (change > 0 ? '+' : '') + change + '%';
+	labField('profit').textContent = Number.isFinite(profit) ? labMoney.format(profit) : 'Проверь сумму';
+	labField('total').textContent = Number.isFinite(profit) ? 'Стоимость позиции ' + labMoney.format(capital + profit) : '';
+	const size = labValue('budget') / (labValue('stop') / 100);
+	labField('size').textContent = Number.isFinite(size) ? 'Размер позиции ' + labMoney.format(size) : 'Проверь допустимый убыток и процент снижения.';
+};
+document.querySelector('.plus-lab').addEventListener('input', updateScenario);
+updateScenario();
+labField('alert').addEventListener('click', () => {
+	const fired = labField('alert').dataset.fired !== 'yes';
+	labField('alert').dataset.fired = fired ? 'yes' : '';
+	labField('alert').textContent = fired ? 'Сбросить пример' : 'Повысить цену до 70 100 USDT';
+	labField('alert-state').textContent = fired ? 'Сигнал сработал · BTC пересёк 70 000 USDT' : 'Цена 69 900 USDT · ожидаем сигнал';
+});
+
 const modalTriggers = document.querySelectorAll('[data-modal]');
 const modals = document.querySelectorAll('.modal');
 const windBurst = document.querySelector('.wind-burst');

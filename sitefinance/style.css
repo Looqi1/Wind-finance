@@ -3263,3 +3263,22 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
 	.crypto-compass { background-image: url("assets/crypto-compass-still.svg?v=2"); }
 }
+
+.plus-modal .plus-hero { padding:24px 45px 24px 18px; border-radius:18px; color:#efffed; background:repeating-radial-gradient(ellipse at 110% -100%,transparent 0 19px,#d0ffc51f 20px,transparent 21px 35px),linear-gradient(125deg,#10382e,#326950); }
+.plus-hero .eyebrow { color:#c4edae; }
+.plus-modal .modal-close { z-index:2; }
+.plus-lab { display:grid; gap:10px; margin:14px 0; }
+.plus-lab h3,.plus-lab p { margin:0; }
+.plus-lab p,.plus-lab small { color:var(--muted); line-height:1.45; }
+.plus-lab label { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:.9rem; }
+.plus-lab input[type=number] { width:38%; min-height:44px; padding:8px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font:inherit; }
+.plus-lab input[type=range] { width:100%; height:32px; accent-color:var(--green); }
+.lab-result { display:grid; gap:4px; border-radius:14px; padding:16px; background:var(--mint); color:var(--ink); }
+.lab-result strong { font-size:1.6rem; }
+.plus-lab details { padding:10px 12px; border:1px solid var(--line); border-radius:12px; }
+.plus-lab summary { cursor:pointer; padding:6px 0; font-weight:700; }
+.plus-lab details label,.plus-lab output { margin-top:10px; }
+.plus-lab output { display:block; font-weight:700; }
+#lab-alert { margin:0 12px 10px; padding:10px; min-height:44px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--green); cursor:pointer; }
+body:not(.plus-active):not(.demo-preview) .plus-lab { display:none; }
+body.plus-active:not(.demo-preview) .lab-demo { display:none; }
