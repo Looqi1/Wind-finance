@@ -99,6 +99,7 @@ def open_app(browser):
                 "/Wind-finance/style.css": "style.css",
                 "/Wind-finance/script.js": "script.js",
                 "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
+                "/Wind-finance/assets/wind-airstream.webp": "assets/wind-airstream.webp",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
             }
             if path in files:
@@ -148,6 +149,9 @@ def test_sign_in_then_select_history_and_open_converter(open_app):
 
     line = page.locator("#rate-history-line")
     expect(line).to_have_attribute("points", "3.00,84.00 317.00,8.00")
+    expect(page.locator("#rate-history-area")).to_have_attribute("points", "3,92 3.00,84.00 317.00,8.00 317.00,92")
+    expect(page.locator("#rate-history-end")).to_have_attribute("cy", "8.00")
+    assert line.evaluate("line => line.getAnimations().length") == 0
     expect(page.locator("#rate-history-summary")).to_contain_text("15.11")
     page.get_by_role("button", name="30 дней").click()
     expect(page.locator("#rate-history-summary")).to_contain_text("26.10")

@@ -91,7 +91,11 @@ const updateScenario = () => {
 	const size = labValue('budget') / (labValue('stop') / 100);
 	labField('size').textContent = Number.isFinite(size) ? 'Размер позиции ' + labMoney.format(size) : 'Проверь допустимый убыток и процент снижения.';
 };
-document.querySelector('.plus-lab').addEventListener('input', updateScenario);
+document.querySelector('.plus-lab').addEventListener('input', event => {
+	updateScenario();
+	if (event.target.id !== 'lab-change') return;
+	playWindEffect(labField('profit'), [{ opacity: .55, translate: '0 3px' }, { opacity: 1, translate: '0 0' }], 240);
+});
 updateScenario();
 labField('alert').addEventListener('click', () => {
 	const fired = labField('alert').dataset.fired !== 'yes';
@@ -729,6 +733,23 @@ const viewTitles = {
 };
 const topbarEyebrow = document.querySelector('.topbar .eyebrow');
 const topbarTitle = document.querySelector('.topbar h1');
+const windMotion = window.matchMedia('(prefers-reduced-motion: no-preference)');
+const windEffects = new Map();
+const playWindEffect = (element, frames, duration) => {
+	if (!windMotion.matches || !element?.animate) return;
+	windEffects.get(element)?.cancel();
+	const animation = element.animate(frames, { duration, easing: 'cubic-bezier(.22,.72,.24,1)' });
+	windEffects.set(element, animation);
+	animation.finished.catch(() => {}).finally(() => {
+		if (windEffects.get(element) === animation) windEffects.delete(element);
+	});
+};
+windMotion.addEventListener?.('change', () => {
+	if (!windMotion.matches) windEffects.forEach(animation => animation.cancel());
+});
+const windResponse = (element) => playWindEffect(element, [
+	{ scale: '1' }, { scale: '.95', offset: .27 }, { scale: '1.035', offset: .69 }, { scale: '1' },
+], 340);
 const paintViewTitle = (view) => {
 	const [eyebrow, title] = viewTitles[view] || viewTitles.dashboard;
 	if (topbarEyebrow) topbarEyebrow.textContent = eyebrow;
@@ -772,7 +793,12 @@ const setAppView = (view) => {
 		else link.removeAttribute('aria-current');
 	});
 	paintViewTitle(nextView);
-	if (changed) window.scrollTo({ top: 0, behavior: 'instant' });
+	if (changed) {
+		window.scrollTo({ top: 0, behavior: 'instant' });
+		playWindEffect(topbarTitle, [
+			{ opacity: .35, translate: '-10px 4px' }, { opacity: 1, translate: '0 0' },
+		], 385);
+	}
 };
 
 appNavigation.forEach((link) => {
@@ -783,6 +809,12 @@ appNavigation.forEach((link) => {
 		window.history.replaceState(null, '', `#${view}`);
 		setAppView(view);
 	});
+});
+
+document.addEventListener('click', (event) => {
+	const control = event.target.closest('.nav a, .market-pairs button, .rate-periods button, .invest-filters button, .market-pair, .timeframes button, .learn-tabs button, .wallet-actions button, .goal-actions button, .plus-plans button, .ni-follow');
+	if (!control || control.matches(':disabled') || event.target.matches('.market-pair input')) return;
+	windResponse(control.querySelector('.nav-icon') || control);
 });
 
 const setAgentOpen = (isOpen) => {
@@ -1713,7 +1745,17 @@ const renderRateHistory = () => {
 		const y = high === low ? 46 : 8 + (high - value) / (high - low) * 76;
 		return `${x.toFixed(2)},${y.toFixed(2)}`;
 	});
-	document.getElementById('rate-history-line').setAttribute('points', coordinates.join(' '));
+	const line = document.getElementById('rate-history-line');
+	const area = document.getElementById('rate-history-area');
+	const end = document.getElementById('rate-history-end');
+	const [x, y] = coordinates.at(-1).split(',');
+	line.setAttribute('points', coordinates.join(' '));
+	area.setAttribute('points', `3,92 ${coordinates.join(' ')} ${x},92`);
+	end.setAttribute('cx', x);
+	end.setAttribute('cy', y);
+	playWindEffect(line, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], 690);
+	playWindEffect(area, [{ opacity: .15, scale: '1 .55' }, { opacity: 1, scale: '1 1' }], 720);
+	playWindEffect(end, [{ opacity: 0 }, { opacity: 0, offset: .7 }, { opacity: 1 }], 720);
 	document.getElementById('rate-y-high').textContent = `${formatMoney(high)} ₽`;
 	document.getElementById('rate-y-low').textContent = high === low ? '' : `${formatMoney(low)} ₽`;
 	document.getElementById('rate-history-summary').textContent =
@@ -1783,6 +1825,9 @@ marketButtons.forEach((button) => {
 		if (marketCurrency === button.dataset.marketCurrency) return;
 		marketCurrency = button.dataset.marketCurrency;
 		renderMarketPair();
+		playWindEffect(marketFocus.querySelector('.focus-value'), [
+			{ opacity: .25, translate: '-6px 3px' }, { opacity: 1, translate: '0 0' },
+		], 340);
 		loadRateHistory();
 	});
 });
@@ -3876,7 +3921,7 @@ if (inTelegram) {
 	// ---------- что появляется с анимацией ----------
 	const REVEAL = [
 		'.topbar', '.brand', '.nav a', '.sidebar-bottom',
-		'.wallet-bar', '.stats-card', '#converter .converter', '.section-heading',
+		'.wallet-bar', '.stats-card', '.invest-overview', '.bybit-partner-card', '#converter .converter', '.section-heading',
 		'.crypto-terminal', '.alerts-card', '.crypto-news-feature', '.crypto-news-item', '.edu-progress', '.edu-card',
 		'.profile-hero', '.portfolio-card', '.portfolio-item', '.ledger-row',
 		'.settings-card', '.setting-item', '.insight-item', '.cg-card',
