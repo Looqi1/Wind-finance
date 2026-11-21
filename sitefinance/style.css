@@ -3282,3 +3282,4 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 #lab-alert { margin:0 12px 10px; padding:10px; min-height:44px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--green); cursor:pointer; }
 body:not(.plus-active):not(.demo-preview) .plus-lab { display:none; }
 body.plus-active:not(.demo-preview) .lab-demo { display:none; }
+.telegram-app .lab-web-price { display:none; }
