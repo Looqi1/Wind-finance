@@ -4640,12 +4640,12 @@ if (inTelegram) {
 		{ id: 'crypto-index', icon: 'bitcoin', name: 'Индекс крупнейших криптовалют', type: 'Крипто', risk: 'high', term: 'от 1 года', min: 3000, note: 'Корзина из нескольких крупных монет' },
 	];
 	const RISK = { low: 'Риск: низкий', mid: 'Риск: средний', high: 'Риск: высокий' };
-	let followed = readJSON('wind_followed', []);
-	followed = (Array.isArray(followed) ? followed : []).filter((id) => NEW_ITEMS.some((x) => x.id === id));
-
 	const renderNew = () => {
 		const list = $('ni-list');
-		if (!list) return;
+		const demo = isDemoPreview();
+		const key = demo ? 'wind_demo_followed' : 'wind_followed';
+		const saved = readJSON(key, []);
+		const followed = Array.isArray(saved) ? saved : [];
 		list.textContent = '';
 		NEW_ITEMS.forEach((it) => {
 			const on = followed.includes(it.id);
@@ -4662,11 +4662,13 @@ if (inTelegram) {
 			main.append(top, mk('p', '', it.note), chips);
 			const btn = mk('button', `ni-follow${on ? ' on' : ''}`, on ? 'Отслеживается ✓' : 'Следить');
 			btn.type = 'button';
+			btn.disabled = !demo && !isPlus();
+			btn.setAttribute('aria-pressed', String(on));
 			btn.addEventListener('click', () => {
-				if (!isPlus()) return;
-				followed = on ? followed.filter((x) => x !== it.id) : followed.concat(it.id);
-				writeJSON('wind_followed', followed);
-				if (!on) notify('neutral', `Следим: ${it.name}`, 'Сообщим о новых выпусках и размещениях');
+				if (!isDemoPreview() && !isPlus()) return;
+				const next = on ? followed.filter((x) => x !== it.id) : followed.concat(it.id);
+				writeJSON(key, next);
+				if (!demo && !on) notify('neutral', `Следим: ${it.name}`, 'Сообщим о новых выпусках и размещениях');
 				showSuccess(on ? `Отслеживание отключено: ${it.name}` : `Следим: ${it.name}`);
 				renderNew();
 			});
@@ -4686,6 +4688,8 @@ if (inTelegram) {
 		if (Date.now() - rd.last > (onCrypto ? 30000 : 300000)) loadRadar();
 	};
 
+	window.addEventListener('wind-auth', renderNew);
+	window.addEventListener('wind-logout', renderNew);
 	document.addEventListener('wind-plus-change', () => {
 		if (isPlus()) {
 			if (an.body) message(an.body, 'Загружаем анализ…');

@@ -3283,3 +3283,7 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 body:not(.plus-active):not(.demo-preview) .plus-lab { display:none; }
 body.plus-active:not(.demo-preview) .lab-demo { display:none; }
 .telegram-app .lab-web-price { display:none; }
+
+body.demo-preview #newinv-card .plus-body { filter:none; opacity:1; pointer-events:auto; user-select:auto; }
+body.demo-preview #newinv-card .plus-lock { display:none; }
+#newinv-card .ni-follow { min-height:44px; }
