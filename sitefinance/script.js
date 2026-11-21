@@ -808,7 +808,7 @@ document.addEventListener('keydown', (event) => {
 
 	const BADGES = [
 		{ id: 'first', icon: 'sparkles', name: 'Первый шаг', hint: 'Сыграй в любую игру' },
-		{ id: 'all4', icon: 'layout-grid', name: 'Универсал', hint: 'Сыграй во все четыре игры' },
+		{ id: 'all4', icon: 'layout-grid', name: 'Универсал', hint: 'Сыграй в четыре разные игры' },
 		{ id: 'perfect', icon: 'star', name: 'Отличник', hint: 'Получи 3 звезды в игре' },
 		{ id: 'daily', icon: 'calendar-check', name: 'Дисциплина', hint: 'Выполни задание дня' },
 	];
@@ -843,10 +843,11 @@ document.addEventListener('keydown', (event) => {
 	// ---------- отрисовка панели ----------
 	const $ = (id) => document.getElementById(id);
 	const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+	const gameIds = Array.from(document.querySelectorAll('[data-game-tab]'), tab => tab.dataset.gameTab);
 	const totalStars = () => {
 		let s = {};
 		try { s = JSON.parse(localStorage.getItem('wind_game_stars') || '{}') || {}; } catch (e) { s = {}; }
-		return ['drop', 'candles', 'risk', 'scam'].reduce((a, k) => a + Math.max(0, Math.min(3, Number(s[k]) || 0)), 0);
+		return gameIds.reduce((a, k) => a + Math.max(0, Math.min(3, Number(s[k]) || 0)), 0);
 	};
 
 	const render = () => {
@@ -856,7 +857,7 @@ document.addEventListener('keydown', (event) => {
 		if ($('gh-xp')) $('gh-xp').textContent = `${p.xp - L.from} / ${L.to - L.from} XP`;
 		if ($('gh-xp-bar')) $('gh-xp-bar').style.width = `${L.pct}%`;
 		$('gh-ring')?.style.setProperty('--p', `${L.pct}`);
-		if ($('gh-stars')) $('gh-stars').textContent = `${totalStars()} / 12`;
+		if ($('gh-stars')) $('gh-stars').textContent = `${totalStars()} / ${gameIds.length * 3}`;
 		const ch = dailyFor(today());
 		const done = p.daily[today()] === ch.id;
 		if ($('gh-daily-text')) $('gh-daily-text').textContent = ch.text;
@@ -922,7 +923,7 @@ document.addEventListener('keydown', (event) => {
 		p.xp += gain;
 		const after = levelOf(p.xp);
 		unlock('first');
-		if (['drop', 'candles', 'risk', 'scam'].every((g) => p.played[g])) unlock('all4');
+		if (gameIds.filter(id => p.played[id]).length >= 4) unlock('all4');
 		if ((data.stars || 0) >= 3) unlock('perfect');
 		save();
 		render();
@@ -1319,6 +1320,27 @@ document.addEventListener('keydown', (event) => {
 		ctx.beginPath(); ctx.arc(sx, sy, s.chapter === 0 ? 30 : 20, 0, Math.PI * 2); ctx.fill();
 		// облака
 		scenery.clouds.forEach((c) => cloud(((c.x + s.t * c.v) % (w + 140)) - 70, c.y, c.s, s.chapter === 1 ? 0.12 : 0.18));
+		// Дальние береговые уступы и струи воздуха движутся медленнее игрового груза.
+		ctx.fillStyle = sk.city2;
+		ctx.beginPath();
+		ctx.moveTo(0, h);
+		ctx.lineTo(0, h * .76);
+		ctx.bezierCurveTo(w * .22, h * .63, w * .33, h * .85, w * .52, h * .72);
+		ctx.lineTo(w * .62, h * .67);
+		ctx.lineTo(w * .66, h * .7);
+		ctx.bezierCurveTo(w * .83, h * .51, w * .89, h * .64, w, h * .53);
+		ctx.lineTo(w, h);
+		ctx.fill();
+		ctx.strokeStyle = 'rgba(238,250,211,.3)';
+		ctx.lineWidth = 1.2;
+		for (let band = 0; band < 3; band++) {
+			const x = ((s.t * (12 + band * 3) + band * w * .38) % (w + 125)) - 120;
+			const y = h * (.22 + band * .16);
+			ctx.beginPath();
+			ctx.moveTo(x, y);
+			ctx.bezierCurveTo(x + 42, y + 4, x + 68, y - 21, x + 115, y - 12);
+			ctx.stroke();
+		}
 		// горизонт из свечей с параллаксом от корзины
 		const par = (s.px - w / 2) / w;
 		const city = (line, col, depth, base) => {
@@ -1404,10 +1426,16 @@ document.addEventListener('keydown', (event) => {
 		ctx.restore();
 		ctx.fillStyle = '#9ef0c6';
 		rr(bx - 9, by - 5, PW + 18, 9, 4); ctx.fill();
-		ctx.fillStyle = '#fff';
-		ctx.font = '700 15px "Space Grotesk", sans-serif';
+		// Иллюминаторы и медная обшивка почтового судна.
+		for (const offset of [-22, 0, 22]) {
+			ctx.beginPath(); ctx.arc(s.px + offset, by + 13, 5, 0, Math.PI * 2);
+			ctx.fillStyle = '#f1ce88'; ctx.fill();
+			ctx.beginPath(); ctx.arc(s.px + offset, by + 13, 3, 0, Math.PI * 2);
+			ctx.fillStyle = '#234c55'; ctx.fill();
+		}
+		ctx.strokeStyle = '#db9566'; ctx.lineWidth = 3;
+		ctx.beginPath(); ctx.moveTo(bx + 7, by + PH - 5); ctx.lineTo(bx + PW - 7, by + PH - 5); ctx.stroke();
 		ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-		ctx.fillText('WALLET', s.px, by + PH / 2 + 3);
 		// индикатор серии над корзиной
 		if (s.combo > 1) {
 			const k = Math.max(0, 1 - (performance.now() - s.lastCatch) / 2200);
@@ -4811,7 +4839,7 @@ if (inTelegram) {
 				const al = Math.max(0, Math.min(1, a.reveal - i));
 				if (al <= 0) return;
 				const x = (i + 1) * cw;
-				const col = c.c >= c.o ? '#2d9b6f' : '#d97867';
+				const col = c.c >= c.o ? '#89e0bf' : '#ff9c87';
 				ctx.globalAlpha = al;
 				ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
 				ctx.beginPath(); ctx.moveTo(x, y(c.h)); ctx.lineTo(x, y(c.l)); ctx.stroke();
@@ -4982,11 +5010,11 @@ if (inTelegram) {
 				ctx.fillStyle = col; ctx.font = '700 11px "DM Sans", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
 				ctx.fillText(label, 8, Y(v) - 3);
 			};
-			line(2, '#2d9b6f', 'ЦЕЛЬ'); line(-1, '#d97867', 'СТОП'); line(0, 'rgba(120,140,130,.8)', 'ВХОД');
+			line(2, '#91e5c3', 'ЦЕЛЬ'); line(-1, '#ffa68b', 'СТОП'); line(0, '#c3dadb', 'ВХОД');
 			if (!a.pts) return;
 			const n = a.pts.length - 1, upto = a.p * n;
 			const X = (k) => 8 + (k / n) * (w - 16);
-			const color = a.p >= 1 ? (a.win ? '#2d9b6f' : '#d97867') : '#e0a82e';
+			const color = a.p >= 1 ? (a.win ? '#91e5c3' : '#ffa68b') : '#ffda86';
 			ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineJoin = 'round';
 			ctx.beginPath(); ctx.moveTo(X(0), Y(a.pts[0]));
 			for (let k = 1; k <= Math.floor(upto); k++) ctx.lineTo(X(k), Y(a.pts[k]));
@@ -5273,7 +5301,162 @@ if (inTelegram) {
 		open();
 	};
 
+	// В каждой клетке флюгер задаёт направление следующего шага.
+	const initCourier = (root) => {
+		const routes = [
+			{ name: 'Тихая бухта', rows: ['##WG', '>NN#', '####'] },
+			{ name: 'Туманный пролив', rows: ['#N#G', '>E#W', '#NSE', '####'] },
+			{ name: 'Северный мыс', rows: ['##EG', '##NW', '>W#E', '#NWN'] },
+		];
+		const winds = 'NESW';
+		const bearings = ['север', 'восток', 'юг', 'запад'];
+		const vectors = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+		let level = 0, misses = 0, turns = 0;
+		let cancelFlight = null;
+
+		const round = () => {
+			const route = routes[level];
+			const cells = route.rows.join('').split('');
+			const width = route.rows[0].length;
+			const start = cells.indexOf('>');
+			const stage = scene(root, `Рейс ${level + 1} из ${routes.length}`, route.name,
+				'Поверни флюгеры по часовой стрелке и проложи путь от планера до маяка. Облетай грозовые облака.');
+			const map = mk('div', 'courier-map');
+			map.setAttribute('role', 'group');
+			map.setAttribute('aria-label', 'Карта полёта');
+			map.style.setProperty('--rows', route.rows.length);
+			const tiles = cells.map((cell, i) => {
+				const movable = winds.includes(cell);
+				const tile = mk(movable ? 'button' : 'span', 'courier-tile');
+				const name = `Ряд ${Math.floor(i / width) + 1}, столбец ${i % width + 1}`;
+				const glyph = mk('span', 'courier-glyph');
+				glyph.setAttribute('aria-hidden', 'true');
+				tile.appendChild(glyph);
+				if (movable) {
+					tile.type = 'button';
+					tile.dataset.kind = 'wind';
+					const point = () => {
+						const direction = winds.indexOf(cells[i]);
+						glyph.style.setProperty('--angle', `${direction * 90}deg`);
+						tile.setAttribute('aria-label', `${name}, ветер на ${bearings[direction]}. Повернуть`);
+					};
+					point();
+					tile.addEventListener('click', () => {
+						cells[i] = winds[(winds.indexOf(cells[i]) + 1) % 4];
+						point();
+						turns++;
+						clearTrail();
+						status.textContent = 'Маршрут изменён.';
+					});
+				} else {
+					tile.dataset.kind = cell === '>' ? 'port' : cell === 'G' ? 'beacon' : 'cloud';
+					tile.setAttribute('role', 'img');
+					tile.setAttribute('aria-label', `${name}, ${cell === '>' ? 'старт на восток' : cell === 'G' ? 'маяк' : 'грозовое облако'}`);
+				}
+				map.appendChild(tile);
+				return tile;
+			});
+			const plane = mk('span', 'courier-plane');
+			plane.setAttribute('aria-hidden', 'true');
+			map.appendChild(plane);
+			const placePlane = (i, heading) => {
+				plane.style.left = `${(i % width + .5) * 100 / width}%`;
+				plane.style.top = `${(Math.floor(i / width) + .5) * 100 / route.rows.length}%`;
+				plane.style.setProperty('--angle', `${heading * 90}deg`);
+			};
+			const clearTrail = () => {
+				tiles.forEach(tile => tile.classList.remove('charted', 'storm-hit'));
+				placePlane(start, 1);
+			};
+			clearTrail();
+			const status = mk('p', 'courier-status', 'Планер стартует на восток. Маяк отмечен огнём.');
+			status.setAttribute('role', 'status');
+			const launch = btn('button courier-launch', 'Запустить планер');
+			let delivered = false;
+			const lockWinds = (locked) => {
+				map.querySelectorAll('button').forEach(tile => { tile.disabled = locked; });
+			};
+			const fly = () => {
+				clearTrail();
+				launch.disabled = true;
+				lockWinds(true);
+				status.textContent = 'Планер в полёте…';
+				let pos = start, timer;
+				const visited = new Set();
+				cancelFlight = () => {
+					clearTimeout(timer);
+					cancelFlight = null;
+					clearTrail();
+					launch.disabled = false;
+					lockWinds(false);
+					status.textContent = 'Полёт остановлен. Маршрут сохранён.';
+				};
+				const finishFlight = (success, message) => {
+					cancelFlight = null;
+					delivered = success;
+					launch.disabled = false;
+					lockWinds(success);
+					status.textContent = message;
+					if (success) {
+						window.WindGames?.sfx.deliver();
+						launch.textContent = level === routes.length - 1 ? 'Завершить смену' : 'Следующий рейс';
+					} else {
+						misses++;
+						window.WindGames?.sfx.wrong();
+					}
+				};
+				const step = () => {
+					if (document.hidden || !root.offsetParent) { cancelFlight(); return; }
+					visited.add(pos);
+					tiles[pos].classList.add('charted');
+					const heading = pos === start ? 1 : winds.indexOf(cells[pos]);
+					const [dx, dy] = vectors[heading];
+					const x = pos % width + dx, y = Math.floor(pos / width) + dy;
+					if (x < 0 || x >= width || y < 0 || y >= route.rows.length) {
+						finishFlight(false, 'Ветер унёс планер за карту. Поверни флюгер у края.');
+						return;
+					}
+					pos = y * width + x;
+					placePlane(pos, heading);
+					if (cells[pos] === 'G') { finishFlight(true, 'Письмо у маяка!'); return; }
+					if (cells[pos] === '#') {
+						tiles[pos].classList.add('storm-hit');
+						finishFlight(false, 'Впереди гроза. Измени маршрут перед облаком.');
+						return;
+					}
+					if (visited.has(pos)) { finishFlight(false, 'Планер летает по кругу. Поверни один из флюгеров на пути.'); return; }
+					timer = setTimeout(step, reduce ? 0 : 260);
+				};
+				step();
+			};
+			launch.addEventListener('click', () => {
+				if (!delivered) { fly(); return; }
+				if (level + 1 < routes.length) { level++; round(); return; }
+				result(root, 'courier', {
+					kicker: 'Смена завершена', title: 'Почта ветра', text: 'Все три письма добрались до маяков.',
+					win: true, stars: Math.max(1, 3 - misses), heading: 'Почта доставлена',
+					rows: [['Доставлено', '3 из 3'], ['Повороты флюгеров', String(turns)], ['Неудачные запуски', String(misses)]],
+					tip: 'За смену без неудачных запусков ты получишь три звезды.', again: startShift,
+				});
+			});
+			stage.append(map, status, launch);
+		};
+
+		const startShift = () => { level = 0; misses = 0; turns = 0; round(); };
+		const cover = mk('div', 'courier-cover');
+		const title = mk('h3', '', 'Почта ветра');
+		cover.append(mk('span', 'courier-genre', 'Головоломка · 3 рейса'), title,
+			mk('p', '', 'Поворачивай флюгеры и доставляй письма к маякам.'),
+			btn('button', 'Начать рейс', startShift));
+		root.appendChild(cover);
+		const stopHidden = () => { if (document.hidden || !root.offsetParent) cancelFlight?.(); };
+		document.addEventListener('visibilitychange', stopHidden);
+		onAppView(['game'], active => { if (!active) cancelFlight?.(); });
+		new MutationObserver(stopHidden).observe(root.parentElement, { attributes: true, attributeFilter: ['hidden'] });
+	};
+
 	// ---------- запуск и вкладки ----------
+	initCourier(document.getElementById('gm-courier'));
 	initCandles(document.getElementById('gm-candles'));
 	initRisk(document.getElementById('gm-risk'));
 	initScam(document.getElementById('gm-scam'));
@@ -5284,13 +5467,41 @@ if (inTelegram) {
 		window.WindGames?.render();
 	});
 
-	tabs.forEach((b) => b.addEventListener('click', () => {
-		const id = b.dataset.gameTab;
-		tabs.forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', String(x === b)); });
-		document.querySelectorAll('[data-game-panel]').forEach((p) => { p.hidden = p.dataset.gamePanel !== id; });
-		document.getElementById('game-tabs')?.setAttribute('data-active', id);
-		window.WindGames?.render();
-	}));
+	const selectTab = (tab) => {
+		const id = tab.dataset.gameTab;
+		tabs.forEach((item) => {
+			const active = item === tab;
+			item.classList.toggle('active', active);
+			item.setAttribute('aria-selected', String(active));
+			item.tabIndex = active ? 0 : -1;
+		});
+		document.querySelectorAll('[data-game-panel]').forEach((panel) => { panel.hidden = panel.dataset.gamePanel !== id; });
+		const strip = tab.parentElement;
+		strip.dataset.active = id;
+		const bounds = strip.getBoundingClientRect();
+		const card = tab.getBoundingClientRect();
+		if (card.right > bounds.right) strip.scrollLeft += card.right - bounds.right;
+		if (card.left < bounds.left) strip.scrollLeft += card.left - bounds.left;
+	};
+	tabs.forEach((tab, index) => {
+		const id = tab.dataset.gameTab;
+		const panel = document.querySelector(`[data-game-panel="${id}"]`);
+		tab.id = `game-tab-${id}`;
+		panel.id = `game-panel-${id}`;
+		tab.setAttribute('aria-controls', panel.id);
+		panel.setAttribute('role', 'tabpanel');
+		panel.setAttribute('aria-labelledby', tab.id);
+		tab.addEventListener('click', () => selectTab(tab));
+		tab.addEventListener('keydown', event => {
+			const positions = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length, Home: 0, End: tabs.length - 1 };
+			const next = tabs[positions[event.key]];
+			if (!next) return;
+			event.preventDefault();
+			next.focus();
+			selectTab(next);
+		});
+	});
+	selectTab(document.querySelector('[data-game-tab].active'));
 })();
 
 
@@ -5954,7 +6165,7 @@ else window.setTimeout(paintIcons, 200);
 		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: 'Живые свечи с Bybit: выбирай пару и таймфрейм. Кнопки «Купить» и «Продать» ведут на Bybit.' },
 		{ view: 'crypto', target: '#price-alerts', title: 'Уведомления о цене', text: 'Задай уровень, например «BTC поднимется до 70 000», и я напомню в браузере или в Telegram.' },
 		{ view: 'converter', target: '#converter .converter', title: 'Конвертер', text: 'Пересчитай сумму между валютами по актуальному курсу. Стрелки меняют валюты местами.' },
-		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Четыре игры про рынок: копи опыт, выполняй задание дня и собирай награды. Заодно научишься читать графики и распознавать мошенников.' },
+		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Доставляй письма по ветру, проходи игры про рынок и зарабатывай звёзды. Заодно научишься читать графики и распознавать мошенников.' },
 		{ view: 'dashboard', target: '.agent-pet', title: 'А это я', text: 'Нажми на меня в любой момент: покажу свежие новости по России, США, крипте и экономике. Значок с цифрой значит, что есть непрочитанные.' },
 		{ view: 'dashboard', target: '.profile-trigger', title: 'Профиль и настройки', text: 'Тема, основная валюта, двухфакторная защита и твой ID. Там же можно пройти это обучение заново.' },
 		{ view: 'dashboard', title: 'Готово!', text: 'Попробуй создать копилку или загляни в «Инвестиции».', last: true },

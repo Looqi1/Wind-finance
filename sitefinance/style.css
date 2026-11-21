@@ -3196,3 +3196,148 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 	.agent-backdrop, main > #news.news-page, .news-page > * { transition: none; }
 	.agent-stream { opacity: .4; }
 }
+
+/* Игровая библиотека и прибрежные почтовые рейсы. */
+[data-accent="courier"] { --acc: #267c73; --acc2: #174b4b; --acc-soft: #65c9ac30; }
+#game > .section-heading { align-items: center; margin-bottom: 10px; }
+#game > .section-heading h2 { margin: 0; font-size: 1.2rem; }
+#game .game-tabs {
+	display: flex;
+	overflow-x: auto;
+	gap: 8px;
+	scroll-snap-type: x proximity;
+	padding: 4px 2px 10px;
+	margin-bottom: 6px;
+	scrollbar-width: thin;
+	scrollbar-color: #85aba3 transparent;
+}
+#game-tabs > button {
+	display: grid;
+	grid-template-columns: 32px minmax(0,1fr);
+	align-items: center;
+	gap: 9px;
+	flex: 1 0 146px;
+	padding: 10px 12px;
+	border-radius: 14px;
+	box-shadow: none;
+	scroll-snap-align: start;
+}
+#game-tabs > button::after { display: none; }
+#game-tabs .gt-art { width: 32px; height: 36px; border-radius: 9px; box-shadow: none; }
+#game-tabs .gt-art svg { width: 19px; height: 19px; }
+#game-tabs .gt-copy strong { font-size: .875rem; line-height: 1.14; }
+#game-tabs .gt-copy small, #game-tabs [data-best] { display: none; }
+#game-tabs .gt-meta { margin: 0; }
+#game-tabs .gt-stars { font-size: .81rem; }
+#game-tabs button:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+#game .game-hub { margin: 18px 0 0; }
+#gm-courier:has(.courier-cover) { padding: 0; border: 0; }
+.courier-cover {
+	position: relative;
+	isolation: isolate;
+	display: grid;
+	align-content: end;
+	justify-items: start;
+	gap: 10px;
+	min-height: clamp(270px, 37vw, 380px);
+	padding: clamp(22px, 4vw, 48px);
+	color: #fff9df;
+	background: #173f42;
+}
+.courier-cover::before {
+	position: absolute;
+	z-index: -1;
+	inset: 0;
+	content: '';
+	background: linear-gradient(90deg, #103a3ae8, #0e34367a 43%, transparent 72%),
+		url("assets/wind-mail-coast.webp") 64% center / cover no-repeat;
+}
+.courier-cover .courier-genre { font-size: .875rem; color: #f2e6a8; font-weight: 700; }
+.courier-cover h3 { max-width: 8em; margin: 0; font-size: clamp(2.6rem,6vw,5rem); line-height: .95; letter-spacing: -.065em; color: inherit; }
+.courier-cover p { max-width: 25ch; margin: 0; font-size: 1rem; line-height: 1.45; color: #f4faf1; }
+#gm-courier .courier-cover .button { background: #f8db8e !important; box-shadow: none; color: #203d32; }
+.courier-cover .button, .courier-launch { min-height: 46px; padding: 0 22px; margin-top: 5px; }
+#gm-courier .gm-stage { max-width: 580px; }
+.courier-map {
+	position: relative;
+	isolation: isolate;
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0,1fr));
+	grid-template-rows: repeat(var(--rows), 1fr);
+	width: 100%;
+	aspect-ratio: 4 / var(--rows);
+	max-height: 44dvh;
+	min-height: calc(50px * var(--rows));
+	border: 6px solid #214d4d;
+	border-radius: 19px;
+	overflow: hidden;
+	background: repeating-radial-gradient(ellipse at 120% 120%, transparent 0 12px, #b6eadd15 13px 14px, transparent 15px 20px), linear-gradient(155deg, #1d494f, #2e7573 65%, #408b83);
+	box-shadow: inset 0 0 28px #103c4460;
+}
+.courier-tile {
+	position: relative;
+	display: grid;
+	place-items: center;
+	min-width: 0;
+	min-height: 0;
+	border: 1px solid #c9eddd40;
+	background: transparent;
+	padding: 0;
+}
+button.courier-tile { cursor: pointer; touch-action: manipulation; }
+.courier-tile:focus-visible { outline: 3px solid #ffe39d; outline-offset: -4px; z-index: 1; }
+.courier-tile[data-kind="wind"] { background: #a7e1c512; }
+.courier-tile.charted { background: #d5efb94a; }
+.courier-glyph, .courier-plane { pointer-events: none; }
+[data-kind="wind"] .courier-glyph {
+	width: clamp(32px, 9vw, 48px);
+	aspect-ratio: 1;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	border: 1px solid #b7d7bf;
+	background: radial-gradient(circle at 42% 28%, #b6dfcb22, #0f424330);
+	box-shadow: 0 2px 5px #123f4050;
+	transform: rotate(var(--angle));
+	transition: transform .18s ease-out;
+}
+[data-kind="wind"] .courier-glyph::after {
+	content: ''; width: 42%; height: 69%;
+	background: linear-gradient(90deg,#ffe7a6 50%,#d9aa56 50%);
+	clip-path: polygon(50% 0,100% 82%,50% 65%,0 82%);
+}
+[data-kind="cloud"] .courier-glyph { width: 34px; height: 12px; margin-top: 9px; border-radius: 12px; background: #769899; box-shadow: 0 3px 0 #365e68; }
+[data-kind="cloud"] .courier-glyph::before, [data-kind="cloud"] .courier-glyph::after { content: ''; position: absolute; width: 16px; height: 16px; margin: -6px 0 0 4px; border-radius: 50%; background: #87a6a4; }
+[data-kind="cloud"] .courier-glyph::after { width: 18px; height: 18px; margin: -9px 0 0 11px; background: #adc0b4; }
+[data-kind="beacon"] { background: radial-gradient(ellipse at center,#ffe7a850,transparent 63%); }
+[data-kind="beacon"] .courier-glyph { width: 31px; height: 39px; background: linear-gradient(to bottom,#f7bb75 0 18%,#ffe8a8 18% 34%,#be5946 34% 41%,#fff0c7 41% 57%,#d97659 57% 73%,#fff0c7 73%); clip-path: polygon(50% 0,78% 17%,70% 18%,70% 33%,77% 36%,68% 42%,77% 89%,88% 91%,90% 100%,10% 100%,12% 91%,23% 89%,32% 42%,23% 36%,30% 33%,30% 18%,22% 17%); }
+[data-kind="port"] .courier-glyph { width: 60%; height: 62%; border: 2px dashed #bde5d3; border-radius: 50%; }
+.courier-map .storm-hit { background: #b7796280; }
+.courier-plane {
+	position: absolute;
+	width: clamp(27px, 6vw, 39px);
+	aspect-ratio: 1;
+	z-index: 2;
+	transform: translate(-50%,-50%) rotate(var(--angle));
+	transition: top .23s linear, left .23s linear, transform .16s;
+	filter: drop-shadow(0 3px 2px #073036aa);
+}
+.courier-plane::before { content: ''; display: block; height: 100%; clip-path: polygon(50% 0,94% 88%,55% 70%,50% 100%,45% 70%,6% 88%); background: linear-gradient(90deg,#fff8d6 50%,#efac79 50%); }
+.courier-status { min-height: 1.5em; margin: 0; font-size: .94rem; color: var(--ink); line-height: 1.45; }
+.courier-launch { justify-self: start; }
+#game .cg-story { background: radial-gradient(ellipse at 100% 0,var(--acc-soft),transparent 60%),linear-gradient(112deg,#123b3c,var(--acc2)); }
+#game .cg-story::after { inset: -65px -22px auto auto; background: none; width: 160px; height: 160px; border: 1px solid #d1f4df35; box-shadow: 0 0 0 11px #c6edbb13,0 0 0 22px #c6edbb13,0 0 0 33px #c6edbb13; transform: skewX(-23deg); }
+#game .cg-chapter { z-index: 1; }
+#game .gm-chart-box { background: repeating-linear-gradient(90deg, transparent 0 31px,#70aaa52a 32px),linear-gradient(#18353b,#204448); }
+#game .sc-head { color: #f1f5e9; background: linear-gradient(115deg,#263c50,#315962); }
+#game .sc-head small { color: #cbe6db; }
+#game .sc-body { background: repeating-linear-gradient(165deg,transparent 0 24px,#69a29a15 25px,transparent 26px 32px); }
+@media(max-width:620px) {
+	#game-tabs > button { flex: 0 0 135px; gap: 8px; }
+	.courier-cover { min-height: 310px; }
+	.courier-cover::before { background: linear-gradient(0deg,#0d3033f5 0%,#11393bdb 36%,transparent 80%),url("assets/wind-mail-coast.webp") 72% center / cover no-repeat; }
+	.courier-cover p { max-width: 26ch; }
+}
+@media(prefers-reduced-motion: reduce) {
+	.courier-plane, [data-kind="wind"] .courier-glyph { transition: none; }
+}
