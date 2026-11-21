@@ -6101,6 +6101,8 @@ else window.setTimeout(paintIcons, 200);
 })();
 
 const welcomeDialog = document.getElementById('wind-welcome');
+const welcomeSessionKey = 'wind_welcome_after_login_seen';
+let welcomeCloseTimer;
 const dismissWelcome = () => {
 	if (!welcomeDialog.open || welcomeDialog.hasAttribute('data-closing')) return;
 	if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -6108,23 +6110,31 @@ const dismissWelcome = () => {
 		return;
 	}
 	welcomeDialog.setAttribute('data-closing', '');
-	window.setTimeout(() => welcomeDialog.close(), 240);
+	welcomeCloseTimer = window.setTimeout(() => welcomeDialog.close(), 240);
 };
 welcomeDialog.querySelectorAll('[data-close-welcome]').forEach((button) => button.addEventListener('click', dismissWelcome));
+welcomeDialog.addEventListener('close', () => {
+	window.clearTimeout(welcomeCloseTimer);
+	welcomeDialog.removeAttribute('data-closing');
+});
 welcomeDialog.addEventListener('cancel', (event) => {
 	event.preventDefault();
 	dismissWelcome();
 });
-window.requestAnimationFrame(() => {
-	if (authMode === 'reset' || typeof welcomeDialog.showModal !== 'function') return;
+window.addEventListener('wind-auth', () => {
+	if (!authGate.hidden || welcomeDialog.open || typeof welcomeDialog.showModal !== 'function') return;
 	try {
-		if (sessionStorage.getItem('wind_welcome_seen')) return;
+		if (sessionStorage.getItem(welcomeSessionKey)) return;
 	} catch { /* Приветствие всё равно можно открыть. */ }
 	const mascot = document.querySelector('.agent-pet').getBoundingClientRect();
 	welcomeDialog.style.setProperty('--welcome-x', `${mascot.left + mascot.width / 2}px`);
 	welcomeDialog.style.setProperty('--welcome-y', `${mascot.top + mascot.height / 2}px`);
 	welcomeDialog.showModal();
-	try { sessionStorage.setItem('wind_welcome_seen', '1'); } catch { /* Хранилище недоступно. */ }
+	try { sessionStorage.setItem(welcomeSessionKey, '1'); } catch { /* Хранилище недоступно. */ }
+});
+window.addEventListener('wind-logout', () => {
+	if (welcomeDialog.open) welcomeDialog.close();
+	try { sessionStorage.removeItem(welcomeSessionKey); } catch { /* Хранилище недоступно. */ }
 });
 
 if (inTelegram && tg.BackButton && tg.isVersionAtLeast?.('6.1')) {

@@ -74,7 +74,7 @@ def open_app(browser):
             localStorage.setItem('wind_tour_done_42', '1');
         """)
         if not welcome:
-            page.add_init_script("sessionStorage.setItem('wind_welcome_seen', '1');")
+            page.add_init_script("sessionStorage.setItem('wind_welcome_after_login_seen', '1');")
 
         def serve(route):
             request = route.request
@@ -109,6 +109,8 @@ def open_app(browser):
                 return
             if path in ("/auth/login", "/auth/telegram"):
                 route.fulfill(json={"access_token": "test-session", "user": USER})
+            elif path == "/auth/me":
+                route.fulfill(json=USER)
             elif path in ("/health", "/market/stocks"):
                 route.fulfill(json={})
             elif path == "/market/rates":
@@ -351,25 +353,66 @@ def test_browser_checkout_uses_existing_yookassa_endpoints(open_app):
     assert not errors
 
 
-def test_welcome_opens_full_screen_once_and_yields_to_sign_in(open_app):
-    page, requests, errors = open_app(welcome=True)
+def test_welcome_opens_full_screen_only_after_successful_sign_in(open_app):
+    first_attempt = True
+
+    def api(route, path):
+        nonlocal first_attempt
+        if path != "/auth/login" or not first_attempt:
+            return False
+        first_attempt = False
+        route.fulfill(status=401, json={"detail": "Неверный пароль"})
+        return True
+
+    page, requests, errors = open_app(welcome=True, api=api)
     welcome = page.get_by_role("dialog", name="Привет, я Винд!")
+    expect(page.get_by_role("heading", name="Войти в аккаунт")).to_be_visible()
+    expect(welcome).to_be_hidden()
+    assert not any(path.startswith(("/market/", "/v5/")) or "qrcode" in path or "lightweight-charts" in path
+                   for _, path, _, _ in requests)
+    page.locator("#auth-email").fill("test@example.com")
+    page.locator("#auth-password").fill("Incorrect123")
+    page.locator(".auth-submit").click()
+    expect(page.locator("#auth-error")).to_have_text("Неверный пароль")
+    expect(welcome).to_be_hidden()
+    page.locator("#auth-password").fill("TestPassword123")
+    page.locator(".auth-submit").click()
+    expect(page.locator("#auth-gate")).to_be_hidden()
     expect(welcome).to_be_visible()
     expect(welcome.get_by_role("button", name="Продолжить")).to_be_focused()
     box = welcome.bounding_box()
     assert box["width"] == 390 and box["height"] == 812
-    assert not any(path.startswith(("/market/", "/v5/")) or "qrcode" in path or "lightweight-charts" in path
-                   for _, path, _, _ in requests)
     page.keyboard.press("Escape")
     expect(welcome).to_be_hidden()
-    expect(page.get_by_role("heading", name="Войти в аккаунт")).to_be_visible()
     page.reload(wait_until="domcontentloaded")
+    expect(page.locator("#auth-gate")).to_be_hidden()
+    expect(page.locator("#rate-history-figure")).to_be_visible()
     expect(welcome).to_be_hidden()
+    assert not errors
+
+
+def test_welcome_reappears_after_exiting_and_entering_demo(open_app):
+    page, _, errors = open_app(welcome=True)
+    welcome = page.get_by_role("dialog", name="Привет, я Винд!")
+    # The old version marked the greeting as seen before the visitor entered.
+    page.evaluate("sessionStorage.setItem('wind_welcome_seen', '1')")
+    page.get_by_role("button", name="Попробовать демо").click()
+    expect(page.locator("#auth-gate")).to_be_hidden()
+    expect(welcome).to_be_visible()
+    welcome.get_by_role("button", name="Продолжить").click()
+    expect(welcome).to_be_hidden()
+    page.locator(".profile-trigger").click()
+    page.locator(".logout").click()
+    expect(page.locator("#auth-gate")).to_be_visible()
+    expect(welcome).to_be_hidden()
+    page.get_by_role("button", name="Попробовать демо").click()
+    expect(welcome).to_be_visible()
     assert not errors
 
 
 def test_telegram_native_back_dismisses_welcome(open_app):
     page, _, errors = open_app(telegram=True, welcome=True)
+    expect(page.locator("#auth-gate")).to_be_hidden()
     expect(page.locator("#wind-welcome")).to_be_visible()
     page.wait_for_function("testTelegram.backVisible")
     page.evaluate("testTelegram.back()")
