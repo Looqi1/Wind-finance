@@ -4508,6 +4508,17 @@ if (inTelegram) {
 	};
 
 	const loadAnalysis = async () => {
+		if (isDemoPreview()) {
+			const base = { BTCUSDT: 70000, ETHUSDT: 3000, SOLUSDT: 150 }[an.sym];
+			const scale = { '15': 1, '60': 2, '240': 3, D: 4 }[an.tf];
+			const phase = Math.log(base);
+			const candles = Array.from({length: 160}, (_, i) => {
+				const c = base * (1 + .025 * Math.sin(i / (4 + scale) + phase) + .012 * Math.cos(i / 3 + phase));
+				return { c, h: c * 1.004, l: c * .996, v: 120 + 35 * Math.sin(i / scale) };
+			});
+			renderAnalysis(analyze(candles));
+			return;
+		}
 		if (!isPlus() || !an.body) return;
 		const id = ++an.seq;
 		an.last = Date.now();
@@ -4570,7 +4581,7 @@ if (inTelegram) {
 		body.textContent = '';
 		const list = mk('div', 'rd-list');
 		if (rd.tab === 'new') {
-			const fresh = listings.filter((x) => Date.now() - x.ts < 7 * 864e5);
+			const fresh = isDemoPreview() ? [{ symbol: "WINDUSDT", price: 1.25 }] : listings.filter((x) => Date.now() - x.ts < 7 * 864e5);
 			if (!fresh.length) {
 				message(body, known ? `Радар следит за ${known.length} парами. Новая пара появится здесь и в уведомлениях, как только её добавит Bybit.` : 'Радар запоминает список пар. Новые листинги появятся здесь при следующих проверках.');
 				return;
@@ -4579,7 +4590,7 @@ if (inTelegram) {
 				const row = mk('div', 'rd-row');
 				row.style.setProperty('--i', i);
 				const name = mk('div', 'rd-name');
-				name.append(mk('strong', '', `${COIN(x.symbol)}/USDT`), mk('small', '', `Обнаружена ${new Date(x.ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`));
+				name.append(mk('strong', '', `${COIN(x.symbol)}/USDT`), mk('small', '', isDemoPreview() ? "Пример нового листинга" : `Обнаружена ${new Date(x.ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`));
 				const badge = mk('span', 'asset-badge badge-new');
 				badge.append(icon('sparkles'), document.createTextNode(' Новое'));
 				row.append(mk('span', 'rd-ava', COIN(x.symbol).slice(0, 3)), name, mk('div', 'rd-price', x.price ? fmtPrice(x.price) : '—'), badge);
@@ -4589,8 +4600,14 @@ if (inTelegram) {
 			icons();
 			return;
 		}
-		if (!rd.liquid.length) { skeleton(body, 5); return; }
-		rd.liquid.slice().sort((a, b) => (rd.tab === 'up' ? b.pct - a.pct : a.pct - b.pct)).slice(0, 6).forEach((t, i) => {
+		const pairs = isDemoPreview() ? [
+			{symbol: 'ETHUSDT', price: 3000, pct: 3.2, turnover: 38000000},
+			{symbol: 'BTCUSDT', price: 70000, pct: 1.1, turnover: 68000000},
+			{symbol: 'SOLUSDT', price: 150, pct: -1.4, turnover: 12000000},
+			{symbol: 'ADAUSDT', price: .42, pct: -2.5, turnover: 3000000},
+		].filter(t => rd.tab === 'up' ? t.pct > 0 : t.pct < 0) : rd.liquid;
+		if (!pairs.length) { skeleton(body, 5); return; }
+		pairs.slice().sort((a, b) => (rd.tab === 'up' ? b.pct - a.pct : a.pct - b.pct)).slice(0, 6).forEach((t, i) => {
 			const row = mk('div', 'rd-row');
 			row.style.setProperty('--i', i);
 			const name = mk('div', 'rd-name');
@@ -4688,10 +4705,16 @@ if (inTelegram) {
 		if (Date.now() - rd.last > (onCrypto ? 30000 : 300000)) loadRadar();
 	};
 
-	window.addEventListener('wind-auth', renderNew);
+	window.addEventListener('wind-auth', () => {
+		renderNew();
+		if (isDemoPreview()) { loadAnalysis(); renderRadar(); }
+	});
 	window.addEventListener('wind-logout', renderNew);
 	document.addEventListener('wind-plus-change', () => {
-		if (isPlus()) {
+		if (isDemoPreview()) {
+			an.seq++; rd.seq++;
+			loadAnalysis(); renderRadar();
+		} else if (isPlus()) {
 			if (an.body) message(an.body, 'Загружаем анализ…');
 			an.last = 0; rd.last = 0;
 			tick();

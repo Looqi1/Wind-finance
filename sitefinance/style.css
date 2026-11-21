@@ -3287,3 +3287,8 @@ body.plus-active:not(.demo-preview) .lab-demo { display:none; }
 body.demo-preview #newinv-card .plus-body { filter:none; opacity:1; pointer-events:auto; user-select:auto; }
 body.demo-preview #newinv-card .plus-lock { display:none; }
 #newinv-card .ni-follow { min-height:44px; }
+
+.market-demo-label { display:none; }
+.demo-preview .market-demo-label { display:inline-block; font-size:.75rem; font-weight:600; color:var(--green); }
+body.demo-preview :is(#analysis-card,#radar-card) .plus-body { filter:none; opacity:1; pointer-events:auto; user-select:auto; }
+body.demo-preview :is(#analysis-card,#radar-card) .plus-lock { display:none; }
