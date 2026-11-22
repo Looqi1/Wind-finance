@@ -3967,3 +3967,216 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 @media (prefers-reduced-motion: reduce) {
 	.an-marker, .plus-plans button { transition: none; }
 }
+
+/* Уведомления, анализ и калькулятор Wind Plus. */
+#crypto #price-alerts {
+	--alert-ink: #175b50;
+	--alert-tint: color-mix(in srgb, #36a994 17%, var(--card));
+	--alert-border: color-mix(in srgb, #318c79 32%, var(--line));
+	background: linear-gradient(145deg, var(--alert-tint), var(--card) 67%);
+	border-color: var(--alert-border);
+}
+body.dark-theme #crypto #price-alerts { --alert-ink: #a4e8d7; }
+#crypto #price-alerts::before,
+#analysis-card .an-overview::before,
+.plus-modal :is(.plus-benefit, .plus-lab, .lab-result)::before {
+	position: absolute;
+	z-index: -1;
+	inset: 0;
+	width: auto;
+	height: auto;
+	border-radius: inherit;
+	background: repeating-radial-gradient(ellipse 260px 95px at 94% 144%, transparent 0 8px, currentColor 9px 10px, transparent 11px 18px);
+	mask-image: linear-gradient(120deg, transparent 25%, #000);
+	opacity: .18;
+	pointer-events: none;
+	content: '';
+}
+#crypto #price-alerts::before { color: var(--alert-ink); }
+#price-alerts, #analysis-card .an-overview, .plus-modal :is(.plus-benefit, .plus-lab, .lab-result) {
+	position: relative;
+	isolation: isolate;
+}
+#crypto #price-alerts :is(.alerts-icon, .alert-submit) {
+	background: linear-gradient(135deg, #247a68, #174e52);
+	box-shadow: 0 5px 12px #184e5233;
+}
+#crypto #price-alerts :is(.alerts-count, .alert-coins, .alert-coin.active) { color: var(--alert-ink); }
+#price-alerts .alert-coins { background: var(--alert-tint); }
+#price-alerts .alert-price-row { grid-template-columns: minmax(0, 1fr) auto; }
+#price-alerts .alert-input input { width: 100%; }
+#price-alerts .alert-submit { width: auto; padding-inline: 12px; }
+#price-alerts .alert-live {
+	flex-wrap: wrap;
+	min-height: 43px;
+	padding: 6px 11px;
+	border: 1px solid var(--alert-border);
+	border-radius: 11px;
+	background: var(--alert-tint);
+	color: var(--alert-ink);
+}
+#price-alerts .alert-live strong { color: inherit; }
+#price-alerts .alert-dir button.active { color: var(--alert-ink); }
+#price-alerts .alert-dir button[data-dir="below"].active { color: var(--pill-down-ink, var(--ink)); }
+#price-alerts .alert-quick button { background: var(--alert-tint); color: var(--alert-ink); }
+#price-alerts .alert-hint:empty { display: none; }
+#price-alerts .alert-empty {
+	background: color-mix(in srgb, var(--alert-tint) 62%, var(--card));
+	border-color: var(--alert-border);
+}
+#price-alerts .alert-empty svg { color: var(--alert-ink); }
+
+#crypto #analysis-card {
+	background: linear-gradient(155deg, var(--section-tint), var(--card) 56%);
+}
+#analysis-card .an-overview {
+	--outlook-color: #e9ac53;
+	border-color: color-mix(in srgb, var(--outlook-color) 46%, var(--line));
+	background: linear-gradient(130deg, color-mix(in srgb, var(--outlook-color) 28%, var(--card)), var(--card));
+}
+#analysis-card .an-overview.pos { --outlook-color: #44b68e; }
+#analysis-card .an-overview.neg { --outlook-color: #e28e86; }
+#analysis-card .an-overview::before { color: var(--section-ink); }
+#analysis-card .an-track { height: 8px; }
+#analysis-card .an-level {
+	--level-color: #49ad94;
+	display: grid;
+	grid-template-columns: 12px minmax(0, 1fr);
+	align-items: center;
+	gap: 2px 8px;
+	text-align: start;
+	border-color: color-mix(in srgb, var(--level-color) 35%, var(--line));
+	background: linear-gradient(105deg, color-mix(in srgb, var(--level-color) 22%, var(--card)), var(--card));
+}
+#analysis-card .an-level:nth-child(2) { --level-color: #9980d4; }
+#analysis-card .an-level:nth-child(3) { --level-color: #dea359; }
+#analysis-card .an-level::before {
+	grid-row: 1 / span 3;
+	justify-self: center;
+	width: 8px;
+	height: 8px;
+	border-radius: 2px;
+	background: var(--level-color);
+	transform: rotate(45deg);
+	content: '';
+}
+#analysis-card .an-level strong { font-size: clamp(1rem, 2.8vw, 1.25rem); }
+#analysis-card .an-ind {
+	--indicator-color: var(--section-ink);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--indicator-color) 9%, var(--card)), var(--card));
+	border-inline-start: 3px solid color-mix(in srgb, var(--indicator-color) 52%, var(--line));
+}
+#analysis-card .an-ind:has(.an-chip.pos) { --indicator-color: #44b68e; }
+#analysis-card .an-ind:has(.an-chip.neg) { --indicator-color: #e28e86; }
+#analysis-card .an-details summary {
+	padding-inline: 12px;
+	border-radius: 12px;
+	background: var(--section-tint);
+}
+#analysis-card .an-details[open] summary { margin-bottom: 10px; }
+
+.plus-modal {
+	--plus-gold: #ffd88e;
+	--lab-range: #247c65;
+	background: linear-gradient(150deg, var(--plus-panel), var(--card));
+}
+body.dark-theme .plus-modal { --lab-range: #95dfc0; }
+.plus-modal .plus-benefit {
+	padding: 14px;
+	border-color: #357360;
+	background: linear-gradient(120deg, #124435, #186853);
+	color: #fff8e6;
+}
+.plus-modal .plus-benefit > strong { color: var(--plus-gold); }
+.plus-modal .plus-benefit small { color: #d4eee0; }
+.plus-promises li {
+	grid-template-columns: 33px minmax(0, 1fr);
+	align-items: start;
+	gap: 10px;
+	padding: 10px;
+	border: 1px solid var(--line);
+	border-radius: 13px;
+	background: linear-gradient(110deg, var(--plus-selected), var(--plus-panel));
+}
+.plus-promises :is(i,svg) {
+	width: 33px;
+	height: 33px;
+	padding: 7px;
+	border-radius: 10px;
+	background: var(--plus-panel);
+}
+.demo-preview .plus-demo-offer {
+	border-inline-start: 3px solid #c99743;
+	background: linear-gradient(115deg, color-mix(in srgb, #dfab56 21%, var(--card)), var(--plus-panel));
+}
+.plus-modal .plus-lab {
+	padding: clamp(13px, 3vw, 19px);
+	background: linear-gradient(155deg, var(--plus-selected), var(--plus-panel) 58%);
+}
+.plus-lab::before { color: var(--plus-accent); }
+.plus-lab .lab-demo { display: flex; align-items: center; gap: 7px; }
+.plus-lab .lab-demo::before { width: 15px; height: 2px; background: currentColor; content: ''; }
+.plus-lab #lab-percent {
+	padding: 3px 8px;
+	border-radius: 7px;
+	background: var(--plus-selected);
+	color: var(--plus-accent);
+	font-variant-numeric: tabular-nums;
+}
+.plus-lab #lab-change {
+	--lab-progress: 50%;
+	appearance: none;
+	height: 32px;
+	margin: 0;
+	border-radius: 8px;
+	background:
+		linear-gradient(var(--lab-range), var(--lab-range)) left center / var(--lab-progress) 6px no-repeat,
+		linear-gradient(var(--line), var(--line)) center / 100% 6px no-repeat;
+	cursor: ew-resize;
+}
+.plus-lab #lab-change::-webkit-slider-thumb {
+	appearance: none;
+	width: 19px;
+	height: 19px;
+	border: 3px solid var(--card);
+	border-radius: 50%;
+	background: var(--lab-range);
+	box-shadow: 0 0 0 1px var(--lab-range);
+}
+.plus-lab #lab-change::-moz-range-thumb {
+	width: 13px;
+	height: 13px;
+	border: 3px solid var(--card);
+	border-radius: 50%;
+	background: var(--lab-range);
+	box-shadow: 0 0 0 1px var(--lab-range);
+}
+.plus-lab .lab-result {
+	--result-color: #8ea9be;
+	border: 1px solid color-mix(in srgb, var(--result-color) 45%, var(--line));
+	background: linear-gradient(115deg, color-mix(in srgb, var(--result-color) 25%, var(--card)), var(--card));
+}
+.plus-lab .lab-result[data-change="down"] { --result-color: #e59584; }
+.plus-lab .lab-result[data-change="up"] { --result-color: #43b68d; }
+.plus-lab .lab-result::before { color: var(--result-color); opacity: .34; }
+.plus-lab #lab-profit { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.plus-lab button:active { transform: scale(.96); }
+
+@media (max-width: 620px) {
+	#price-alerts .alert-live { width: 100%; }
+	#price-alerts .alert-coin, #an-coins .alert-coin { min-height: 39px; }
+	#price-alerts .alert-empty { padding: 12px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+	#price-alerts.in-view::before,
+	#analysis-card.in-view .an-overview::before,
+	#subscription-modal:not([hidden]) :is(.plus-benefit, .plus-lab)::before {
+		animation: card-wind 1.25s ease-out;
+	}
+	#analysis-card.in-view .an-level { animation: breeze-reveal .4s ease-out backwards; }
+	#analysis-card.in-view .an-level:nth-child(2) { animation-delay: .05s; }
+	#analysis-card.in-view .an-level:nth-child(3) { animation-delay: .1s; }
+	#subscription-modal:not([hidden]) .plus-promises li { animation: breeze-reveal .4s .15s ease-out backwards; }
+	#subscription-modal:not([hidden]) .plus-promises li + li { animation-delay: .21s; }
+	@keyframes card-wind { from { opacity: 0; transform: translateX(-5%); } }
+}

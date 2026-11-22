@@ -77,6 +77,7 @@ if (profileMenu && profileTrigger && profileDropdown) {
 
 const labField = id => document.getElementById('lab-' + id);
 const labResult = document.querySelector('.lab-result');
+const labSlider = labField('change');
 const labPresets = document.querySelectorAll('[data-lab-change]');
 const labMoney = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 });
 const labValue = id => {
@@ -86,6 +87,8 @@ const labValue = id => {
 const updateScenario = () => {
 	const capital = labValue('capital');
 	const change = labValue('change');
+	const progress = (change - Number(labSlider.min)) / (Number(labSlider.max) - Number(labSlider.min));
+	labSlider.style.setProperty('--lab-progress', `${progress * 100}%`);
 	const profit = capital * change / 100;
 	labResult.dataset.change = profit < 0 ? 'down' : profit > 0 ? 'up' : 'flat';
 	labPresets.forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.labChange) === change)));
@@ -101,9 +104,8 @@ document.querySelector('.plus-lab').addEventListener('input', event => {
 	playWindEffect(labField('profit'), [{ opacity: .55, translate: '0 3px' }, { opacity: 1, translate: '0 0' }], 240);
 });
 labPresets.forEach(button => button.addEventListener('click', () => {
-	const slider = labField('change');
-	slider.value = button.dataset.labChange;
-	slider.dispatchEvent(new Event('input', { bubbles: true }));
+	labSlider.value = button.dataset.labChange;
+	labSlider.dispatchEvent(new Event('input', { bubbles: true }));
 }));
 updateScenario();
 labField('alert').addEventListener('click', () => {
@@ -3006,6 +3008,7 @@ if (inTelegram) {
 		if (!cur) { setHint('Ждём текущую цену, попробуй через секунду', 'error'); return; }
 		const k = 1 + (dir === 'above' ? 1 : -1) * Number(b.dataset.pct) / 100;
 		priceEl.value = String(roundPrice(cur * k));
+		playWindEffect(priceEl.parentElement, [{ scale: .975 }, { scale: 1 }], 260);
 		setHint('');
 	});
 
@@ -4042,7 +4045,7 @@ if (inTelegram) {
 	const REVEAL = [
 		'.topbar', '.brand', '.nav a', '.sidebar-bottom',
 		'.wallet-bar', '.stats-card', '.invest-overview', '.bybit-partner-card', '#converter .converter', '.section-heading',
-		'.crypto-terminal', '.alerts-card', '.crypto-news-feature', '.crypto-news-item', '.edu-progress', '.edu-card',
+		'.crypto-terminal', '.alerts-card', '#analysis-card', '.crypto-news-feature', '.crypto-news-item', '.edu-progress', '.edu-card',
 		'.profile-hero', '.portfolio-card', '.portfolio-item', '.ledger-row',
 		'.settings-card', '.setting-item', '.insight-item', '.cg-card',
 	].join(',');
@@ -4682,13 +4685,12 @@ if (inTelegram) {
 		parts.push(`До поддержки около ${Math.abs((a.support / a.last - 1) * 100).toFixed(1)}%, до сопротивления около ${((a.resistance / a.last - 1) * 100).toFixed(1)}%.`);
 		const summary = mk('p', 'an-summary', parts.join(' '));
 		const note = mk('p', 'an-note', 'Оценка описывает текущие показания индикаторов.');
-		const overview = mk('div', 'an-overview');
+		const overview = mk('div', `an-overview ${vcls}`);
 		overview.append(head, track, scale, summary, note);
 		const details = mk('details', 'an-details');
 		details.open = expanded;
 		details.append(mk('summary', '', 'Смотреть 6 индикаторов'), grid);
 		body.append(overview, levels, details);
-		playWindEffect(overview, [{ opacity: .55, translate: '0 6px' }, { opacity: 1, translate: '0 0' }], 330);
 		requestAnimationFrame(() => requestAnimationFrame(() => { marker.style.left = `${a.score}%`; }));
 	};
 
