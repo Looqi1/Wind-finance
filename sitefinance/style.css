@@ -1918,10 +1918,10 @@ body.dark-theme .twofa-btn.on { color: #0d1714; }
 .auth-mini-assets i { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: #24785b; }
 .auth-mini-assets i.orange { background: #d98b55; }
 .auth-form-panel {
-	--auth-sheet: #102b2e;
-	--auth-sheet-edge: #132635;
-	--auth-sheet-glow: #0e3632;
-	--auth-sheet-highlight: #23475b;
+	--auth-sheet: #18383c;
+	--auth-sheet-edge: #1a3142;
+	--auth-sheet-glow: #174640;
+	--auth-sheet-highlight: #2b5165;
 	position: relative;
 	isolation: isolate;
 	overflow: hidden;
@@ -1931,9 +1931,9 @@ body.dark-theme .twofa-btn.on { color: #0d1714; }
 	color: var(--auth-ink);
 }
 .auth-gate[data-mode="register"] .auth-form-panel {
-	--auth-sheet: #102f30;
-	--auth-sheet-edge: #102b2c;
-	--auth-sheet-highlight: #214e4c;
+	--auth-sheet: #183c3b;
+	--auth-sheet-edge: #163637;
+	--auth-sheet-highlight: #295650;
 }
 .auth-form-panel::before,
 .auth-form-panel::after {
@@ -2112,7 +2112,10 @@ body.dark-theme .twofa-btn.on { color: #0d1714; }
 	.auth-form-panel {
 		position: relative; z-index: 1; justify-content: flex-start; margin-top: -19px;
 		padding: 20px clamp(18px, 5vw, 34px) 28px; border-radius: 23px 23px 0 0;
-		box-shadow: 0 -7px 22px #06221d42;
+		background:
+			linear-gradient(180deg, #10312f, transparent 120px),
+			linear-gradient(145deg, var(--auth-sheet-glow), var(--auth-sheet) 35% 63%, var(--auth-sheet-edge));
+		box-shadow: 0 -4px 15px #082d2726;
 	}
 	.auth-tabs { margin-bottom: 16px; }
 	.auth-form-intro .auth-copy { margin-bottom: 14px; }
@@ -2122,7 +2125,7 @@ body.dark-theme .twofa-btn.on { color: #0d1714; }
 		.auth-current { animation-duration: 10s; }
 		.auth-form-panel { animation: auth-sheet-rise .65s cubic-bezier(.2,.68,.23,1) backwards; }
 		.auth-showcase-copy { animation: auth-cover-enter .65s .08s ease-out backwards; }
-		@keyframes auth-sheet-rise { from { transform: translateY(24px); } }
+		@keyframes auth-sheet-rise { from { opacity: .82; transform: translateY(8px); } }
 		@keyframes auth-cover-enter { from { opacity: .5; transform: translateY(9px); } }
 	}
 }
