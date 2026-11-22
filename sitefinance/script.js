@@ -753,10 +753,10 @@ const topbarTitle = document.querySelector('.topbar h1');
 const sectionBackdrop = document.querySelector('.section-backdrop');
 const windMotion = window.matchMedia('(prefers-reduced-motion: no-preference)');
 const windEffects = new Map();
-const playWindEffect = (element, frames, duration) => {
+const playWindEffect = (element, frames, duration, delay = 0) => {
 	if (!windMotion.matches || !element?.animate) return;
 	windEffects.get(element)?.cancel();
-	const animation = element.animate(frames, { duration, easing: 'cubic-bezier(.22,.72,.24,1)' });
+	const animation = element.animate(frames, { duration, delay, fill: 'backwards', easing: 'cubic-bezier(.22,.72,.24,1)' });
 	windEffects.set(element, animation);
 	animation.finished.catch(() => {}).finally(() => {
 		if (windEffects.get(element) === animation) windEffects.delete(element);
@@ -2196,6 +2196,13 @@ const AUTH_MODES = {
 	reset: { title: 'Новый пароль', submit: 'Сохранить пароль', busy: 'Сохраняем пароль…', copy: 'Для нового пароля используй минимум 8 символов.' },
 };
 
+const animateAuthFields = () => {
+	const fields = authForm.querySelectorAll(':scope > :is(label, .auth-password-field, .password-meter, .auth-submit):not([hidden])');
+	fields.forEach((field, index) => playWindEffect(field, [
+		{ opacity: .5, translate: '0 9px' }, { opacity: 1, translate: '0 0' },
+	], 420, index * 38));
+};
+
 const setAuthMode = (mode) => {
 	const changed = authMode !== mode;
 	authMode = mode;
@@ -2237,9 +2244,7 @@ const setAuthMode = (mode) => {
 		playWindEffect(authTitle.parentElement, [
 			{ opacity: .55, translate: '-6px 3px' }, { opacity: 1, translate: '0 0' },
 		], 320);
-		playWindEffect(authForm, [
-			{ opacity: .65, translate: '0 9px' }, { opacity: 1, translate: '0 0' },
-		], 400);
+		animateAuthFields();
 	}
 };
 const showForgotPassword = () => {
@@ -2276,7 +2281,7 @@ const withWakeHint = async (promise, label) => {
 	try { return await promise; } finally { window.clearTimeout(timer); }
 };
 if (!apiConfigured) {
-	setNotice('Вход и регистрация станут доступны после подключения сервера. Сейчас можно открыть демо.', 'warn');
+	setNotice('Вход и регистрация доступны после подключения сервера. Демо уже работает.', 'setup');
 }
 
 authModeButtons.forEach(button => button.addEventListener('click', () => {
@@ -2328,7 +2333,12 @@ demoLoginButton?.addEventListener('click', () => {
 	authForm.reset();
 });
 
-const showAuth = () => { authGate.hidden = false; setAuthMode('login'); };
+const showAuth = () => {
+	const alreadyLogin = authMode === 'login';
+	authGate.hidden = false;
+	setAuthMode('login');
+	if (alreadyLogin) animateAuthFields();
+};
 
 telegramLoginButton.hidden = !inTelegram;
 let telegramLoginRequest = 0;
