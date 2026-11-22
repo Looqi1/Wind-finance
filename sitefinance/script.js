@@ -1998,13 +1998,19 @@ if (converter) {
 const getApiBase = () => window.WIND_API_URL || window.location.origin;
 const apiBase = getApiBase();
 const authGate = document.querySelector('#auth-gate');
+const appShell = document.querySelector('.app');
+new MutationObserver(() => { appShell.inert = !authGate.hidden; })
+	.observe(authGate, { attributes: true, attributeFilter: ['hidden'] });
 const authForm = document.querySelector('#auth-form');
 const authTitle = document.querySelector('#auth-title');
+const authDescription = document.querySelector('#auth-description');
 const authSubmitLabel = document.querySelector('#auth-submit-label');
 const authError = document.querySelector('#auth-error');
 const usernameField = document.querySelector('#auth-username');
 const emailField = document.querySelector('#auth-email');
 const passwordField = document.querySelector('#auth-password');
+const passwordToggle = document.querySelector('#auth-password-toggle');
+const passwordRow = document.querySelector('#auth-password-field');
 const totpField = document.querySelector('#auth-totp');
 const consentBox = document.querySelector('#auth-consent');
 const demoLoginButton = document.querySelector('#demo-login-button');
@@ -2012,8 +2018,9 @@ const demoCredentials = { email: 'demo@example.com', password: 'demo123456' };
 const passwordMeter = document.querySelector('#password-meter');
 const passwordMeterBar = document.querySelector('#password-meter-bar');
 const passwordMeterLabel = document.querySelector('#password-meter-label');
-const authHelper = document.querySelector('#auth-helper');
-const authHelperText = document.querySelector('#auth-helper-text');
+const authTabs = document.querySelector('.auth-tabs');
+const authModeButtons = authTabs.querySelectorAll('[data-auth-mode]');
+const authBack = document.querySelector('#auth-back');
 let authMode = 'login';
 let needTotp = false;
 const DEMO_PREVIEW_KEY = 'wind_demo_preview';
@@ -2145,44 +2152,75 @@ const setNotice = (text, kind = '') => {
 	authNotice.textContent = text || '';
 	authNotice.className = `auth-notice${kind ? ' ' + kind : ''}`;
 };
-const setFieldLabel = (input, text) => {
-	const label = input.closest('label');
-	if (label && label.firstChild && label.firstChild.nodeType === Node.TEXT_NODE) label.firstChild.textContent = text;
+const showPassword = (visible) => {
+	passwordField.type = visible ? 'text' : 'password';
+	passwordToggle.textContent = visible ? 'Скрыть' : 'Показать';
+	passwordToggle.setAttribute('aria-label', visible ? 'Скрыть пароль' : 'Показать пароль');
 };
+passwordToggle.addEventListener('click', () => showPassword(passwordField.type === 'password'));
+authForm.addEventListener('reset', () => {
+	showPassword(false);
+	queueMicrotask(updatePasswordMeter);
+});
 
 const AUTH_MODES = {
-	login: { title: 'Войти в аккаунт', submit: 'Войти', helper: 'Включи двухфакторную защиту в настройках после входа.' },
-	register: { title: 'Создать аккаунт', submit: 'Зарегистрироваться', helper: 'Укажи почту, к которой у тебя есть доступ.' },
-	forgot: { title: 'Восстановить пароль', submit: 'Отправить ссылку', helper: 'Пришлём на почту ссылку для нового пароля. Она действует 30 минут.' },
-	reset: { title: 'Новый пароль', submit: 'Сохранить пароль', helper: 'Придумай новый пароль: минимум 8 символов, лучше с цифрами и знаками.' },
+	login: { title: 'Войти в аккаунт', submit: 'Войти', busy: 'Входим…', copy: 'Открой свой портфель и копилки.' },
+	register: { title: 'Создать аккаунт', submit: 'Зарегистрироваться', busy: 'Создаём аккаунт…', copy: 'Заведи копилку и собери свой учебный портфель.' },
+	forgot: { title: 'Восстановить пароль', submit: 'Отправить ссылку', busy: 'Отправляем ссылку…', copy: 'Ссылка придёт на почту. Она действует 30 минут.' },
+	reset: { title: 'Новый пароль', submit: 'Сохранить пароль', busy: 'Сохраняем пароль…', copy: 'Для нового пароля используй минимум 8 символов.' },
 };
 
 const setAuthMode = (mode) => {
+	const changed = authMode !== mode;
 	authMode = mode;
+	authGate.dataset.mode = mode;
 	needTotp = false;
 	const isRegister = mode === 'register', isForgot = mode === 'forgot', isReset = mode === 'reset';
 	const meta = AUTH_MODES[mode] || AUTH_MODES.login;
 	authTitle.textContent = meta.title;
+	authDescription.textContent = meta.copy;
 	authSubmitLabel.textContent = meta.submit;
+	authTabs.hidden = isForgot || isReset;
+	authBack.hidden = !authTabs.hidden;
 	usernameField.closest('label').hidden = !isRegister;
 	usernameField.required = isRegister;
 	consentBox.closest('label').hidden = !isRegister;
 	emailField.closest('label').hidden = isReset;
 	emailField.required = !isReset;
-	passwordField.closest('label').hidden = isForgot;
+	passwordRow.hidden = isForgot;
 	passwordField.required = !isForgot;
-	setFieldLabel(passwordField, isReset ? 'Новый пароль' : 'Пароль');
+	document.getElementById('auth-password-label').textContent = isReset ? 'Новый пароль' : 'Пароль';
+	passwordField.placeholder = isRegister || isReset ? 'Минимум 8 символов' : 'Твой пароль';
 	if (forgotButton) forgotButton.hidden = mode !== 'login';
 	totpField.closest('label').hidden = true;
 	totpField.value = '';
 	passwordField.autocomplete = isRegister || isReset ? 'new-password' : 'current-password';
 	passwordMeter.hidden = !(isRegister || isReset);
 	if (!isRegister) passwordField.value = '';
-	if (authHelperText) authHelperText.textContent = meta.helper;
-	document.querySelectorAll('[data-auth-mode]').forEach((b) => b.classList.toggle('active', b.dataset.authMode === mode));
+	showPassword(false);
+	updatePasswordMeter();
+	authModeButtons.forEach(button => {
+		const active = button.dataset.authMode === mode;
+		button.classList.toggle('active', active);
+		button.setAttribute('aria-pressed', String(active));
+	});
 	authError.textContent = '';
+	if (changed) {
+		playWindEffect(authTitle.parentElement, [
+			{ opacity: .55, translate: '-6px 3px' }, { opacity: 1, translate: '0 0' },
+		], 320);
+	}
 };
-forgotButton?.addEventListener('click', () => { setAuthMode('forgot'); setNotice(''); emailField.focus(); });
+forgotButton.addEventListener('click', () => {
+	setAuthMode('forgot');
+	if (apiConfigured) setNotice('');
+	emailField.focus();
+});
+authBack.addEventListener('click', () => {
+	setAuthMode('login');
+	if (apiConfigured) setNotice('');
+	authModeButtons[0].focus();
+});
 
 // ---- доступность сервера ----
 // На GitHub Pages адрес API задаётся переменной BACKEND_URL. Без неё запросы уходили на сам github.io.
@@ -2206,7 +2244,9 @@ if (!apiConfigured) {
 	setNotice('Вход и регистрация станут доступны после подключения сервера. Сейчас можно открыть демо.', 'warn');
 }
 
-document.querySelectorAll('[data-auth-mode]').forEach((b) => b.addEventListener('click', () => setAuthMode(b.dataset.authMode)));
+authModeButtons.forEach(button => button.addEventListener('click', () => {
+	if (button.dataset.authMode !== authMode) setAuthMode(button.dataset.authMode);
+}));
 
 const updatePasswordMeter = () => {
 	if (!passwordMeterBar || !passwordMeterLabel) return;
@@ -2226,11 +2266,9 @@ const updatePasswordMeter = () => {
 };
 passwordField.addEventListener('input', updatePasswordMeter);
 
-document.querySelector('#auth-helper-close')?.addEventListener('click', () => authHelper?.classList.add('is-hidden'));
-
 document.querySelector('.auth-showcase')?.addEventListener('pointermove', (event) => {
 	const card = event.currentTarget.querySelector('.auth-mini-portfolio');
-	if (!card || window.matchMedia('(max-width: 760px)').matches) return;
+	if (!windMotion.matches || !card || event.pointerType !== 'mouse' || window.matchMedia('(max-width: 760px)').matches) return;
 	const rect = event.currentTarget.getBoundingClientRect();
 	const x = (event.clientX - rect.left) / rect.width - 0.5;
 	const y = (event.clientY - rect.top) / rect.height - 0.5;
@@ -2323,17 +2361,23 @@ const checkSession = async () => {
 
 authForm.addEventListener('submit', async (event) => {
 	event.preventDefault();
+	if (authForm.hasAttribute('aria-busy')) return;
 	telegramLoginRequest++;
 	authError.textContent = '';
 	const submitButton = authForm.querySelector('.auth-submit');
-	const submitLabel = submitButton.querySelector('#auth-submit-label');
+	const submitLabel = authSubmitLabel;
+	const modeActions = [...authModeButtons, authBack, forgotButton, demoLoginButton];
+	modeActions.forEach(button => { button.disabled = true; });
+	authForm.setAttribute('aria-busy', 'true');
 	submitButton.disabled = true;
 	submitButton.classList.add('is-loading');
-	if (submitLabel) submitLabel.textContent = 'Входим…';
+	submitLabel.textContent = AUTH_MODES[authMode].busy;
 	const finish = () => {
+		authForm.removeAttribute('aria-busy');
+		modeActions.forEach(button => { button.disabled = false; });
 		submitButton.disabled = false;
 		submitButton.classList.remove('is-loading');
-		if (submitLabel) submitLabel.textContent = (AUTH_MODES[authMode] || AUTH_MODES.login).submit;
+		submitLabel.textContent = AUTH_MODES[authMode].submit;
 	};
 	if (!apiConfigured) {
 		authError.textContent = 'Сервер не подключён. Войди как demo или попробуй позже.';
@@ -2377,9 +2421,8 @@ authForm.addEventListener('submit', async (event) => {
 	if (authMode === 'register') {
 		if (!consentBox.checked) {
 			authError.textContent = 'Нужно принять условия и политику конфиденциальности';
-			submitButton.disabled = false;
-			submitButton.classList.remove('is-loading');
-			if (submitLabel) submitLabel.textContent = 'Зарегистрироваться';
+			finish();
+			consentBox.focus();
 			return;
 		}
 		body.username = usernameField.value;
@@ -2394,25 +2437,18 @@ authForm.addEventListener('submit', async (event) => {
 		updateProfile(result.user);
 		authGate.hidden = true;
 		authForm.reset();
-		submitButton.disabled = false;
-		submitButton.classList.remove('is-loading');
-		if (submitLabel) submitLabel.textContent = authMode === 'register' ? 'Зарегистрироваться' : 'Войти';
 	} catch (error) {
 		if (error.message === '2fa_required') {
 			needTotp = true;
 			totpField.closest('label').hidden = false;
 			totpField.focus();
 			authError.textContent = 'Введи код из приложения-аутентификатора';
-			submitButton.disabled = false;
-			submitButton.classList.remove('is-loading');
-			if (submitLabel) submitLabel.textContent = 'Войти';
 			return;
 		}
 		setNotice('');
 		authError.textContent = error instanceof TypeError ? 'Сервер недоступен. Проверь соединение и попробуй ещё раз.' : error.message;
-		submitButton.disabled = false;
-		submitButton.classList.remove('is-loading');
-		if (submitLabel) submitLabel.textContent = authMode === 'register' ? 'Зарегистрироваться' : 'Войти';
+	} finally {
+		finish();
 	}
 });
 

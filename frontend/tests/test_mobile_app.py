@@ -101,6 +101,7 @@ def open_app(browser):
                 "/Wind-finance/assets/bybit-spot.js": "assets/bybit-spot.js",
                 "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
                 "/Wind-finance/assets/wind-airstream.webp": "assets/wind-airstream.webp",
+                "/Wind-finance/assets/wind-auth-current.webp": "assets/wind-auth-current.webp",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
             }
             if path in files:
@@ -650,4 +651,51 @@ def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
     assert len([path for _, path, _, _ in requests if path.endswith('/confirm')]) == 1
     page.get_by_role("button", name="Отключить аккаунт Bybit").click()
     expect(page.get_by_role("button", name="Подключить Bybit")).to_be_visible()
+    assert not errors
+
+
+def test_mobile_auth_mode_password_visibility_and_registration(open_app):
+    def auth_api(route, path):
+        if path != "/auth/register":
+            return False
+        route.fulfill(status=201, json={"access_token": "test-session", "user": USER})
+        return True
+
+    page, requests, errors = open_app(width=320, api=auth_api)
+    gate = page.locator("#auth-gate")
+    email = gate.get_by_label("Email")
+    password = gate.locator("#auth-password")
+    assert page.locator(".app").evaluate("app => app.inert")
+    email.fill("signup@example.com")
+    gate.get_by_role("button", name="Забыли пароль?").click()
+    expect(gate.get_by_role("heading", name="Восстановить пароль")).to_be_visible()
+    expect(password).to_be_hidden()
+    gate.get_by_role("button", name="Ко входу").click()
+    expect(email).to_have_value("signup@example.com")
+    gate.get_by_role("button", name="Регистрация").click()
+    expect(gate.get_by_role("button", name="Регистрация")).to_have_attribute("aria-pressed", "true")
+    expect(gate.get_by_role("heading", name="Создать аккаунт")).to_be_visible()
+    expect(password).to_have_attribute("autocomplete", "new-password")
+    gate.get_by_label("Имя пользователя").fill("Новый пользователь")
+    password.fill("StrongPass123!")
+    expect(gate.locator("#password-meter-label")).to_have_text("Отличный пароль")
+    gate.get_by_role("button", name="Показать пароль").click()
+    expect(password).to_have_attribute("type", "text")
+    gate.get_by_role("button", name="Скрыть пароль").click()
+    expect(password).to_have_attribute("type", "password")
+    submit = gate.get_by_role("button", name="Зарегистрироваться")
+    submit.click()
+    expect(gate.get_by_role("alert")).to_contain_text("Нужно принять условия")
+    assert not any(path == "/auth/register" for _, path, _, _ in requests)
+    consent = gate.locator("#auth-consent")
+    expect(consent).to_be_focused()
+    consent.check()
+    assert gate.evaluate("el => el.scrollWidth === el.clientWidth")
+    submit.click()
+    expect(gate).to_be_hidden()
+    assert not page.locator(".app").evaluate("app => app.inert")
+    assert ("POST", "/auth/register", {
+        "email": "signup@example.com", "password": "StrongPass123!",
+        "username": "Новый пользователь", "accept_terms": True,
+    }, None) in requests
     assert not errors
