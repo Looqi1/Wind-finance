@@ -3313,10 +3313,10 @@ body {
 	--section-accent: #5a45b6;
 	--section-soft: #ece6ff;
 	--section-light: #c9b8ff;
-	--scene-base: #e1efe7;
-	--scene-glow: #a9d8bb;
-	--scene-night: #10231c;
-	--scene-night-glow: #255541;
+	--scene-base: #ebf3ee;
+	--scene-glow: #c8dfd1;
+	--scene-night: #15241f;
+	--scene-night-glow: #224235;
 	--scene-origin: 91% 9%;
 	--scene-curve: 97% -14%;
 	--scene-angle: 149deg;
@@ -3419,6 +3419,23 @@ body.dark-theme {
 			transparent 55.8% 62%, var(--scene-line) 62.3% 62.45%, transparent 62.8%),
 		linear-gradient(var(--scene-angle), transparent 24%, color-mix(in srgb, var(--scene-glow) 44%, transparent) 44%, transparent 68%);
 	content: '';
+}
+body[data-view="dashboard"] {
+	--overview-lavender: #d8ceee;
+	--overview-thread: color-mix(in srgb, var(--section-ink) 12%, transparent);
+}
+body.dark-theme[data-view="dashboard"] { --overview-lavender: #34324c; }
+body[data-view="dashboard"] .section-backdrop {
+	background:
+		radial-gradient(ellipse 68vw 54vh at 76% 4%, var(--overview-lavender), transparent),
+		radial-gradient(ellipse 90vw 71vh at 13% 83%, var(--scene-glow), transparent);
+}
+body[data-view="dashboard"] .section-backdrop::before {
+	background:
+		radial-gradient(ellipse 117% 73% at 15% -8%,
+			transparent 62%, var(--overview-thread) 62.15% 62.27%,
+			transparent 62.46% 66%, var(--overview-thread) 66.15% 66.25%,
+			transparent 66.46% 70.8%, var(--overview-thread) 70.95% 71.03%, transparent 71.22%);
 }
 .sidebar { background-color: color-mix(in srgb, var(--scene-base) 42%, #fff); }
 body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%, #0f151a); }
