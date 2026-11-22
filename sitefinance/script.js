@@ -2225,6 +2225,9 @@ const setAuthMode = (mode) => {
 		playWindEffect(authTitle.parentElement, [
 			{ opacity: .55, translate: '-6px 3px' }, { opacity: 1, translate: '0 0' },
 		], 320);
+		playWindEffect(authForm, [
+			{ opacity: .65, translate: '0 9px' }, { opacity: 1, translate: '0 0' },
+		], 400);
 	}
 };
 const showForgotPassword = () => {
