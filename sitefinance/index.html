@@ -7,10 +7,11 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f2f5ef">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=52">
+	<link rel="stylesheet" href="style.css?v=53">
 	<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 	<script defer src="config.js"></script>
-	<script defer src="script.js?v=51"></script>
+	<script defer src="script.js?v=53"></script>
+	<script defer src="assets/bybit-spot.js?v=53"></script>
 </head>
 <body>
 	<div class="app">
@@ -62,7 +63,7 @@
 					</div>
 				</div>
 			</header>
-			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Сделки и активы виртуальные.</span><button id="sim-ok" type="button">Понятно</button></div>
+			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Портфель и баланс Wind учебные.</span><button id="sim-ok" type="button">Понятно</button></div>
 
 			<section class="hero-grid" aria-label="Баланс и курсы валют">
 				<section class="wallet-bar card" aria-label="Баланс">
@@ -371,17 +372,67 @@
 
 			<section class="market-section" id="crypto">
 				<article class="bybit-partner-card" id="bybit-partner" aria-labelledby="partner-title">
-					<div class="crypto-compass" aria-hidden="true"></div>
 					<div class="bp-main">
-						<span class="bybit-partner-label">Wind <span>×</span> Bybit</span>
-						<h2 id="partner-title">Торговля<br>на Bybit</h2>
-						<p>Следи за ценами в Wind. Для покупки и продажи криптовалюты открой аккаунт на бирже.</p>
+						<div class="bp-heading">
+							<div class="crypto-compass" aria-hidden="true"></div>
+							<span class="bybit-partner-label">Wind <span>×</span> Bybit</span>
+							<h2 id="partner-title">Купить<br>крипту</h2>
+						</div>
+						<p>Спотовая покупка за USDT или предложения за рубли на Bybit P2P.</p>
 						<div class="bp-actions">
-							<a class="button bybit-partner-button" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Создать аккаунт Bybit</a>
+							<a class="purchase-signup" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Регистрация на Bybit</a>
 							<button type="button" class="bp-copy" id="bybit-ref-copy" aria-label="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
 						</div>
-						<small>Партнёрская ссылка. Wind может получить часть торговой комиссии. Торговля связана с риском потери средств.</small>
+						<small>Wind может получать часть торговой комиссии за приглашённых клиентов.</small>
 					</div>
+					<section class="crypto-purchase" id="spot-panel" aria-label="Купить криптовалюту">
+						<div class="purchase-modes" role="group" aria-label="Способ покупки">
+							<button type="button" data-purchase-mode="spot" aria-pressed="true">Спот в Wind</button>
+							<button type="button" data-purchase-mode="p2p" aria-pressed="false">За рубли · P2P</button>
+						</div>
+						<div id="purchase-p2p" hidden>
+							<fieldset class="purchase-coins"><legend>Что купить за рубли</legend>
+								<label><input type="radio" name="p2p-coin" value="USDT" checked><span>USDT</span></label>
+								<label><input type="radio" name="p2p-coin" value="BTC"><span>BTC</span></label>
+								<label><input type="radio" name="p2p-coin" value="ETH"><span>ETH</span></label>
+							</fieldset>
+							<p>Впервые на Bybit? Сначала зарегистрируйся по ссылке Wind выше. Курс, способ оплаты и лимиты выбираются у продавца на Bybit.</p>
+							<a class="purchase-primary" id="purchase-offers" href="https://www.bybit.com/ru-RU/p2p/buy/USDT/RUB" target="_blank" rel="noopener noreferrer">Предложения USDT на Bybit <i data-lucide="external-link" aria-hidden="true"></i></a>
+						</div>
+						<div id="purchase-spot">
+							<p class="spot-source" id="spot-source">Учебный пример · без списаний</p>
+							<div id="spot-connect" hidden>
+								<p>Разреши Wind размещать спотовые заявки через твой аккаунт Bybit.</p>
+								<button type="button" class="purchase-primary" id="spot-connect-start">Подключить Bybit</button>
+								<div id="spot-pairing" hidden>
+									<a id="spot-authorize" class="purchase-primary" target="_blank" rel="noopener noreferrer">Войти на Bybit</a>
+									<form id="spot-pin-form"><label for="spot-pin">Код после авторизации Bybit</label>
+									<input id="spot-pin" required maxlength="10" minlength="10" autocapitalize="characters" autocomplete="off" spellcheck="false">
+									<button class="purchase-back" type="submit">Завершить подключение</button></form>
+								</div>
+							</div>
+							<form id="spot-form">
+								<fieldset class="purchase-coins"><legend>Что купить за USDT</legend>
+									<label><input type="radio" name="spot-asset" value="BTCUSDT" checked><span>BTC</span></label>
+									<label><input type="radio" name="spot-asset" value="ETHUSDT"><span>ETH</span></label>
+									<label><input type="radio" name="spot-asset" value="SOLUSDT"><span>SOL</span></label>
+								</fieldset>
+								<label class="purchase-amount-label" for="spot-amount">Сумма, USDT</label>
+								<input id="spot-amount" type="number" required min="0.01" step="0.01" value="25" inputmode="decimal">
+								<button class="purchase-primary" type="submit">Рассчитать покупку</button>
+							</form>
+							<div id="purchase-review" tabindex="-1" hidden>
+								<h3 id="spot-title"></h3>
+								<dl><div><dt>Сумма</dt><dd id="spot-total"></dd></div><div><dt id="spot-qty-label">Ориентировочно</dt><dd id="spot-qty"></dd></div></dl>
+								<p id="spot-note"></p>
+								<button type="button" class="purchase-primary" id="spot-confirm"></button>
+								<button type="button" class="purchase-back" id="spot-reset">Изменить</button>
+							</div>
+							<p role="status" id="spot-message"></p>
+							<button type="button" class="purchase-back" id="spot-retry" hidden>Проверить подключение</button>
+							<button type="button" class="purchase-back" id="spot-disconnect" hidden>Отключить аккаунт Bybit</button>
+						</div>
+					</section>
 				</article>
 				<div class="crypto-market-heading"><h2>Котировки</h2><span>Bybit Spot · USDT</span></div>
 				<article class="card crypto-terminal" aria-label="Спотовые котировки Bybit">
@@ -408,7 +459,7 @@
 					</div>
 					<div class="crypto-plot"><div id="crypto-chart" aria-label="Свечной график криптовалюты"></div></div>
 					<div class="chart-source"><span id="crypto-updated" role="status">Загружаем свечи Bybit…</span><button type="button" id="crypto-retry" hidden>Повторить загрузку</button></div>
-					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy">Купить на Bybit</button><button class="trade-button sell-button" type="button" data-trade="sell">Продать на Bybit</button></div>
+					<div class="trade-actions"><button class="trade-button buy-button" type="button" data-trade="buy">Купить в Wind</button><button class="trade-button sell-button" type="button" data-trade="sell">Продать на Bybit</button></div>
 				</article>
 
 				<article class="card alerts-card" id="price-alerts">
@@ -624,7 +675,7 @@
 				</div>
 			</section>
 			<footer class="site-footer">
-				<p><strong>Wind Finance.</strong> Мы не брокер и не биржа: инвестиционные активы и сделки в приложении виртуальные. Пополнения проходят через платёжного провайдера и зачисляются только после подтверждения. Котировки и аналитика носят информационный характер.</p>
+				<p><strong>Wind Finance.</strong> Инвестиционный портфель Wind — учебный. Подтверждённые спотовые заявки с подключённого счёта исполняет Bybit. Пополнения проходят через платёжного провайдера и зачисляются только после подтверждения. Котировки и аналитика носят информационный характер.</p>
 				<div class="site-footer-links">
 					<button type="button" data-legal="terms">Условия</button>
 					<button type="button" data-legal="privacy">Конфиденциальность</button>
@@ -753,7 +804,7 @@
 					<i data-lucide="arrow-up-right"></i>
 				</a>
 			</div>
-			<small class="bybit-trade-note">Wind не видит твой аккаунт Bybit и не совершает сделки за тебя.</small>
+			<small class="bybit-trade-note">Продажу и её условия ты подтверждаешь на Bybit.</small>
 		</div>
 	</div>
 	<div class="modal" id="subscription-modal" hidden>	

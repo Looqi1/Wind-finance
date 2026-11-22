@@ -72,7 +72,7 @@ jobs:
           if [ -f CNAME ]; then cp CNAME _site/CNAME; fi
           # Каждый деплой получает уникальную версию файлов, чтобы браузер не держал старый кэш.
           VERSION="${GITHUB_SHA::8}"
-          sed -i -E "s/(style\.css|script\.js|wind-finance-hero\.svg)\?v=[0-9A-Za-z]+/\1?v=${VERSION}/g" _site/index.html
+          sed -i -E "s/(style\.css|script\.js|bybit-spot\.js|wind-finance-hero\.svg)\?v=[0-9A-Za-z]+/\1?v=${VERSION}/g" _site/index.html
           sed -i -E "s/config\.js\"/config.js?v=${VERSION}\"/" _site/index.html
           printf 'window.WIND_API_URL = %s;\n' \
             "$(python3 -c 'import json, os; print(json.dumps(os.environ.get("BACKEND_URL", "").rstrip("/")))')" \

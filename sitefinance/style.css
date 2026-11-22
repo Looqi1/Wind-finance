@@ -2467,8 +2467,7 @@ body.dark-theme .news-read { color: #0d1714; }
 .bybit-partner-card h2 { margin: 12px 0; color: inherit; font-size: clamp(2.1rem, 4.2vw, 4rem); line-height: .99; letter-spacing: -.065em; }
 .bybit-partner-card p { max-width: 28rem; margin: 0; color: #d3e8dc; font-size: 1rem; line-height: 1.5; }
 .bp-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 18px 0 10px; }
-.bp-actions .bybit-partner-button { min-height: 46px; padding: 0 20px; border: 0; border-radius: 12px; background: #caf2b6; color: #153729; font-weight: 750; text-decoration: none; box-shadow: none; }
-.bp-actions .bybit-partner-button:hover { background: #ddffcb; }
+.purchase-signup { display: inline-grid; place-items: center; min-height: 44px; padding: 8px 14px; border-radius: 11px; background: #ffe2ad; color: #352311; font-weight: 750; text-decoration: none; }
 .bp-copy { display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-height: 44px; padding: 0 5px; border: 0; color: #e1f5e7; background: transparent; font: inherit; font-size: .875rem; cursor: pointer; }
 .bp-copy svg { width: 15px; height: 15px; }
 .bp-copy code { font-size: inherit; }
@@ -2505,7 +2504,6 @@ body.dark-theme .news-read { color: #0d1714; }
 }
 @media (max-width: 385px) {
 	.bp-actions { align-items: flex-start; flex-direction: column; gap: 0; }
-	.bp-actions .bybit-partner-button { width: 100%; }
 }
 .bybit-trade-card { max-width: 440px; }
 .bybit-choice { display: grid; gap: 10px; margin: 18px 0 12px; }
@@ -3348,10 +3346,11 @@ body.dark-theme {
 	--paper: #151f1c;
 }
 body.dark-theme .sidebar { background: #131e1bf5; }
-.nav a[href="#dashboard"] { --section-accent: #5a45b6; --section-soft: #ece6ff; }
-.nav a .nav-icon { color: var(--section-accent); }
+.nav a[href="#dashboard"] { --section-accent: #5a45b6; --section-soft: #ece6ff; --section-light: #c9b8ff; }
+.nav a:not(.active) .nav-icon { color: var(--muted); }
+.nav a:hover .nav-icon, .nav a.active .nav-icon { color: var(--section-accent); }
 .nav a.active { background: var(--section-soft); color: var(--section-accent); }
-body.dark-theme .nav a .nav-icon { color: var(--section-light); }
+body.dark-theme .nav a:is(:hover,.active) .nav-icon { color: var(--section-light); }
 body.dark-theme .nav a.active { color: var(--section-light); background: color-mix(in srgb, var(--section-light) 17%, transparent); }
 .nav a.active .nav-icon { display: grid; place-items: center; border-radius: 8px; }
 .topbar .eyebrow { color: var(--section-accent); }
@@ -3428,25 +3427,68 @@ body.dark-theme .rate-plot svg { color: var(--section-light); }
 .invest-overview .portfolio-link { background: #c2f5da; }
 .invest-filters [aria-pressed="true"] { background: var(--section-accent); }
 #investments .invest-card { border-top: 3px solid #62b9a0; }
-#investments .invest-card[data-kind="stock"] { border-top-color: #cd8a5e; }
-#investments .invest-card[data-kind="fund"] { border-top-color: #9d82da; }
 
 .bybit-partner-card {
-	background: radial-gradient(ellipse at 94% 12%, #525837, transparent 52%),
-		linear-gradient(112deg,#1d282e,#263c32 70%,#45462f);
-	border-color: #7b7952;
+	display: grid;
+	grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr);
+	align-items: center;
+	gap: clamp(20px,4vw,64px);
+	background: radial-gradient(ellipse at 18% 0%, #664522, transparent 62%), #32291f;
+	border-color: #84633f;
 }
-.bp-actions .bybit-partner-button { background: #ffe19f; color: #39260e; }
-.bp-actions .bybit-partner-button:hover { background: #fff0be; }
+.bp-main { min-width: 0; max-width: none; }
+.bp-heading { position: relative; isolation: isolate; }
+.bp-heading .crypto-compass {
+	inset: -10% -4% -4% auto; width: 56%; aspect-ratio: auto;
+	background-size: contain; background-position: right center;
+	filter: sepia(.85) saturate(1.4);
+}
+.bybit-partner-card .bp-main > p { color: #f1e4cd; }
+.bybit-partner-card .bp-main small, .bybit-partner-card .bp-copy { color: #eed9b8; }
+.crypto-purchase {
+	min-width: 0; padding: clamp(16px,2.2vw,28px);
+	border: 1px solid var(--section-border); border-radius: 18px; background: var(--card); color: var(--ink);
+	box-shadow: 0 12px 30px #20140626;
+}
+.purchase-modes { display: flex; gap: 4px; padding: 4px; margin-bottom: 18px; border-radius: 12px; background: var(--section-tint); }
+.purchase-modes button { flex: 1; min-height: 44px; padding: 4px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: .9rem; font-weight: 650; cursor: pointer; }
+.purchase-modes [aria-pressed="true"] { background: var(--card); color: var(--section-ink); box-shadow: 0 2px 6px #160c0417; }
+.purchase-coins { display: flex; gap: 6px; min-width: 0; margin: 0 0 14px; padding: 0; border: 0; }
+.purchase-coins legend, .purchase-amount-label, #spot-pin-form label { display: block; margin-bottom: 8px; padding: 0; font-size: .9375rem; font-weight: 650; }
+.purchase-coins label { position: relative; flex: 1; cursor: pointer; }
+.purchase-coins input { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
+.purchase-coins span { display: grid; min-height: 44px; place-items: center; border: 1px solid var(--section-border); border-radius: 10px; font-size: .9375rem; font-weight: 700; }
+.purchase-coins :checked + span { border-color: var(--section-ink); background: var(--section-tint); color: var(--section-ink); }
+.crypto-purchase :focus-visible, .purchase-coins :focus-visible + span { outline: 2px solid var(--section-ink); outline-offset: 2px; }
+.crypto-purchase p { margin: 10px 0 14px; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.purchase-primary, .purchase-back { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border: 0; border-radius: 11px; background: var(--section-fill); color: white; font: inherit; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; }
+.purchase-primary:hover { filter: brightness(1.08); }
+.purchase-primary svg, .purchase-back svg { width: 16px; height: 16px; flex-shrink: 0; }
+.purchase-back { margin-top: 6px; background: transparent; color: var(--section-ink); }
+#spot-amount, #spot-pin { width: 100%; min-height: 48px; padding: 8px 12px; border: 1px solid var(--section-border); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+#purchase-review dl > div { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; padding-top: 12px; }
+#purchase-review dt { color: var(--muted); font-size: .9rem; }
+#purchase-review dd { margin: 0; font-weight: 750; font-variant-numeric: tabular-nums; }
+#spot-form .purchase-primary, #spot-pin-form { margin-top: 12px; }
+.crypto-purchase .spot-source { margin: 0 0 12px; color: var(--section-ink); font-size: .85rem; font-weight: 700; }
+#spot-message:empty { display: none; }
+#purchase-review h3 { margin: 0; font-size: 1.2rem; }
+#purchase-review dl { margin: 12px 0; padding-bottom: 14px; border-block: 1px solid var(--section-border); }
+@media (max-width: 820px) {
+	.bybit-partner-card { grid-template-columns: minmax(0,1fr); padding: clamp(14px,4vw,26px); gap: 16px; }
+	.bp-heading .crypto-compass { width: 48%; }
+	.bybit-partner-card .bp-actions { flex-flow: row wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
+	.purchase-signup { padding-inline: 10px; font-size: .9rem; }
+	.bp-copy { gap: 4px; padding-inline: 0; }
+}
 .bybit-partner-label { color: #ffe5b4; }
 .market-pair:has(:checked) { background: var(--section-soft); border-color: #ba7a44; }
 body.dark-theme .market-pair:has(:checked) { background: #eeae5726; }
-#crypto .plus-badge { background: linear-gradient(120deg, #7145ab, #513886); }
 
 #converter .converter { border-color: #7fb6d280; }
 #converter .converter-output { border-color: #87bddb; background: #e4f4ff; color: #134766; }
 body.dark-theme #converter .converter-output { background: #1c3c57; color: #e2f6ff; }
-#converter :is(.swap-currency, .converter-submit) { background: linear-gradient(130deg,#276d9e,#493ea0); color: #fff; }
+#converter :is(.swap-currency, .converter-submit) { background: var(--section-fill); color: #fff; }
 
 #game .game-hub { border-color: #edafbe70; background: linear-gradient(120deg,#ee91ad1d,#ffb58422); }
 #game .cg-story { background: linear-gradient(100deg,#422249,var(--acc2)); }
@@ -3529,6 +3571,7 @@ body {
 	--section-ink: var(--section-accent);
 	--section-tint: var(--section-soft);
 	--section-border: color-mix(in srgb, var(--section-accent) 24%, var(--line));
+	--section-fill: linear-gradient(115deg, var(--section-accent), color-mix(in srgb, var(--section-accent) 78%, #101826));
 }
 body.dark-theme {
 	--section-ink: var(--section-light);
@@ -3574,8 +3617,22 @@ main > :is(#investments, #crypto, #converter, #game, #settings) .card {
 	border-color: var(--section-border);
 }
 #investments .invest-card { border-top-color: var(--section-ink); }
-#investments .invest-card[data-kind="stock"] { border-top-color: #cd8a5e; }
-#investments .invest-card[data-kind="fund"] { border-top-color: #9d82da; }
+#investments :is(.invest-card, .inv-summary-tile) .asset-icon,
+#settings :is(.setting-tag, .toggle-pill.active),
+#converter .currency-pill, .stats-link, #goals .portfolio-link,
+#crypto :is(.alerts-count, .plus-lock-icon), #game .gh-sound[aria-pressed="true"] {
+	color: var(--section-ink); border-color: var(--section-border); background: var(--section-tint);
+}
+.stats-link:hover, #converter .currency-pill:hover { border-color: var(--section-ink); }
+#goals .goal-bar > span, #game .gh-xp > span, #investments .buy-asset-button,
+#goals :is(.goal-btn.primary, .button), #crypto :is(.alert-submit, .alerts-icon, .plus-badge, .plus-lock .button),
+#game-tabs > button.active { background: var(--section-fill); color: white; box-shadow: none; }
+#game-tabs .gt-art { background: var(--section-tint); }
+#game-tabs .gt-art svg, #crypto :is(.alert-coin.active, #crypto-retry),
+#settings .settings-summary strong { color: var(--section-ink); }
+#game-tabs .active .gt-art { background: #ffffff26; }
+#game-tabs .active .gt-art svg { color: white; }
+#settings .settings-summary > div { background: var(--section-tint); border-color: var(--section-border); }
 :where(#converter, #investments, #crypto, #game, #settings) .section-heading h2 { color: var(--section-ink); }
 #crypto .crypto-market-heading h2 { color: var(--section-ink); }
 #crypto .timeframes, #portfolio-chart-range { background: var(--section-tint); }

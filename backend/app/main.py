@@ -36,9 +36,11 @@ from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, desc, func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
 
 from .cbr_history import CBR_HISTORY_URL, CBR_TIMEZONE, history_params, parse_history
+from .database import Base
+from . import bybit_broker
 
 # ---------------- настройки ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -156,10 +158,6 @@ def iso_week(dt: datetime) -> str:
 
 
 # ---------------- модели ----------------
-class Base(DeclarativeBase):
-    pass
-
-
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -688,6 +686,7 @@ class FeedbackRequest(BaseModel):
 
 # ---------------- приложение ----------------
 app = FastAPI(title="Wind Finance API", version="0.2.0")
+app.include_router(bybit_broker.router_for(get_current_user, get_db, limiter))
 
 if ENV == "dev" or ALLOWED_ORIGINS:
     app.add_middleware(

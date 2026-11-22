@@ -216,6 +216,7 @@ const bybitTradeUrl = (symbol) => {
 	return m ? `https://www.bybit.com/trade/spot/${m[1]}/${m[2]}` : 'https://www.bybit.com/trade/spot/BTC/USDT';
 };
 const trackPartnerClick = (kind, placement, symbol = '') => {
+	if (!window.WIND_API_URL && location.hostname.endsWith('.github.io')) return;
 	if (typeof window.WindApi !== 'function') return;
 	window.WindApi('/partner/click', { method: 'POST', body: { kind, placement, symbol }, timeoutMs: 5000 }).catch(() => {});
 };
@@ -239,21 +240,33 @@ document.getElementById('bybit-ref-copy')?.addEventListener('click', async () =>
 const bybitTradeModal = document.getElementById('bybit-trade-modal');
 const bybitOptTrade = document.getElementById('bybit-opt-trade');
 const bybitOptSignup = document.getElementById('bybit-opt-signup');
+// Telegram's WebView delegates external navigation to the system browser.
+document.addEventListener('click', (event) => {
+	const link = event.target.closest('[data-bybit-signup], #purchase-offers, #spot-authorize, #bybit-opt-trade');
+	if (!link || !inTelegram || !tg.openLink || event.defaultPrevented || !link.href.startsWith('https://')) return;
+	try {
+		tg.openLink(link.href);
+		event.preventDefault();
+	} catch { /* The anchor remains usable in older Telegram clients. */ }
+});
 document.querySelectorAll('[data-trade]').forEach((button) => {
 	button.addEventListener('click', () => {
 		const symbol = selectedCryptoPair();
-		const side = button.dataset.trade === 'sell' ? 'sell' : 'buy';
+		if (button.dataset.trade === 'buy') {
+			window.dispatchEvent(new CustomEvent('wind-spot-buy', { detail: symbol }));
+			return;
+		}
 		const base = symbol.replace(/(USDT|USDC)$/, '');
 		if (!bybitTradeModal) {
-			trackPartnerClick('signup', `trade-${side}`, symbol);
+			trackPartnerClick('signup', 'trade-sell', symbol);
 			window.open(BYBIT_REFERRAL_URL, '_blank', 'noopener,noreferrer');
 			return;
 		}
-		document.getElementById('bybit-trade-title').textContent = `${side === 'buy' ? 'Купить' : 'Продать'} ${base} на Bybit`;
+		document.getElementById('bybit-trade-title').textContent = `Продать ${base} на Bybit`;
 		document.getElementById('bybit-opt-pair').textContent = `Откроем пару ${base}/USDT`;
 		bybitOptTrade.href = bybitTradeUrl(symbol);
 		bybitOptTrade.dataset.symbol = symbol;
-		bybitOptTrade.dataset.side = side;
+		bybitOptTrade.dataset.side = 'sell';
 		bybitOptSignup.dataset.symbol = symbol;
 		bybitTradeModal.hidden = false;
 	});
@@ -727,7 +740,7 @@ const closeInvestmentProfile = () => {
 const viewTitles = {
 	dashboard: ['Wind Finance', 'Ваши финансы'],
 	investments: ['Симулятор', 'Инвестиции'],
-	crypto: ['Bybit · спот', 'Криптовалюты'],
+	crypto: ['Bybit · P2P и спот', 'Криптовалюты'],
 	converter: ['Валюты', 'Конвертер'],
 	game: ['Играй и учись', 'Игровая зона'],
 	settings: ['Профиль', 'Настройки'],
@@ -5500,7 +5513,7 @@ if (inTelegram) {
 				'2. Предмет. Пользователь получает неисключительное право пользоваться доступными функциями сервиса в течение оплаченного периода. Сервис не продаёт финансовые инструменты и не обещает доходность.',
 				'3. Запрещённые услуги. Wind Finance не является банком, брокером, дилером, биржей, платёжной системой, инвестиционным советником, доверительным управляющим или криптообменником. Пользовательские средства не принимаются в управление, не хранятся и не инвестируются сервисом.',
 				'4. Виртуальные функции. Демонстрационные балансы, активы, котировки, результаты игр и операции в симуляторе не являются деньгами или цифровой валютой, не имеют стоимости и не подлежат выводу.',
-				'5. Криптораздел. Пользовательские криптовалютные сделки, обмен, хранение и вывод средств через сервис не предоставляются. Любые административные интеграции с внешними провайдерами не являются услугой для пользователя и не дают ему права требовать исполнения сделки.',
+				'5. Криптораздел. Демо показывает покупку на условных средствах. При подключённом брокерском API пользователь может подтвердить спотовую заявку со своего счёта Bybit. Исполнение, торговая комиссия и учёт криптовалюты происходят на стороне Bybit. Для покупки за рубли открываются предложения Bybit P2P.',
 				'6. Информация и риски. Курсы, графики и аналитика имеют образовательный и справочный характер, могут содержать задержки и ошибки и не являются индивидуальной инвестиционной рекомендацией. Пользователь самостоятельно оценивает решения и риски.',
 				'7. Wind Plus. Подписка предоставляет доступ к функциям интерфейса и материалам, перечисленным на странице тарифа. Цена, срок, момент активации, порядок отмены и возврата должны быть указаны до оплаты. Автоматическое продление не применяется, если прямо не указано иначе.',
 				'8. Оплата и возвраты. Платёж обрабатывает подключённый платёжный провайдер. Условия возврата, реквизиты чека и порядок обращений должны быть опубликованы до запуска продаж и соответствовать применимому законодательству.',
@@ -5514,7 +5527,7 @@ if (inTelegram) {
 			paragraphs: [
 				'ЧЕРНОВИК ДЛЯ ПРОСМОТРА. До публикации нужно заполнить реквизиты оператора, фактические сроки хранения, список подрядчиков и проверить документ по 152-ФЗ и другим применимым требованиям.',
 				'1. Оператор. Оператор персональных данных: [ФИО / наименование], ИНН [заполнить], адрес [заполнить], email [заполнить].',
-				'2. Данные. Сервис может обрабатывать email, имя пользователя, идентификатор аккаунта, хеш пароля, Telegram ID при соответствующем входе, сведения о подписке, технические данные запроса, сообщения поддержки и журналы виртуальных операций.',
+				'2. Данные. Сервис может обрабатывать email, имя пользователя, идентификатор аккаунта, хеш пароля, Telegram ID при соответствующем входе, сведения о подписке, технические данные запроса, сообщения поддержки и журналы виртуальных операций. При подключении Bybit сервер Wind хранит UID, зашифрованные торговые ключи и сведения о заявках. Отключение аккаунта удаляет сохранённые ключи.',
 				'3. Цели. Данные используются для регистрации и авторизации, работы функций, защиты аккаунтов, поддержки, обработки подписки, исполнения требований закона и предотвращения злоупотреблений.',
 				'4. Правовые основания. Обработка производится для исполнения соглашения, с согласия пользователя в предусмотренных случаях и для выполнения обязанностей оператора. Согласие не должно подменять обязательные основания обработки.',
 				'5. Платёжные данные. Данные банковской карты не вводятся и не хранятся в Wind Finance; их обрабатывает платёжный провайдер по своим документам.',
@@ -6152,7 +6165,7 @@ else window.setTimeout(paintIcons, 200);
 				tile('Инвесторы', num(d.activity.investors), `сделок за неделю: ${num(d.activity.trades_7d)}`),
 				tile('Копилки и уведомления', `${num(d.activity.goals_active)} / ${num(d.activity.alerts_active)}`, 'активные'),
 				...(d.partner ? [
-					tile('Bybit: регистрации', num(d.partner.signup_30d), `за 30 дней · за 7: ${num(d.partner.signup_7d)} · код ${d.partner.ref_code}`),
+					tile('Переходы к регистрации Bybit', num(d.partner.signup_30d), `за 30 дней · за 7: ${num(d.partner.signup_7d)} · код ${d.partner.ref_code}`),
 					tile('Bybit: к торговле', num(d.partner.trade_30d), `за 30 дней · пользователей: ${num(d.partner.users_30d)}${d.partner.placements.length ? ' · топ: ' + d.partner.placements[0].placement : ''}`),
 				] : []),
 			);
@@ -6183,7 +6196,7 @@ else window.setTimeout(paintIcons, 200);
 		{ view: 'dashboard', target: '#goals', title: 'Копилки', text: 'Поставь цель и срок, например «Отпуск к лету», и я посчитаю, сколько откладывать каждый месяц.' },
 		{ view: 'investments', target: '.asset-grid', title: 'Инвестиции', text: 'Индекс, акции, фонды и облигации по реальным котировкам Мосбиржи. Покупки идут с виртуального баланса: это тренажёр, учиться можно без риска.' },
 		{ view: 'investments', target: '[data-open-investment-profile]', title: 'Твой портфель', text: 'Здесь доходность, история сделок и график стоимости портфеля. А в «Топ недели» видно, кто из игроков в плюсе.' },
-		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: 'Живые свечи с Bybit: выбирай пару и таймфрейм. Кнопки «Купить» и «Продать» ведут на Bybit.' },
+		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: 'Живые свечи с Bybit: выбирай пару и таймфрейм. Покупка открывается в Wind, продажа — на Bybit.' },
 		{ view: 'crypto', target: '#price-alerts', title: 'Уведомления о цене', text: 'Задай уровень, например «BTC поднимется до 70 000», и я напомню в браузере или в Telegram.' },
 		{ view: 'converter', target: '#converter .converter', title: 'Конвертер', text: 'Пересчитай сумму между валютами по актуальному курсу. Стрелки меняют валюты местами.' },
 		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Проходи игры про рынок и зарабатывай звёзды. Заодно научишься читать графики и распознавать мошенников.' },

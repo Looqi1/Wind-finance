@@ -490,3 +490,126 @@ def test_stars_catalog_excludes_wallet_topups_when_live_trading_is_enabled(monke
         db.commit()
     assert client.get("/payments/stars/catalog", headers=headers).json() == {"prices": {"month": 125}}
     assert client.post("/payments/stars/invoice", headers=headers, json={"offer": "topup_1000"}).status_code == 503
+
+
+@pytest.fixture
+def spot_broker(monkeypatch):
+    import hashlib
+    import hmac
+    import json
+    from urllib.parse import parse_qs
+    from app import bybit_broker as broker
+    from cryptography.fernet import Fernet
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("BYBIT_BROKER_NETWORK", "testnet")
+    monkeypatch.setenv("BYBIT_BROKER_ID", "api.WindTest")
+    monkeypatch.setenv("BYBIT_OAUTH_CLIENT_ID", "test-app")
+    monkeypatch.setenv("BYBIT_OAUTH_CLIENT_SECRET", "fixture-oauth-secret")
+    monkeypatch.setenv("BYBIT_OAUTH_REDIRECT_URI", "https://api.example.test/broker/bybit/callback")
+    monkeypatch.setenv("BYBIT_BROKER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    flow = {"sent": [], "timeout": False, "wallet": []}
+
+    async def exchange(method, url, **kwargs):
+        from urllib.parse import urlsplit
+        path = urlsplit(url).path
+        if path.endswith("/access_token"):
+            assert kwargs["data"]["code"] == "exchange-code"
+            return {"access_token": "fixture-token"}
+        if path.endswith("/restrict/openapi"):
+            assert kwargs["headers"]["Authorization"] == "Bearer fixture-token"
+            return {"api_key": "customer-key", "api_secret": "customer-secret"}
+        if path == "/v5/market/tickers":
+            return {"list": [{"symbol": "BTCUSDT", "ask1Price": "50000"}]}
+        headers = kwargs["headers"]
+        assert headers["X-BAPI-API-KEY"] == "customer-key"
+        assert headers["X-Referer"] == "api.WindTest"
+        body = kwargs.get("content", urlsplit(url).query.encode())
+        prefix = (headers["X-BAPI-TIMESTAMP"] + "customer-key5000").encode()
+        assert headers["X-BAPI-SIGN"] == hmac.new(b"customer-secret", prefix + body, hashlib.sha256).hexdigest()
+        if path == "/v5/user/query-api":
+            return {"userID": 1234, "readOnly": 0, "permissions": {"Spot": ["SpotTrade"], "Wallet": flow["wallet"]}}
+        if path == "/v5/order/create":
+            flow["sent"].append(json.loads(body))
+            if flow["timeout"]:
+                raise HTTPException(502, "timed out")
+            return {"orderId": "provider-1"}
+        if path == "/v5/order/realtime":
+            return {"list": []}
+        if path == "/v5/order/history":
+            return {"list": [{"orderLinkId": parse_qs(urlsplit(url).query)["orderLinkId"][0],
+                              "orderStatus": "Filled", "cumExecQty": "0.0005", "cumExecValue": "25"}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(broker, "exchange", exchange)
+    return flow
+
+
+def broker_pin(headers):
+    import re
+    from urllib.parse import urlsplit, parse_qs
+    login = client.post("/broker/bybit/connect", headers=headers).json()["url"]
+    assert login.startswith("https://testnet.bybit.com/oauth?")
+    state = parse_qs(urlsplit(login).query)["state"][0]
+    params = {"state": state, "code": "exchange-code", "client_id": "test-app"}
+    callback = client.get("/broker/bybit/callback", params=params)
+    assert callback.status_code == 200
+    assert callback.headers["cache-control"] == "no-store"
+    assert client.get("/broker/bybit/callback", params=params).status_code == 400
+    return re.search(r"<strong>([A-F0-9]{10})</strong>", callback.text)[1]
+
+
+def test_customer_broker_oauth_confirmation_and_timeout_reconciliation(spot_broker):
+    from decimal import Decimal
+    from app import bybit_broker as broker
+    buyer = auth(register("spot@example.com", "spot-buyer"))
+    other = auth(register("other-spot@example.com", "other-buyer"))
+    root = "/broker/bybit"
+    pin = broker_pin(buyer)
+    assert client.post(root + "/pair", json={"pin": pin}, headers=other).status_code == 400
+    assert client.post(root + "/pair", json={"pin": pin}, headers=buyer).json() == {"uid": "1234"}
+    assert client.post(root + "/pair", json={"pin": pin}, headers=buyer).status_code == 400
+    with SessionLocal() as db:
+        account = db.query(broker.BrokerAccount).one()
+        assert "customer-secret" not in account.credentials
+        assert account.auth_code is None and account.pin_hash is None
+    payload = {"symbol": "BTCUSDT", "amount": "25"}
+    assert client.post(root + "/quotes", json=payload, headers=other).status_code == 409
+    assert client.post(root + "/quotes", json={**payload, "amount": "101"}, headers=buyer).status_code == 400
+    order_id = client.post(root + "/quotes", json=payload, headers=buyer).json()["id"]
+    assert spot_broker["sent"] == []
+    check = root + "/orders/" + order_id
+    spot_broker["timeout"] = True
+    assert client.post(check + "/confirm", headers=buyer).json()["status"] == "pending"
+    assert client.post(check + "/confirm", headers=buyer).json()["status"] == "pending"
+    order, = spot_broker["sent"]
+    assert order["orderLinkId"] == order_id and order["isLeverage"] == 0
+    assert order["side"] == "Buy" and order["marketUnit"] == "quoteCoin" and Decimal(order["qty"]) == 25
+    assert client.get(root + "/status", headers=buyer).json()["latest"]["id"] == order_id
+    result = client.get(check, headers=buyer).json()
+    assert result["status"] == "Filled" and Decimal(result["filled"]) == Decimal("0.0005")
+    assert client.post(check + "/confirm", headers=buyer).json()["status"] == "Filled"
+    assert len(spot_broker["sent"]) == 1
+    assert client.delete(root + "/connection", headers=buyer).status_code == 200
+    assert client.get(root + "/status", headers=buyer).json()["uid"] is None
+    assert client.post(check + "/confirm", headers=buyer).status_code == 409
+
+
+def test_customer_broker_rejects_withdrawal_permission_and_expired_quotes(spot_broker):
+    from datetime import timedelta
+    from app import bybit_broker as broker
+    buyer = auth(register("spot2@example.com", "spot-two"))
+    root = "/broker/bybit"
+    pin = broker_pin(buyer)
+    spot_broker["wallet"] = ["Withdraw"]
+    assert client.post(root + "/pair", json={"pin": pin}, headers=buyer).status_code == 403
+    spot_broker["wallet"] = []
+    pin = broker_pin(buyer)
+    assert client.post(root + "/pair", json={"pin": pin}, headers=buyer).status_code == 200
+    order_id = client.post(root + "/quotes", json={"symbol": "BTCUSDT", "amount": "10"}, headers=buyer).json()["id"]
+    with SessionLocal() as db:
+        order = db.get(broker.BrokerBuy, order_id)
+        order.created -= timedelta(seconds=50)
+        db.commit()
+    assert client.post(f"{root}/orders/{order_id}/confirm", headers=buyer).status_code == 409
+    assert not spot_broker["sent"]

@@ -30,6 +30,7 @@ const telegram = {
     isVersionAtLeast: () => true,
     setBackgroundColor: color => { state.background = color; },
     openInvoice: (url, callback) => { state.invoice = url; callback(state.invoiceResult || 'paid'); },
+    openLink: url => { state.externalLink = url; },
     BackButton: {
         show: () => { state.backVisible = true; },
         hide: () => { state.backVisible = false; },
@@ -98,6 +99,7 @@ def open_app(browser):
                 "/Wind-finance/": "index.html",
                 "/Wind-finance/style.css": "style.css",
                 "/Wind-finance/script.js": "script.js",
+                "/Wind-finance/assets/bybit-spot.js": "assets/bybit-spot.js",
                 "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
                 "/Wind-finance/assets/wind-airstream.webp": "assets/wind-airstream.webp",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
@@ -484,17 +486,68 @@ def test_mobile_crypto_pair_controls_trade_alert_and_partner_link(open_app):
     expect(signup).to_be_in_viewport()
     assert signup.get_attribute("href").startswith("https://www.bybit.com/invite?ref=")
     page.locator(".market-pair").filter(has_text="ETH").click()
-    expect(page.locator('input[value="ETHUSDT"]')).to_be_checked()
+    expect(page.locator('#crypto-pair input[value="ETHUSDT"]')).to_be_checked()
     expect(page.locator("#crypto-symbol-label")).to_have_text("ETH / USDT")
     expect(page.locator("#alert-coins .active")).to_have_text("ETH")
     page.locator('[data-interval="240"]').click()
     expect(page.locator('[data-interval="240"]')).to_have_attribute("aria-pressed", "true")
     expect(page.locator("#crypto-retry")).to_be_visible()
-    page.get_by_role("button", name="Купить на Bybit").click()
-    expect(page.locator("#bybit-trade-title")).to_have_text("Купить ETH на Bybit")
+    page.get_by_role("button", name="Купить в Wind").click()
+    expect(page.locator('[name="spot-asset"]:checked')).to_have_value("ETHUSDT")
+    page.get_by_role("button", name="Продать на Bybit").click()
+    expect(page.locator("#bybit-trade-title")).to_have_text("Продать ETH на Bybit")
     expect(page.locator("#bybit-opt-trade")).to_have_attribute("href", "https://www.bybit.com/trade/spot/ETH/USDT")
     expect(page.locator("#bybit-opt-signup")).to_have_attribute("href", signup.get_attribute("href"))
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert not errors
+
+
+def test_spot_purchase_preview_and_ruble_offers(open_app):
+    page, requests, errors = open_app(width=320, backend=False)
+    page.get_by_role("button", name="Попробовать демо").click()
+    page.locator('.nav a[href="#crypto"]').click()
+    purchase = page.locator("#spot-panel")
+    purchase.get_by_role("button", name="За рубли · P2P").click()
+    purchase.locator("#purchase-p2p").get_by_text("ETH", exact=True).click()
+    expect(purchase.locator("#purchase-offers")).to_have_attribute("href", "https://www.bybit.com/ru-RU/p2p/buy/ETH/RUB")
+    purchase.get_by_role("button", name="Спот в Wind").click()
+    purchase.locator("#spot-form").get_by_text("ETH", exact=True).click()
+    amount = purchase.get_by_label("Сумма, USDT")
+    amount.fill("0")
+    purchase.get_by_role("button", name="Рассчитать покупку").click()
+    expect(purchase.locator("#purchase-review")).to_be_hidden()
+    amount.fill("32")
+    purchase.get_by_role("button", name="Рассчитать покупку").click()
+    expect(purchase.locator("#spot-qty")).to_have_text("0,01 ETH")
+    purchase.get_by_role("button", name="Изменить").click()
+    expect(amount).to_be_focused()
+    purchase.get_by_text("SOL", exact=True).click()
+    amount.fill("150")
+    purchase.get_by_role("button", name="Рассчитать покупку").click()
+    purchase.get_by_role("button", name="Подтвердить демо-покупку").click()
+    expect(purchase.get_by_role("heading", name="Учебная покупка завершена")).to_be_visible()
+    expect(purchase.locator("#spot-qty")).to_have_text("1 SOL")
+    assert not any(method == "POST" for method, *_ in requests)
+    assert not errors
+
+
+def test_telegram_buy_links_preserve_affiliate_campaign_and_pair(open_app):
+    page, requests, errors = open_app(telegram=True)
+    affiliate = "https://partner.bybit.com/b/wind-campaign"
+    page.route("**/config.js", lambda route: route.fulfill(
+        body=f"window.WIND_BYBIT_REF = '{affiliate}';", content_type="application/javascript"))
+    page.reload(wait_until="domcontentloaded")
+    page.locator('.nav a[href="#crypto"]').click()
+    page.locator('#bybit-partner [data-bybit-signup]').click()
+    assert page.evaluate("testTelegram.externalLink") == affiliate
+    expect(page.locator("#bybit-ref-copy")).to_be_hidden()
+    page.get_by_role("button", name="За рубли · P2P").click()
+    page.locator('#purchase-p2p label').filter(has_text="BTC").click()
+    page.locator("#purchase-offers").click()
+    assert page.evaluate("testTelegram.externalLink") == "https://www.bybit.com/ru-RU/p2p/buy/BTC/RUB"
+    page.wait_for_function("window.testTelegram.externalLink.includes('BTC/RUB')")
+    assert any(path == '/partner/click' and body.get('placement') == 'p2p-buy'
+               for _, path, body, _ in requests)
     assert not errors
 
 
@@ -538,4 +591,47 @@ def test_mobile_game_library_and_saved_stars(open_app):
     page.reload(wait_until="domcontentloaded")
     expect(page.locator("#gh-stars")).to_have_text("2 / 12")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not errors
+
+
+def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
+    root = "/broker/bybit"
+    order = {"id": "wind-order", "symbol": "ETHUSDT", "ask": "2500", "budget": "25",
+             "status": "preview", "filled": "0", "spent": "0", "note": ""}
+
+    def broker(route, path):
+        if not path.startswith(root):
+            return False
+        replies = {
+            "/status": {"enabled": True, "network": "testnet", "max_usdt": "100", "uid": None},
+            "/connect": {"url": "https://testnet.bybit.com/oauth?client_id=wind"},
+            "/pair": {"uid": "1234"},
+            "/quotes": order,
+            "/orders/wind-order/confirm": {**order, "status": "pending"},
+            "/orders/wind-order": {**order, "status": "Filled", "spent": "25", "filled": "0.01"},
+            "/connection": {"ok": True},
+        }
+        route.fulfill(json=replies[path[len(root):]])
+        return True
+
+    page, requests, errors = open_app(telegram=True, api=broker)
+    page.locator('.nav a[href="#crypto"]').click()
+    page.get_by_role("button", name="Подключить Bybit").click()
+    page.locator("#spot-authorize").click()
+    assert page.evaluate("testTelegram.externalLink") == "https://testnet.bybit.com/oauth?client_id=wind"
+    page.locator("#spot-pin").fill("DEADBEEF00")
+    page.get_by_role("button", name="Завершить подключение").click()
+    expect(page.locator("#spot-source")).to_contain_text("Bybit Testnet")
+    expect(page.locator("#spot-source")).to_contain_text("1234")
+    page.locator("#spot-form label").filter(has_text="ETH").click()
+    page.get_by_role("button", name="Рассчитать покупку").click()
+    expect(page.locator("#spot-qty")).to_have_text("0,01 ETH")
+    assert not any(path.endswith('/confirm') for _, path, _, _ in requests)
+    page.get_by_role("button", name="Купить за 25 USDT").click()
+    expect(page.locator("#spot-title")).to_have_text("Ожидаем результат Bybit")
+    page.get_by_role("button", name="Проверить статус").click()
+    expect(page.locator("#spot-title")).to_have_text("Покупка исполнена")
+    assert len([path for _, path, _, _ in requests if path.endswith('/confirm')]) == 1
+    page.get_by_role("button", name="Отключить аккаунт Bybit").click()
+    expect(page.get_by_role("button", name="Подключить Bybit")).to_be_visible()
     assert not errors

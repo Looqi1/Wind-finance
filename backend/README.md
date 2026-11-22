@@ -170,3 +170,41 @@ TOTP secrets are encrypted at rest using a key derived from
   can fill immediately, so cancellation is only useful for orders that remain
   open. Do not switch to the mainnet URL or increase the limit until testnet
   reconciliation and operational review pass.
+
+## Customer spot purchases through Bybit API Broker
+
+Wind requests consent on Bybit, receives an individual customer's spot credentials on the
+server, and attributes their orders with the broker ID in the X-Referer header.
+Each purchase spends USDT from that customer's Bybit spot account. Ruble purchases
+open Bybit P2P. The separate affiliate signup link comes from the Pages repository
+variable `BYBIT_REF_CODE` (the full campaign URL from your Affiliate Portal also works).
+
+1. Have Bybit Broker Management enable OAuth for your broker, register the exact HTTPS
+   callback on your FastAPI host ending in `/broker/bybit/callback`, and configure
+   SpotTrade permissions without wallet transfer or withdrawal. Supply your API host's
+   outbound IP to Bybit if your broker configuration uses IP binding.
+2. On the API host set `BYBIT_BROKER_NETWORK=testnet`, `BYBIT_BROKER_ID` (issued for
+   order attribution), `BYBIT_OAUTH_CLIENT_ID`, `BYBIT_OAUTH_CLIENT_SECRET`, and
+   `BYBIT_OAUTH_REDIRECT_URI`. Set `BYBIT_BROKER_ENCRYPTION_KEY` to a stable Fernet
+   key from your secret manager. Generate one with
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+   Store the encryption key and OAuth secret exclusively on the backend. Replacing
+   the encryption key requires users to disconnect and authorize again.
+3. Apply `alembic upgrade head`, run the API and set the Pages repository variable
+   `BACKEND_URL` to its HTTPS origin. Configure CORS as above and redeploy Pages.
+4. In a personal Wind account open **Крипто → Спот в Wind → Подключить Bybit**.
+   Authorize on Bybit and enter the single-use return code in the original Wind
+   session. With test USDT, review a quote, confirm once and check execution. Follow
+   Bybit's broker verification process before switching to mainnet credentials.
+5. For production use `WINDFINANCE_ENV=prod`, `BYBIT_BROKER_NETWORK=mainnet`, the
+   production OAuth application and a production callback. Set `BYBIT_MAX_NOTIONAL_USDT`
+   to the per-order cap (default 100). This customer flow is independent of the
+   administrator's trading credentials and simulator wallets.
+
+The order preview expires after 45 seconds. The market order uses a quote-currency budget
+and a 0.5% slippage tolerance relative to the best ask at execution. A timeout leaves
+the same order pending for status reconciliation. Disconnecting deletes Wind's stored
+credentials. Users can revoke the authorization in Bybit's API management.
+
+See [Bybit broker OAuth](https://www.bybit.com/en/help-center/article/How-to-Integrate-With-the-OAuth-System-as-a-Broker-on-Bybit)
+and [Bybit API Broker FAQ](https://www.bybit.com/en/help-center/article/FAQ-API-Brokers-Program).
