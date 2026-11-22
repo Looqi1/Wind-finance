@@ -738,6 +738,7 @@ const viewTitles = {
 };
 const topbarEyebrow = document.querySelector('.topbar .eyebrow');
 const topbarTitle = document.querySelector('.topbar h1');
+const sectionBackdrop = document.querySelector('.section-backdrop');
 const windMotion = window.matchMedia('(prefers-reduced-motion: no-preference)');
 const windEffects = new Map();
 const playWindEffect = (element, frames, duration) => {
@@ -811,6 +812,9 @@ const setAppView = (view) => {
 	paintViewTitle(nextView);
 	if (changed) {
 		window.scrollTo({ top: 0, behavior: 'instant' });
+		playWindEffect(sectionBackdrop, [
+			{ opacity: .2 }, { opacity: 1 },
+		], 900);
 		playWindEffect(topbarTitle, [
 			{ opacity: .35, translate: '-10px 4px' }, { opacity: 1, translate: '0 0' },
 		], 385);
@@ -1662,6 +1666,8 @@ document.querySelectorAll('[data-back-view="settings"]').forEach((button) => {
 document.querySelectorAll('a[href="#settings"]').forEach((link) => {
 	link.addEventListener('click', (event) => {
 		event.preventDefault();
+		profileDropdown?.setAttribute('hidden', '');
+		profileTrigger?.setAttribute('aria-expanded', 'false');
 		setAppView('settings');
 		window.history.replaceState(null, '', '#settings');
 	});
