@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 import asyncio
 import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from collections import defaultdict, deque
@@ -21,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import httpx
 import jwt
@@ -100,12 +101,15 @@ ADMIN_USER_IDS = {
     int(value.strip()) for value in os.getenv("WINDFINANCE_ADMIN_USER_IDS", "").split(",")
     if value.strip().isdigit()
 }
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://looqi1.github.io/Wind-finance/").rstrip("/") + "/"
-SMTP_HOST = os.getenv("SMTP_HOST", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL") or PUBLIC_BASE_URL or (
+    "http://127.0.0.1:5500/" if ENV in {"dev", "test"} else "https://looqi1.github.io/Wind-finance/"
+)
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_MODE = os.getenv("SMTP_MODE", "ssl" if SMTP_PORT == 465 else "starttls").strip().lower()
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
 TG_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
 TG_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 ALERT_CHECK_SECONDS = int(os.getenv("WINDFINANCE_ALERT_CHECK_SECONDS", "30"))
@@ -164,6 +168,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    session_version: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
     accepted_terms_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     balance_kop: Mapped[int] = mapped_column(Integer, default=START_BALANCE_KOP)
@@ -385,9 +390,9 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-def make_access_token(user_id: int) -> str:
+def make_access_token(user: User) -> str:
     exp = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": str(user_id), "exp": exp}, SECRET_KEY, algorithm="HS256")
+    return jwt.encode({"sub": str(user.id), "exp": exp, "ver": user.session_version}, SECRET_KEY, algorithm="HS256")
 
 
 def get_current_user(
@@ -404,6 +409,8 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Пользователь не найден")
+    if payload.get("ver", 0) != user.session_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Сессия завершена. Войди снова.")
     return user
 
 
@@ -434,7 +441,7 @@ def user_out(u: User) -> dict:
 
 
 def token_out(u: User) -> dict:
-    return {"access_token": make_access_token(u.id), "token_type": "bearer", "user": user_out(u)}
+    return {"access_token": make_access_token(u), "token_type": "bearer", "user": user_out(u)}
 
 
 def to_kop(amount: float) -> int:
@@ -842,7 +849,7 @@ def twofa_disable(payload: CodeRequest, user: User = Depends(get_current_user), 
 
 # ---------------- восстановление пароля ----------------
 def email_configured() -> bool:
-    return bool(SMTP_HOST and SMTP_FROM)
+    return bool(SMTP_HOST and SMTP_FROM and SMTP_MODE in {"ssl", "starttls"} and (not SMTP_USER or SMTP_PASSWORD))
 
 
 def send_email(to: str, subject: str, text: str) -> bool:
@@ -850,18 +857,22 @@ def send_email(to: str, subject: str, text: str) -> bool:
     if not email_configured():
         log.warning("SMTP не настроен, письмо «%s» не отправлено", subject)
         return False
-    msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = SMTP_FROM, to, subject
-    msg.set_content(text)
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
-            smtp.starttls()
+        msg = EmailMessage()
+        msg["From"], msg["To"], msg["Subject"] = SMTP_FROM, to, subject
+        msg.set_content(text)
+        context = ssl.create_default_context()
+        server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15, context=context) if SMTP_MODE == "ssl" else (
+            smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+        )
+        with server as smtp:
+            if SMTP_MODE == "starttls":
+                smtp.starttls(context=context)
             if SMTP_USER:
                 smtp.login(SMTP_USER, SMTP_PASSWORD)
-            smtp.send_message(msg)
-        return True
-    except (smtplib.SMTPException, OSError) as error:
-        log.error("Письмо не отправлено: %s", error)
+            return not smtp.send_message(msg)
+    except (smtplib.SMTPException, OSError, ValueError) as error:
+        log.error("Письмо «%s» не отправлено (%s)", subject, type(error).__name__)
         return False
 
 
@@ -884,22 +895,23 @@ def password_forgot(payload: ForgotRequest, request: Request, background: Backgr
     email = payload.email.lower()
     limiter.check(f"forgot-ip:{client_ip(request)}", 10, 3600)
     limiter.check(f"forgot-mail:{email}", 3, 3600)
-    answer = {"ok": True, "message": "Если такой аккаунт есть, мы отправили ссылку для сброса пароля. Она действует 30 минут."}
+    frontend = urlsplit(FRONTEND_URL)
+    if not email_configured() or not frontend.hostname or (
+        frontend.scheme != "https" and (ENV == "prod" or frontend.scheme != "http")
+    ):
+        raise HTTPException(503, "Почта для восстановления сейчас недоступна. Попробуй позже.")
+    answer = {"ok": True, "message": "Если аккаунт с такой почтой есть, ты получишь письмо со ссылкой. Она действует 30 минут. Проверь также папку «Спам»."}
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not is_real_email(user.email):
         return answer  # одинаковый ответ: по нему нельзя узнать, зарегистрирован ли email
-    db.execute(update(PasswordReset).where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None))
-               .values(used_at=now_naive()))
     token = secrets.token_urlsafe(32)
     db.add(PasswordReset(user_id=user.id, token_hash=hashlib.sha256(token.encode()).hexdigest(),
                          expires_at=now_naive() + RESET_TOKEN_TTL))
     db.commit()
-    link = f"{FRONTEND_URL}?reset={token}"
+    link = frontend._replace(path=frontend.path or "/", fragment=urlencode({"reset": token})).geturl()
     background.add_task(send_email, user.email, "Wind Finance: сброс пароля",
                         f"Привет, {user.username}!\n\nЧтобы задать новый пароль, открой ссылку (действует 30 минут):\n{link}\n\n"
                         "Если ты не запрашивал сброс, просто проигнорируй это письмо — пароль останется прежним.")
-    if ENV in {"dev", "test"} and not email_configured():
-        answer["dev_reset_url"] = link   # только для локальной разработки без почты
     return answer
 
 
@@ -908,17 +920,29 @@ def password_reset(payload: ResetRequest, request: Request, db: Session = Depend
     limiter.check(f"reset-ip:{client_ip(request)}", 20, 3600)
     row = db.scalar(select(PasswordReset).where(
         PasswordReset.token_hash == hashlib.sha256(payload.token.encode()).hexdigest()))
-    if row is None or row.used_at is not None or row.expires_at < now_naive():
-        raise HTTPException(400, "Ссылка недействительна или устарела. Запроси новую.")
+    expired = "Ссылка недействительна или устарела. Запроси новую."
+    if row is None or row.used_at is not None or row.expires_at <= now_naive():
+        raise HTTPException(400, expired)
     user = db.get(User, row.user_id)
+    if user is None:
+        raise HTTPException(400, expired)
     if user.totp_enabled:
         secret = reveal_totp_secret(user.totp_secret)
         if not payload.totp_code:
             raise HTTPException(401, "2fa_required")
         if not secret or not pyotp.TOTP(secret).verify(payload.totp_code.strip(), valid_window=1):
             raise HTTPException(401, "Неверный код 2FA")
-    user.password_hash = password_hash.hash(payload.password)
-    row.used_at = now_naive()
+    new_hash = password_hash.hash(payload.password)
+    changed = db.execute(update(User).where(User.id == user.id, User.session_version == user.session_version)
+                         .values(password_hash=new_hash, session_version=user.session_version + 1))
+    reset_at = now_naive()
+    redeemed = db.execute(update(PasswordReset).where(PasswordReset.id == row.id, PasswordReset.used_at.is_(None),
+                         PasswordReset.expires_at > reset_at).values(used_at=reset_at))
+    if changed.rowcount != 1 or redeemed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(400, expired)
+    db.execute(update(PasswordReset).where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None))
+               .values(used_at=reset_at))
     db.commit()
     return token_out(user)
 

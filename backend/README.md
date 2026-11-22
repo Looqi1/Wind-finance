@@ -59,7 +59,27 @@ DATABASE_URL='postgresql+psycopg://user:password@db/windfinance' alembic upgrade
    a notice and only the demo mode works.
 4. "Keep backend awake" pings `/health` every 10 minutes so the free Render instance does not sleep.
 
-Password reset emails need `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+### Email password recovery
+
+Set `FRONTEND_URL` to the public page that handles the login form, including the
+project path on GitHub Pages. An all-in-one deployment can use its
+`PUBLIC_BASE_URL` instead. Use an HTTPS URL in production.
+
+For Yandex Mail, configure `SMTP_HOST=smtp.yandex.ru`, `SMTP_PORT=465` and
+`SMTP_MODE=ssl`. Set `SMTP_USER` to the sending account, `SMTP_FROM` to its
+email address, and `SMTP_PASSWORD` to its app password in the server's
+secret settings. Port 587 uses `SMTP_MODE=starttls`. See
+[Yandex Mail SMTP settings](https://www.yandex.ru/support/yandex-360/customers/mail/ru/mail-clients/others).
+
+Run `alembic upgrade head` before starting the new API version. Open the site,
+request a reset for an account you own, and check the inbox. The link is valid
+for 30 minutes. Saving a new password consumes it and signs the account out of
+its previous sessions. A local test SMTP server can exercise the same flow by
+setting `FRONTEND_URL` to the local site and trusting the test server's TLS
+certificate.
+
+### Telegram alerts
+
 Telegram alerts need `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and a webhook:
 
 ```bash

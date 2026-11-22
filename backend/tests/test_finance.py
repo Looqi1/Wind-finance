@@ -302,20 +302,89 @@ def test_spend_endpoint_is_removed():
     assert response.status_code in (404, 405)
 
 
-def test_password_reset_flow_and_single_use():
+def reset_token(link):
+    from urllib.parse import parse_qs, urlsplit
+    return parse_qs(urlsplit(link).fragment)["reset"][0]
+
+
+def test_password_recovery_unconfigured_is_unavailable_without_leaking_accounts(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main, "SMTP_HOST", "")
     register("reset@example.com", "reset-user")
-    forgot = client.post("/auth/password/forgot", json={"email": "reset@example.com"})
-    assert forgot.status_code == 200
-    token = forgot.json()["dev_reset_url"].split("reset=")[1]
+    known = client.post("/auth/password/forgot", json={"email": "reset@example.com"})
     unknown = client.post("/auth/password/forgot", json={"email": "nobody@example.com"})
-    assert unknown.json()["message"] == forgot.json()["message"] and "dev_reset_url" not in unknown.json()
+    assert known.status_code == unknown.status_code == 503
+    assert known.json() == unknown.json()
+    with SessionLocal() as db:
+        assert db.query(main.PasswordReset).count() == 0
+
+
+def test_password_reset_email_single_use_revokes_old_sessions(monkeypatch):
+    import jwt
+    import ssl
+
+    from app import main
+
+    messages = []
+
+    class MailServer:
+        def __init__(self, host, port, *, timeout, context):
+            assert host == "smtp.example.com" and port == 465 and timeout > 0
+            assert context.verify_mode == ssl.CERT_REQUIRED
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def login(self, user, secret):
+            assert (user, secret) == ("mailer@example.com", "test-app-password")
+
+        def send_message(self, message):
+            messages.append(message)
+            return {}
+
+    for name, value in {
+        "SMTP_HOST": "smtp.example.com", "SMTP_PORT": 465, "SMTP_MODE": "ssl",
+        "SMTP_FROM": "mailer@example.com", "SMTP_USER": "mailer@example.com",
+        "SMTP_PASSWORD": "test-app-password", "FRONTEND_URL": "https://site.example.com/Wind-finance/",
+    }.items():
+        monkeypatch.setattr(main, name, value)
+    monkeypatch.setattr(main.smtplib, "SMTP_SSL", MailServer)
+    session = register("reset@example.com", "reset-user")
+    other_session = register("other@example.com", "other-user")
+    claims = jwt.decode(session, main.SECRET_KEY, algorithms=["HS256"])
+    del claims["ver"]
+    legacy = jwt.encode(claims, main.SECRET_KEY, algorithm="HS256")
+    assert client.get("/auth/me", headers=auth(legacy)).status_code == 200
+
+    data = {"email": "reset@example.com"}
+    first = client.post("/auth/password/forgot", json=data)
+    unknown = client.post("/auth/password/forgot", json={"email": "nobody@example.com"})
+    assert first.status_code == unknown.status_code == 200
+    assert first.json() == unknown.json()
+    assert "dev_reset_url" not in first.json()
+    assert len(messages) == 1 and messages[0]["To"] == data["email"]
+    first_link = next(line for line in messages[0].get_content().splitlines() if line.startswith("https://"))
+    assert first_link.startswith("https://site.example.com/Wind-finance/#reset=")
+    token = reset_token(first_link)
+    assert token not in first.text
+    assert client.post("/auth/password/forgot", json=data).status_code == 200
+    other_link = next(line for line in messages[1].get_content().splitlines() if line.startswith("https://"))
 
     reset = client.post("/auth/password/reset", json={"token": token, "password": "BrandNewPass1"})
     assert reset.status_code == 200 and reset.json()["access_token"]
-    assert client.post("/auth/login", json={"email": "reset@example.com", "password": "BrandNewPass1"}).status_code == 200
-    assert client.post("/auth/login", json={"email": "reset@example.com", "password": "StrongPass123!"}).status_code == 401
-    again = client.post("/auth/password/reset", json={"token": token, "password": "AnotherPass1"})
-    assert again.status_code == 400
+    assert client.get("/auth/me", headers=auth(reset.json()["access_token"])).status_code == 200
+    for obsolete in (session, legacy):
+        assert client.get("/auth/me", headers=auth(obsolete)).status_code == 401
+    assert client.get("/auth/me", headers=auth(other_session)).status_code == 200
+    assert client.post("/auth/login", json={"email": data["email"], "password": "BrandNewPass1"}).status_code == 200
+    assert client.post("/auth/login", json={"email": data["email"], "password": "StrongPass123!"}).status_code == 401
+    for invalid in (token, reset_token(other_link)):
+        assert client.post("/auth/password/reset", json={"token": invalid, "password": "AnotherPass1"}).status_code == 400
+
 
 
 def test_trial_is_one_time():

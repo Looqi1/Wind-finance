@@ -699,3 +699,59 @@ def test_mobile_auth_mode_password_visibility_and_registration(open_app):
         "username": "Новый пользователь", "accept_terms": True,
     }, None) in requests
     assert not errors
+
+
+def test_password_reset_link_survives_reload_and_supports_second_factor(open_app):
+    valid_token = "example-reset-token-uses-a-fragment"
+    old_session = "old-wind-session"
+    reset_attempts = []
+
+    def recovery_api(route, path):
+        if path == "/auth/password/forgot":
+            route.fulfill(json={"message": "Если аккаунт есть, ты получишь письмо со ссылкой."})
+        elif path == "/auth/password/reset":
+            body = route.request.post_data_json
+            reset_attempts.append(body)
+            if body["token"] != valid_token:
+                route.fulfill(status=400, json={"detail": "Ссылка недействительна или устарела. Запроси новую."})
+            elif not body.get("totp_code"):
+                route.fulfill(status=401, json={"detail": "2fa_required"})
+            else:
+                route.fulfill(json={"access_token": "new-wind-session", "user": USER})
+        else:
+            return False
+        return True
+
+    page, _, errors = open_app(width=320, api=recovery_api)
+    gate = page.locator("#auth-gate")
+    page.evaluate("(token) => localStorage.setItem('wind_access_token', token)", old_session)
+    page.goto(f"{ORIGIN}/Wind-finance/?reset=expired-example-reset-token", wait_until="domcontentloaded")
+    expect(gate.get_by_role("heading", name="Новый пароль")).to_be_visible()
+    assert page.evaluate("location.search") == ""
+    assert page.evaluate("location.hash") == "#reset=expired-example-reset-token"
+    page.reload(wait_until="domcontentloaded")
+    expect(gate.get_by_role("heading", name="Новый пароль")).to_be_visible()
+    gate.locator("#auth-password").fill("NewStrongPassword1!")
+    gate.get_by_role("button", name="Сохранить пароль").click()
+    expect(gate.get_by_role("alert")).to_contain_text("Ссылка недействительна")
+    gate.get_by_role("button", name="Запросить новую ссылку").click()
+    expect(gate.get_by_role("heading", name="Восстановить пароль")).to_be_visible()
+    assert page.evaluate("location.hash") == ""
+    gate.get_by_label("Email").fill("account@example.com")
+    gate.get_by_role("button", name="Отправить ссылку").click()
+    expect(gate.locator("#auth-notice")).to_contain_text("получишь письмо со ссылкой")
+
+    page.evaluate("(token) => { location.hash = 'reset=' + token; }", valid_token)
+    expect(gate.get_by_role("heading", name="Новый пароль")).to_be_visible()
+    gate.locator("#auth-password").fill("NewStrongPassword1!")
+    save = gate.get_by_role("button", name="Сохранить пароль")
+    save.click()
+    code = gate.get_by_label("Код из приложения-аутентификатора")
+    expect(code).to_be_focused()
+    code.fill("123456")
+    save.click()
+    expect(gate).to_be_hidden()
+    assert page.evaluate("location.hash") == ""
+    assert page.evaluate("localStorage.getItem('wind_access_token')") == "new-wind-session"
+    assert reset_attempts[-1] == {"token": valid_token, "password": "NewStrongPassword1!", "totp_code": "123456"}
+    assert not errors

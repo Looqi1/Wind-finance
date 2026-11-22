@@ -1697,6 +1697,10 @@ document.querySelectorAll('.profile-dropdown a[href="#alerts"]').forEach((link) 
 
 window.addEventListener('hashchange', () => {
 	const hash = window.location.hash.slice(1);
+	if (hash.startsWith('reset=')) {
+		void checkSession();
+		return;
+	}
 	if (hash === 'investment-profile') {
 		openInvestmentProfile();
 		return;
@@ -2021,6 +2025,8 @@ const passwordMeterLabel = document.querySelector('#password-meter-label');
 const authTabs = document.querySelector('.auth-tabs');
 const authModeButtons = authTabs.querySelectorAll('[data-auth-mode]');
 const authBack = document.querySelector('#auth-back');
+const resetAgain = document.querySelector('#auth-reset-again');
+const telegramLoginButton = document.getElementById('telegram-login-button');
 let authMode = 'login';
 let needTotp = false;
 const DEMO_PREVIEW_KEY = 'wind_demo_preview';
@@ -2146,6 +2152,14 @@ const updateProfile = (user) => {
 const authNotice = document.querySelector('#auth-notice');
 const forgotButton = document.querySelector('#auth-forgot');
 let resetToken = null;
+const clearPasswordReset = () => {
+	resetToken = null;
+	const url = new URL(location.href);
+	if (url.hash.startsWith('#reset=')) {
+		url.hash = '';
+		history.replaceState(null, '', url);
+	}
+};
 const setNotice = (text, kind = '') => {
 	if (!authNotice) return;
 	authNotice.hidden = !text;
@@ -2182,6 +2196,8 @@ const setAuthMode = (mode) => {
 	authSubmitLabel.textContent = meta.submit;
 	authTabs.hidden = isForgot || isReset;
 	authBack.hidden = !authTabs.hidden;
+	resetAgain.hidden = true;
+	telegramLoginButton.hidden = !inTelegram || isReset;
 	usernameField.closest('label').hidden = !isRegister;
 	usernameField.required = isRegister;
 	consentBox.closest('label').hidden = !isRegister;
@@ -2211,12 +2227,16 @@ const setAuthMode = (mode) => {
 		], 320);
 	}
 };
-forgotButton.addEventListener('click', () => {
+const showForgotPassword = () => {
+	clearPasswordReset();
 	setAuthMode('forgot');
 	if (apiConfigured) setNotice('');
 	emailField.focus();
-});
+};
+forgotButton.addEventListener('click', showForgotPassword);
+resetAgain.addEventListener('click', showForgotPassword);
 authBack.addEventListener('click', () => {
+	clearPasswordReset();
 	setAuthMode('login');
 	if (apiConfigured) setNotice('');
 	authModeButtons[0].focus();
@@ -2285,6 +2305,7 @@ const showDemo = () => {
 };
 demoLoginButton?.addEventListener('click', () => {
 	telegramLoginRequest++;
+	clearPasswordReset();
 	sessionStorage.setItem(DEMO_PREVIEW_KEY, '1');
 	window.history.replaceState(null, '', '#dashboard');
 	setAppView('dashboard');
@@ -2294,7 +2315,6 @@ demoLoginButton?.addEventListener('click', () => {
 
 const showAuth = () => { authGate.hidden = false; setAuthMode('login'); };
 
-const telegramLoginButton = document.getElementById('telegram-login-button');
 telegramLoginButton.hidden = !inTelegram;
 let telegramLoginRequest = 0;
 const tgLogin = async () => {
@@ -2322,13 +2342,19 @@ const tgLogin = async () => {
 telegramLoginButton.addEventListener('click', tgLogin);
 
 const checkSession = async () => {
-	const params = new URLSearchParams(window.location.search);
-	if (params.get('reset')) {
-		// ссылка из письма важнее демо-режима и старой сессии
-		resetToken = params.get('reset');
-		params.delete('reset');
-		window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? '?' + params : ''}${window.location.hash}`);
+	const url = new URL(location.href);
+	const fragmentToken = url.hash.startsWith('#reset=') ? new URLSearchParams(url.hash.slice(1)).get('reset') : null;
+	const legacyToken = url.searchParams.get('reset');
+	resetToken = fragmentToken ?? legacyToken;
+	if (resetToken) {
+		telegramLoginRequest++;
+		if (url.searchParams.has('reset')) {
+			url.searchParams.delete('reset');
+			url.hash = new URLSearchParams({ reset: resetToken }).toString();
+			history.replaceState(null, '', url);
+		}
 		sessionStorage.removeItem(DEMO_PREVIEW_KEY);
+		if (apiConfigured) setNotice('');
 		showAuth();
 		setAuthMode('reset');
 		return;
@@ -2366,7 +2392,7 @@ authForm.addEventListener('submit', async (event) => {
 	authError.textContent = '';
 	const submitButton = authForm.querySelector('.auth-submit');
 	const submitLabel = authSubmitLabel;
-	const modeActions = [...authModeButtons, authBack, forgotButton, demoLoginButton];
+	const modeActions = [...authModeButtons, authBack, forgotButton, resetAgain, demoLoginButton];
 	modeActions.forEach(button => { button.disabled = true; });
 	authForm.setAttribute('aria-busy', 'true');
 	submitButton.disabled = true;
@@ -2388,31 +2414,37 @@ authForm.addEventListener('submit', async (event) => {
 		try {
 			const r = await withWakeHint(api('/auth/password/forgot', { method: 'POST', body: { email: emailField.value }, timeoutMs: 70000 }), submitLabel);
 			setNotice(r.message, 'ok');
-			if (r.dev_reset_url) console.info('Ссылка сброса (только для разработки):', r.dev_reset_url);
 		} catch (error) {
-			authError.textContent = error.message;
+			setNotice('');
+			authError.textContent = error instanceof TypeError ? 'Сервер восстановления недоступен. Попробуй позже.' : error.message;
 		}
 		finish();
 		return;
 	}
 	if (authMode === 'reset') {
+		resetAgain.hidden = true;
 		try {
 			const body = { token: resetToken, password: passwordField.value };
 			if (needTotp) body.totp_code = totpField.value.trim();
 			const result = await withWakeHint(api('/auth/password/reset', { method: 'POST', body, timeoutMs: 70000 }), submitLabel);
 			localStorage.setItem('wind_access_token', result.access_token);
-			resetToken = null;
+			clearPasswordReset();
 			updateProfile(result.user);
 			authGate.hidden = true;
 			authForm.reset();
 			setNotice('');
 			showSuccess('Пароль изменён, ты в аккаунте');
 		} catch (error) {
+			setNotice('');
 			if (error.message === '2fa_required') {
 				needTotp = true;
 				totpField.closest('label').hidden = false;
+				totpField.focus();
 				authError.textContent = 'Введи код из приложения-аутентификатора';
-			} else authError.textContent = error.message;
+			} else {
+				authError.textContent = error instanceof TypeError ? 'Сервер восстановления недоступен. Попробуй позже.' : error.message;
+				resetAgain.hidden = error.status !== 400;
+			}
 		}
 		finish();
 		return;
