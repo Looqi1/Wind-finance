@@ -3519,25 +3519,29 @@ body.dark-theme {
 	content: '';
 }
 body[data-view="dashboard"] {
-	--overview-lavender: #d8ceee;
-	--overview-art-opacity: .79;
+	--scene-base: #eee5f6;
+	--scene-glow: #f2cde3;
+	--scene-night: #231d32;
+	--scene-night-glow: #492c49;
+	--overview-lavender: #d6c8f3;
 }
 body.dark-theme[data-view="dashboard"] {
-	--overview-lavender: #34324c;
-	--overview-art-opacity: .45;
+	--scene-base: var(--scene-night);
+	--scene-glow: var(--scene-night-glow);
+	--overview-lavender: #41345f;
 }
 body[data-view="dashboard"] .section-backdrop {
 	background:
-		radial-gradient(ellipse 68vw 54vh at 89% 8%, var(--overview-lavender), transparent),
-		radial-gradient(ellipse 90vw 71vh at 13% 83%, var(--scene-glow), transparent);
+		radial-gradient(ellipse 86vw 65vh at 92% 10%, var(--overview-lavender), transparent),
+		radial-gradient(ellipse 95vw 75vh at 12% 81%, var(--scene-glow), transparent),
+		var(--scene-base);
 }
 body[data-view="dashboard"] .section-backdrop::before {
 	background: url("assets/wind-overview-current.webp") 78% center / cover no-repeat;
-	mask-image: linear-gradient(144deg, transparent 0%, #0009 28%, black 59%);
-	opacity: var(--overview-art-opacity);
-}
-body.dark-theme[data-view="dashboard"] .section-backdrop::before {
-	filter: brightness(.58) saturate(1.15);
+	mask-image: linear-gradient(144deg, transparent 6%, #0009 32%, black 64%);
+	filter: grayscale(1);
+	mix-blend-mode: soft-light;
+	opacity: .88;
 }
 .sidebar { background-color: color-mix(in srgb, var(--scene-base) 42%, #fff); }
 body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%, #0f151a); }
