@@ -240,15 +240,6 @@ document.getElementById('bybit-ref-copy')?.addEventListener('click', async () =>
 const bybitTradeModal = document.getElementById('bybit-trade-modal');
 const bybitOptTrade = document.getElementById('bybit-opt-trade');
 const bybitOptSignup = document.getElementById('bybit-opt-signup');
-// Telegram's WebView delegates external navigation to the system browser.
-document.addEventListener('click', (event) => {
-	const link = event.target.closest('[data-bybit-signup], #purchase-offers, #spot-authorize, #bybit-opt-trade');
-	if (!link || !inTelegram || !tg.openLink || event.defaultPrevented || !link.href.startsWith('https://')) return;
-	try {
-		tg.openLink(link.href);
-		event.preventDefault();
-	} catch { /* The anchor remains usable in older Telegram clients. */ }
-});
 document.querySelectorAll('[data-trade]').forEach((button) => {
 	button.addEventListener('click', () => {
 		const symbol = selectedCryptoPair();
@@ -6196,7 +6187,9 @@ else window.setTimeout(paintIcons, 200);
 		{ view: 'dashboard', target: '#goals', title: 'Копилки', text: 'Поставь цель и срок, например «Отпуск к лету», и я посчитаю, сколько откладывать каждый месяц.' },
 		{ view: 'investments', target: '.asset-grid', title: 'Инвестиции', text: 'Индекс, акции, фонды и облигации по реальным котировкам Мосбиржи. Покупки идут с виртуального баланса: это тренажёр, учиться можно без риска.' },
 		{ view: 'investments', target: '[data-open-investment-profile]', title: 'Твой портфель', text: 'Здесь доходность, история сделок и график стоимости портфеля. А в «Топ недели» видно, кто из игроков в плюсе.' },
-		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: 'Живые свечи с Bybit: выбирай пару и таймфрейм. Покупка открывается в Wind, продажа — на Bybit.' },
+		{ view: 'crypto', target: '.crypto-terminal', title: 'Крипто', text: inTelegram
+			? 'Выбери пару и таймфрейм, чтобы посмотреть свечи. Учебная покупка доступна с условным балансом.'
+			: 'Выбери пару и таймфрейм, чтобы посмотреть свечи. Покупка открывается в Wind, продажа — на Bybit.' },
 		{ view: 'crypto', target: '#price-alerts', title: 'Уведомления о цене', text: 'Задай уровень, например «BTC поднимется до 70 000», и я напомню в браузере или в Telegram.' },
 		{ view: 'converter', target: '#converter .converter', title: 'Конвертер', text: 'Пересчитай сумму между валютами по актуальному курсу. Стрелки меняют валюты местами.' },
 		{ view: 'game', target: '#game-hub', title: 'Игры', text: 'Проходи игры про рынок и зарабатывай звёзды. Заодно научишься читать графики и распознавать мошенников.' },

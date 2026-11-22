@@ -102,7 +102,7 @@
 		el('spot-connect-start').hidden = false;
 		el('spot-authorize').removeAttribute('href');
 		el('purchase-spot').removeAttribute('aria-busy');
-		demo = isDemoPreview() || !localStorage.getItem('wind_access_token');
+		demo = inTelegram || isDemoPreview() || !localStorage.getItem('wind_access_token');
 		render();
 		if (demo) return;
 		run(async call => {
@@ -124,13 +124,16 @@
 	});
 	el('spot-retry').addEventListener('click', loadAccount);
 
-	el('spot-connect-start').addEventListener('click', () => run(async call => {
+	const connect = () => run(async call => {
 		const { url } = await call('/connect', { method: 'POST' });
+		el('spot-pin-form').reset();
 		el('spot-authorize').href = url;
 		el('spot-pairing').hidden = false;
 		el('spot-connect-start').hidden = true;
 		el('spot-authorize').focus();
-	}));
+	});
+	el('spot-connect-start').addEventListener('click', connect);
+	el('spot-connect-restart').addEventListener('click', connect);
 	el('spot-pin-form').addEventListener('submit', event => {
 		event.preventDefault();
 		run(async call => {

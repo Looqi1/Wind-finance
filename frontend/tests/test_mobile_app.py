@@ -30,7 +30,6 @@ const telegram = {
     isVersionAtLeast: () => true,
     setBackgroundColor: color => { state.background = color; },
     openInvoice: (url, callback) => { state.invoice = url; callback(state.invoiceResult || 'paid'); },
-    openLink: url => { state.externalLink = url; },
     BackButton: {
         show: () => { state.backVisible = true; },
         hide: () => { state.backVisible = false; },
@@ -531,23 +530,38 @@ def test_spot_purchase_preview_and_ruble_offers(open_app):
     assert not errors
 
 
-def test_telegram_buy_links_preserve_affiliate_campaign_and_pair(open_app):
-    page, requests, errors = open_app(telegram=True)
+def test_web_buy_links_preserve_affiliate_campaign_and_pair(open_app):
+    page, requests, errors = open_app()
     affiliate = "https://partner.bybit.com/b/wind-campaign"
     page.route("**/config.js", lambda route: route.fulfill(
         body=f"window.WIND_BYBIT_REF = '{affiliate}';", content_type="application/javascript"))
     page.reload(wait_until="domcontentloaded")
+    page.get_by_role("button", name="Попробовать демо").click()
     page.locator('.nav a[href="#crypto"]').click()
-    page.locator('#bybit-partner [data-bybit-signup]').click()
-    assert page.evaluate("testTelegram.externalLink") == affiliate
+    expect(page.locator('#bybit-partner [data-bybit-signup]')).to_have_attribute("href", affiliate)
     expect(page.locator("#bybit-ref-copy")).to_be_hidden()
     page.get_by_role("button", name="За рубли · P2P").click()
     page.locator('#purchase-p2p label').filter(has_text="BTC").click()
-    page.locator("#purchase-offers").click()
-    assert page.evaluate("testTelegram.externalLink") == "https://www.bybit.com/ru-RU/p2p/buy/BTC/RUB"
-    page.wait_for_function("window.testTelegram.externalLink.includes('BTC/RUB')")
+    offers = page.locator("#purchase-offers")
+    expect(offers).to_have_attribute("href", "https://www.bybit.com/ru-RU/p2p/buy/BTC/RUB")
+    offers.evaluate("link => link.addEventListener('click', event => event.preventDefault(), {once: true})")
+    with page.expect_request("**/partner/click"):
+        offers.click()
     assert any(path == '/partner/click' and body.get('placement') == 'p2p-buy'
                for _, path, body, _ in requests)
+    assert not errors
+
+
+def test_telegram_only_offers_educational_purchase(open_app):
+    page, requests, errors = open_app(telegram=True)
+    page.locator('.nav a[href="#crypto"]').click()
+    expect(page.locator("#bybit-partner [data-bybit-signup]")).to_be_hidden()
+    expect(page.locator('[data-purchase-mode="p2p"]')).to_be_hidden()
+    expect(page.locator('[data-trade="sell"]')).to_be_hidden()
+    page.get_by_role("button", name="Рассчитать покупку").click()
+    page.get_by_role("button", name="Подтвердить демо-покупку").click()
+    expect(page.get_by_role("heading", name="Учебная покупка завершена")).to_be_visible()
+    assert not any(path.startswith("/broker/bybit") for _, path, _, _ in requests)
     assert not errors
 
 
@@ -614,11 +628,13 @@ def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
         route.fulfill(json=replies[path[len(root):]])
         return True
 
-    page, requests, errors = open_app(telegram=True, api=broker)
+    page, requests, errors = open_app(api=broker)
+    page.locator("#auth-email").fill("test@example.com")
+    page.locator("#auth-password").fill("TestPassword123")
+    page.locator(".auth-submit").click()
     page.locator('.nav a[href="#crypto"]').click()
     page.get_by_role("button", name="Подключить Bybit").click()
-    page.locator("#spot-authorize").click()
-    assert page.evaluate("testTelegram.externalLink") == "https://testnet.bybit.com/oauth?client_id=wind"
+    expect(page.locator("#spot-authorize")).to_have_attribute("href", "https://testnet.bybit.com/oauth?client_id=wind")
     page.locator("#spot-pin").fill("DEADBEEF00")
     page.get_by_role("button", name="Завершить подключение").click()
     expect(page.locator("#spot-source")).to_contain_text("Bybit Testnet")

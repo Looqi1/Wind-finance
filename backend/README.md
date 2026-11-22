@@ -176,8 +176,11 @@ TOTP secrets are encrypted at rest using a key derived from
 Wind requests consent on Bybit, receives an individual customer's spot credentials on the
 server, and attributes their orders with the broker ID in the X-Referer header.
 Each purchase spends USDT from that customer's Bybit spot account. Ruble purchases
-open Bybit P2P. The separate affiliate signup link comes from the Pages repository
-variable `BYBIT_REF_CODE` (the full campaign URL from your Affiliate Portal also works).
+open Bybit P2P. Real trading and affiliate links are available in the web version.
+The Telegram Mini App offers the educational flow under
+[Telegram's blockchain guidelines](https://core.telegram.org/bots/blockchain-guidelines).
+Set `BYBIT_REF_CODE` on the backend for the site it serves, and as a Pages repository
+variable for GitHub Pages. The full campaign URL from your Affiliate Portal also works.
 
 1. Have Bybit Broker Management enable OAuth for your broker, register the exact HTTPS
    callback on your FastAPI host ending in `/broker/bybit/callback`, and configure
@@ -192,7 +195,7 @@ variable `BYBIT_REF_CODE` (the full campaign URL from your Affiliate Portal also
    the encryption key requires users to disconnect and authorize again.
 3. Apply `alembic upgrade head`, run the API and set the Pages repository variable
    `BACKEND_URL` to its HTTPS origin. Configure CORS as above and redeploy Pages.
-4. In a personal Wind account open **Крипто → Спот в Wind → Подключить Bybit**.
+4. In a personal Wind account in the browser open **Крипто → Спот в Wind → Подключить Bybit**.
    Authorize on Bybit and enter the single-use return code in the original Wind
    session. With test USDT, review a quote, confirm once and check execution. Follow
    Bybit's broker verification process before switching to mainnet credentials.

@@ -3437,6 +3437,10 @@ body.dark-theme .rate-plot svg { color: var(--section-light); }
 	border-color: #84633f;
 }
 .bp-main { min-width: 0; max-width: none; }
+.mini-app-purchase { display: none; }
+.telegram-app .mini-app-purchase { display: inline; }
+.telegram-app .web-trading { display: none; }
+.telegram-app #crypto .trade-actions { grid-template-columns: 1fr; }
 .bp-heading { position: relative; isolation: isolate; }
 .bp-heading .crypto-compass {
 	inset: -10% -4% -4% auto; width: 56%; aspect-ratio: auto;

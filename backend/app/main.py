@@ -28,7 +28,7 @@ import jwt
 import pyotp
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pwdlib import PasswordHash
@@ -2257,6 +2257,12 @@ if ENV == "dev" and os.getenv("ALEMBIC_RUNNING") != "1":
 @app.get("/")
 def index():
     return FileResponse(FRONT_DIR / "index.html")
+
+
+@app.get("/config.js", include_in_schema=False)
+def frontend_config():
+    return Response(f"window.WIND_BYBIT_REF = {json.dumps(BYBIT_REF_CODE)};\n",
+                    media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 if FRONT_DIR.is_dir():
