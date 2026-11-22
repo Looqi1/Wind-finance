@@ -102,6 +102,7 @@ def open_app(browser):
                 "/Wind-finance/assets/crypto-compass.svg": "assets/crypto-compass.svg",
                 "/Wind-finance/assets/wind-airstream.webp": "assets/wind-airstream.webp",
                 "/Wind-finance/assets/wind-auth-current.webp": "assets/wind-auth-current.webp",
+                "/Wind-finance/assets/wind-plus-current.webp": "assets/wind-plus-current.webp",
                 "/Wind-finance/assets/market-preview.json": "assets/market-preview.json",
             }
             if path in files:
@@ -313,10 +314,20 @@ def test_demo_plus_is_a_preview_without_checkout(open_app):
     page.get_by_role("button", name="Пример Wind Plus").click()
     expect(page.locator("#plus-preview")).to_be_visible()
     expect(page.locator("#plus-preview")).to_contain_text("RSI 56")
+    preset = page.locator('.lab-scenarios [data-lab-change="10"]')
+    preset.click()
+    expect(preset).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#lab-change")).to_have_value("10")
+    expect(page.locator(".lab-result")).to_have_attribute("data-change", "up")
     page.locator("#plus-preview summary").get_by_text("Радар крипторынка").click()
     expect(page.get_by_text("ETH +3,2% · SOL −1,4%")).to_be_visible()
     expect(page.locator("#plus-subscribe")).to_be_hidden()
     expect(page.locator("#plus-trial")).to_be_hidden()
+    page.locator("#plus-show-analysis").click()
+    expect(page.locator("#subscription-modal")).to_be_hidden()
+    expect(page.locator("#analysis-card .an-overview")).to_be_visible()
+    page.get_by_text("Смотреть 6 индикаторов").click()
+    expect(page.locator("#analysis-card .an-ind").first).to_be_visible()
     assert not any(path.startswith(("/payments", "/subscription")) for _, path, _, _ in requests)
     assert not errors
 

@@ -76,6 +76,8 @@ if (profileMenu && profileTrigger && profileDropdown) {
 }
 
 const labField = id => document.getElementById('lab-' + id);
+const labResult = document.querySelector('.lab-result');
+const labPresets = document.querySelectorAll('[data-lab-change]');
 const labMoney = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 });
 const labValue = id => {
 	const field = labField(id);
@@ -85,6 +87,8 @@ const updateScenario = () => {
 	const capital = labValue('capital');
 	const change = labValue('change');
 	const profit = capital * change / 100;
+	labResult.dataset.change = profit < 0 ? 'down' : profit > 0 ? 'up' : 'flat';
+	labPresets.forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.labChange) === change)));
 	labField('percent').textContent = (change > 0 ? '+' : '') + change + '%';
 	labField('profit').textContent = Number.isFinite(profit) ? labMoney.format(profit) : 'Проверь сумму';
 	labField('total').textContent = Number.isFinite(profit) ? 'Стоимость позиции ' + labMoney.format(capital + profit) : '';
@@ -96,6 +100,11 @@ document.querySelector('.plus-lab').addEventListener('input', event => {
 	if (event.target.id !== 'lab-change') return;
 	playWindEffect(labField('profit'), [{ opacity: .55, translate: '0 3px' }, { opacity: 1, translate: '0 0' }], 240);
 });
+labPresets.forEach(button => button.addEventListener('click', () => {
+	const slider = labField('change');
+	slider.value = button.dataset.labChange;
+	slider.dispatchEvent(new Event('input', { bubbles: true }));
+}));
 updateScenario();
 labField('alert').addEventListener('click', () => {
 	const fired = labField('alert').dataset.fired !== 'yes';
@@ -123,7 +132,10 @@ const openTriggeredModal = (trigger) => {
 	if (id === 'subscription-modal') document.getElementById('plus-preview').hidden = !demo;
 	if (inTelegram && !demo && (id === 'topup-modal' || id === 'subscription-modal')) loadStarsCatalog();
 	const modal = document.getElementById(id);
-	if (modal) modal.hidden = false;
+	if (modal) {
+		modal.hidden = false;
+		if (id === 'subscription-modal') modal.querySelector('.plus-modal').scrollTop = 0;
+	}
 };
 modalTriggers.forEach((trigger) => trigger.addEventListener('click', () => openTriggeredModal(trigger)));
 // кнопки, которые появляются позже (например, в пустом портфеле)
@@ -4399,6 +4411,15 @@ if (inTelegram) {
 	const modal = document.getElementById('subscription-modal');
 	if (!modal) return;
 	const $ = (id) => document.getElementById(id);
+	$('plus-show-analysis').addEventListener('click', () => {
+		closeModal(modal);
+		history.replaceState(null, '', '#crypto');
+		setAppView('crypto');
+		const analysis = $('analysis-card');
+		analysis.tabIndex = -1;
+		analysis.focus({ preventScroll: true });
+		analysis.scrollIntoView({ block: 'start', behavior: windMotion.matches ? 'smooth' : 'instant' });
+	});
 	const KEY = 'wind_plus';
 	const PLANS = { month: { price: '199 ₽ / мес', days: 30, cost: 199 }, year: { price: '1 790 ₽ / год', days: 365, cost: 1790 } };
 	const TF = { 15: '15 минут', 60: '1 час', 240: '4 часа', D: '1 день' };
@@ -4449,7 +4470,9 @@ if (inTelegram) {
 		m.plans.forEach((button) => {
 			const key = button.dataset.plan;
 			const price = starsPrices?.[key];
-			button.classList.toggle('active', key === plan && (!inTelegram || Boolean(price)));
+			const selected = key === plan && (!inTelegram || Boolean(price));
+			button.classList.toggle('active', selected);
+			button.setAttribute('aria-pressed', String(selected));
 			button.disabled = checkoutBusy || (inTelegram && !price);
 			if (inTelegram) {
 				button.querySelector('strong').textContent = price ? formatStars(price) : '—';
@@ -4482,7 +4505,11 @@ if (inTelegram) {
 		document.dispatchEvent(new Event('wind-plus-change'));
 	};
 
-	m.plans.forEach((b) => b.addEventListener('click', () => { plan = b.dataset.plan; renderModal(); }));
+	m.plans.forEach(button => button.addEventListener('click', () => {
+		plan = button.dataset.plan;
+		renderModal();
+		windResponse(m.sub);
+	}));
 	$('plus-trial')?.addEventListener('click', async (event) => {
 		if (isDemoPreview()) return;
 		const btn = event.currentTarget;
@@ -4590,6 +4617,7 @@ if (inTelegram) {
 
 	const renderAnalysis = (a) => {
 		const body = an.body;
+		const expanded = body.querySelector('.an-details')?.open || false;
 		body.textContent = '';
 		const [verdict, vcls] = a.score >= 62 ? ['Бычий уклон', 'pos'] : a.score <= 38 ? ['Медвежий уклон', 'neg'] : ['Нейтрально', 'neu'];
 
@@ -4638,15 +4666,19 @@ if (inTelegram) {
 			level('Сопротивление (50 свечей)', a.resistance, pct((a.resistance / a.last - 1) * 100) + ' от цены'),
 		);
 
-		const parts = [`${COIN(an.sym)} на таймфрейме «${TF[an.tf]}»: ${verdict.toLowerCase()}.`];
-		parts.push(a.trend > 0 ? 'Тренд восходящий.' : a.trend < 0 ? 'Тренд нисходящий.' : 'Чёткого тренда нет.');
-		if (a.rsiSig < 0) parts.push('RSI в зоне перекупленности, при росте стоит быть осторожнее.');
-		if (a.rsiSig > 0) parts.push('RSI в зоне перепроданности, возможен отскок.');
+		const parts = [a.trend > 0 ? 'Тренд восходящий.' : a.trend < 0 ? 'Тренд нисходящий.' : 'Чёткого тренда нет.'];
+		if (a.rsiSig < 0) parts.push('RSI находится в зоне перекупленности.');
+		if (a.rsiSig > 0) parts.push('RSI находится в зоне перепроданности.');
 		parts.push(`До поддержки около ${Math.abs((a.support / a.last - 1) * 100).toFixed(1)}%, до сопротивления около ${((a.resistance / a.last - 1) * 100).toFixed(1)}%.`);
 		const summary = mk('p', 'an-summary', parts.join(' '));
-		const note = mk('p', 'an-note', 'Расчёт по индикаторам, а не прогноз и не инвестиционная рекомендация.');
-
-		body.append(head, track, scale, grid, levels, summary, note);
+		const note = mk('p', 'an-note', 'Оценка описывает текущие показания индикаторов.');
+		const overview = mk('div', 'an-overview');
+		overview.append(head, track, scale, summary, note);
+		const details = mk('details', 'an-details');
+		details.open = expanded;
+		details.append(mk('summary', '', 'Смотреть 6 индикаторов'), grid);
+		body.append(overview, levels, details);
+		playWindEffect(overview, [{ opacity: .55, translate: '0 6px' }, { opacity: 1, translate: '0 0' }], 330);
 		requestAnimationFrame(() => requestAnimationFrame(() => { marker.style.left = `${a.score}%`; }));
 	};
 
