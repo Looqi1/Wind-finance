@@ -3504,6 +3504,12 @@ if (inTelegram) {
 	let newsLoading = false;
 	const loadRemoteNews = async () => {
 		if (newsLoading) return;
+		if (!apiConfigured) {
+			newsLoadedAt = Date.now();
+			$('agent-last-scan').textContent = 'Демо-лента';
+			$('agent-speech-text').textContent = 'Ниже — примеры обзоров рынков.';
+			return;
+		}
 		newsLoading = true;
 		$('news').setAttribute('aria-busy', 'true');
 		try {
@@ -3803,35 +3809,31 @@ if (inTelegram) {
 	counters.forEach((n) => { n.dataset.final = n.textContent; });
 
 	const animate = (node) => {
-		cancelAnimationFrame(node._raf);
 		const to = Number(node.dataset.count);
 		const dec = Number(node.dataset.decimals || 0);
 		const pre = node.dataset.prefix || '';
 		const suf = node.dataset.suffix || '';
+		const format = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 		const start = performance.now();
 		const step = (now) => {
 			const k = Math.min(1, (now - start) / 1100);
 			const v = to * (1 - Math.pow(1 - k, 3));
-			node.textContent = pre + v.toLocaleString('ru-RU', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suf;
+			const text = k < 1 ? pre + format.format(v) + suf : node.dataset.final;
+			if (node.textContent !== text) node.textContent = text;
 			if (k < 1) node._raf = requestAnimationFrame(step);
-			else node.textContent = node.dataset.final;
 		};
 		node._raf = requestAnimationFrame(step);
 	};
 
 	document.documentElement.classList.add('inv-anim');
 	const io = new IntersectionObserver((entries) => {
-		entries.forEach((entry) => {
-			const card = entry.target;
-			if (entry.isIntersecting) {
-				card.classList.add('in-view');
-				card.querySelectorAll('[data-count]').forEach(animate);
-			} else {
-				card.classList.remove('in-view'); // при следующем показе анимация сыграет заново
-				card.querySelectorAll('[data-count]').forEach((n) => { cancelAnimationFrame(n._raf); n.textContent = n.dataset.final; });
-			}
-		});
-	}, { threshold: 0.2 });
+		for (const { target, isIntersecting } of entries) {
+			if (!isIntersecting) continue;
+			target.classList.add('in-view');
+			target.querySelectorAll('[data-count]').forEach(animate);
+			io.unobserve(target);
+		}
+	});
 	cards.forEach((c) => io.observe(c));
 })();
 
@@ -4113,13 +4115,14 @@ if (inTelegram) {
 		cancelAnimationFrame(n._raf);
 		const d = n._fx;
 		if (!d) { resetNum(n); return; }
+		const format = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: d.dec, maximumFractionDigits: d.dec });
 		const start = performance.now();
 		const step = (now) => {
 			const k = Math.min(1, (now - start) / 1000);
 			const v = d.num * (1 - Math.pow(1 - k, 3));
-			n.textContent = d.pre + v.toLocaleString('ru-RU', { minimumFractionDigits: d.dec, maximumFractionDigits: d.dec }) + d.suf;
+			const text = k < 1 ? d.pre + format.format(v) + d.suf : n.dataset.fxFinal;
+			if (n.textContent !== text) n.textContent = text;
 			if (k < 1) n._raf = requestAnimationFrame(step);
-			else n.textContent = n.dataset.fxFinal;
 		};
 		n._raf = requestAnimationFrame(step);
 	};
@@ -5844,11 +5847,14 @@ if (inTelegram) {
 			claim.hidden = !d.bonus;
 			if (d.bonus) claim.textContent = `Забрать бонус: ${d.bonus.amount.toLocaleString('ru-RU')} ₽ за ${d.bonus.rank}-е место (неделя ${d.bonus.week})`;
 		};
-		const refresh = async () => { try { render(await WindApi('/game/leaderboard?game=drop')); } catch (e) { /* нет сети или не вошли */ } };
+		const refresh = async () => {
+			if (!apiConfigured) return;
+			try { render(await WindApi('/game/leaderboard?game=drop')); } catch (e) { /* нет сети или не вошли */ }
+		};
 		window.WindLB = {
 			refresh,
 			submit: async (score) => {
-				if (!(score > 0)) return;
+				if (!apiConfigured || !(score > 0)) return;
 				try { render(await WindApi('/game/score', { method: 'POST', body: { game: 'drop', score: Math.round(score) } })); } catch (e) { /* пропускаем */ }
 			},
 		};
@@ -5944,6 +5950,7 @@ if (inTelegram) {
 				const pill = card.querySelector('.change-pill');
 				const b = pill && pill.querySelector('b');
 				if (b) {
+					cancelAnimationFrame(b._raf);
 					const text = `${up ? '+' : '−'}${fmt2(Math.abs(x.pct))}%`;
 					b.textContent = text; b.dataset.final = text; b.dataset.count = String(Math.abs(x.pct)); b.dataset.decimals = '2'; b.dataset.prefix = up ? '+' : '−';
 					pill.classList.toggle('up', up);
