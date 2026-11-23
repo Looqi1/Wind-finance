@@ -102,7 +102,7 @@
 		el('spot-connect-start').hidden = false;
 		el('spot-authorize').removeAttribute('href');
 		el('purchase-spot').removeAttribute('aria-busy');
-		demo = inTelegram || isDemoPreview() || !localStorage.getItem('wind_access_token');
+		demo = inTelegram || isDemoPreview() || !sessionStorage.getItem('wind_access_token');
 		render();
 		if (demo) return;
 		run(async call => {
@@ -119,7 +119,7 @@
 	let loadedFor;
 	onAppView(['crypto'], active => {
 		if (!active) return;
-		const session = isDemoPreview() ? 'demo' : localStorage.getItem('wind_access_token');
+		const session = isDemoPreview() ? 'demo' : sessionStorage.getItem('wind_access_token');
 		if (loadedFor !== session) { loadedFor = session; loadAccount(); }
 	});
 	el('spot-retry').addEventListener('click', loadAccount);

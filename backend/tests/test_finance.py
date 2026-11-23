@@ -167,6 +167,32 @@ def test_totp_secret_is_encrypted_at_rest():
     assert enabled.status_code == 200
 
 
+def test_telegram_applies_account_totp_policy_and_logout_revokes_session(monkeypatch):
+    from app import main
+
+    headers = auth(register("linked@example.com", "linked-user"))
+    setup = client.post("/auth/2fa/setup", headers=headers)
+    code = pyotp.TOTP(setup.json()["secret"]).now()
+    assert client.post("/auth/2fa/enable", headers=headers, json={"code": code}).status_code == 200
+    with SessionLocal() as db:
+        user = db.query(main.User).filter_by(email="linked@example.com").one()
+        user.tg_id = 12345
+        db.commit()
+    monkeypatch.setattr(main, "verify_telegram", lambda _: {"id": 12345})
+
+    login = {"init_data": "validated-test-input"}
+    challenge = client.post("/auth/telegram", json=login)
+    assert challenge.status_code == 401 and challenge.json()["detail"] == "2fa_required"
+    verified = client.post("/auth/telegram", json={**login, "totp_code": code})
+    assert verified.status_code == 200
+    telegram_session = auth(verified.json()["access_token"])
+    assert client.get("/auth/me", headers=telegram_session).status_code == 200
+    assert client.post("/auth/logout", headers=telegram_session).status_code == 204
+    assert client.get("/auth/me", headers=telegram_session).status_code == 401
+    assert client.get("/auth/me", headers=headers).status_code == 401
+
+
+
 def test_real_trading_is_not_publicly_available():
     token = register("trading@example.com", "trading-user")
     response = client.post(
@@ -358,7 +384,7 @@ def test_password_reset_email_single_use_revokes_old_sessions(monkeypatch):
     claims = jwt.decode(session, main.SECRET_KEY, algorithms=["HS256"])
     del claims["ver"]
     legacy = jwt.encode(claims, main.SECRET_KEY, algorithm="HS256")
-    assert client.get("/auth/me", headers=auth(legacy)).status_code == 200
+    assert client.get("/auth/me", headers=auth(legacy)).status_code == 401
 
     data = {"email": "reset@example.com"}
     first = client.post("/auth/password/forgot", json=data)
@@ -407,6 +433,9 @@ def test_goals_move_money_and_return_it_on_close():
     assert client.post(f"/goals/{goal_id}/deposit", headers=headers, json={"amount": "999999"}).status_code == 402
     closed = client.delete(f"/goals/{goal_id}", headers=headers)
     assert closed.json()["balance"] == 24500 and closed.json()["goals"] == []
+    assert client.delete(f"/goals/{goal_id}", headers=headers).status_code == 404
+    assert client.post(f"/goals/{goal_id}/deposit", headers=headers, json={"amount": "100"}).status_code == 404
+    assert client.get("/wallet", headers=headers).json()["balance"] == 24500
 
 
 def test_alert_limits_and_server_trigger(monkeypatch):
@@ -444,6 +473,25 @@ def test_history_and_weekly_leaderboard():
     assert board["me"]["rank"] == 1
     history = client.get("/invest/history", headers=first).json()
     assert history["points"] and history["trades"][0]["side"] == "buy"
+
+
+def test_game_bonus_is_one_per_week_and_only_in_simulator(monkeypatch):
+    from datetime import timedelta
+    from app import main
+
+    headers = auth(register("reward@example.com", "reward-user"))
+    uid = client.get("/auth/me", headers=headers).json()["id"]
+    with SessionLocal() as db:
+        db.add(main.GameScore(user_id=uid, game="drop", week=main.iso_week(main.now_naive() - timedelta(days=7)), score=200))
+        db.commit()
+    monkeypatch.setattr(main, "SIMULATOR", False)
+    assert client.post("/game/claim-bonus", headers=headers).status_code == 403
+    monkeypatch.setattr(main, "SIMULATOR", True)
+    awarded = client.post("/game/claim-bonus", headers=headers)
+    assert awarded.status_code == 200
+    assert client.post("/game/claim-bonus", headers=headers).status_code == 404
+    assert client.get("/wallet", headers=headers).json()["balance"] == 24500 + awarded.json()["claimed"]
+
 
 
 def test_admin_stats_are_restricted(monkeypatch):

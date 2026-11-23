@@ -6,7 +6,7 @@ FastAPI backend for authentication, server-side asset balances, exchange operati
 
 ```bash
 cd backend
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt -c constraints.txt
 export WINDFINANCE_ENV=dev WINDFINANCE_SIMULATOR=1 WINDFINANCE_LIVE_TRADING=0
 python3 -m alembic upgrade head
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5500
@@ -231,3 +231,10 @@ credentials. Users can revoke the authorization in Bybit's API management.
 
 See [Bybit broker OAuth](https://www.bybit.com/en/help-center/article/How-to-Integrate-With-the-OAuth-System-as-a-Broker-on-Bybit)
 and [Bybit API Broker FAQ](https://www.bybit.com/en/help-center/article/FAQ-API-Brokers-Program).
+
+
+## Настройки авторизации при развёртывании
+
+- Перед запуском примените Alembic. При выходе из интерфейса сервер отзывает все текущие сессии аккаунта. Новые токены выдаются на 12 часов.
+- За обратным прокси укажите доверенные адреса прокси через `FORWARDED_ALLOW_IPS` Uvicorn. На границе сети перезаписывайте входящие заголовки прокси. Лимиты внутри приложения работают на один процесс, для нескольких реплик используйте общий лимит на ingress.
+- Для разделения ключей задайте `WINDFINANCE_TOTP_ENCRYPTION_KEY` как отдельный ключ Fernet и `WINDFINANCE_TELEGRAM_LINK_KEY` как отдельный случайный секрет. Существующие записи TOTP читаются с прежним ключом подписи. Перед его ротацией необходимо перешифровать старые записи TOTP.

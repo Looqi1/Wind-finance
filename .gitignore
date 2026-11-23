@@ -1,3 +1,10 @@
 # генерируется workflow деплоя из переменной BACKEND_URL
 sitefinance/config.js
 frontend/tests/__pycache__/
+
+# Локальные базы и конфигурация FastAPI
+/backend/**/*.db
+/backend/**/*.db-*
+.env
+.env.*
+!.env.example

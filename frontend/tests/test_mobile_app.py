@@ -286,6 +286,39 @@ def test_history_failure_offers_retry_in_demo(open_app):
     assert not errors
 
 
+def test_telegram_enforces_second_factor_and_revokes_on_logout(open_app):
+    def api(route, path):
+        if path == "/auth/telegram":
+            credentials = route.request.post_data_json
+            if not credentials.get("totp_code"):
+                route.fulfill(status=401, json={"detail": "2fa_required"})
+            else:
+                route.fulfill(json={"access_token": "test-session", "user": USER})
+            return True
+        if path == "/auth/logout":
+            route.fulfill(status=204)
+            return True
+        return False
+
+    page, requests, errors = open_app(telegram=True, api=api)
+    code = page.get_by_label("Код 2FA для входа через Telegram")
+    expect(code).to_be_visible()
+    expect(code).to_be_focused()
+    code.fill("123456")
+    code.press("Enter")
+    expect(page.locator("#auth-gate")).to_be_hidden()
+    assert ("POST", "/auth/telegram", {"init_data": "test-init-data", "totp_code": "123456"}, None) in requests
+    assert page.evaluate("localStorage.getItem('wind_access_token')") is None
+    page.locator(".profile-trigger").click()
+    with page.expect_response(lambda response: response.url.endswith("/auth/logout")) as logout:
+        page.locator(".logout").click()
+    assert logout.value.status == 204
+    expect(page.locator("#auth-gate")).to_be_visible()
+    assert page.evaluate("sessionStorage.getItem('wind_access_token')") is None
+    assert not errors
+
+
+
 def test_telegram_unavailable_then_retry(open_app):
     attempts = 0
 
@@ -763,6 +796,7 @@ def test_password_reset_link_survives_reload_and_supports_second_factor(open_app
     save.click()
     expect(gate).to_be_hidden()
     assert page.evaluate("location.hash") == ""
-    assert page.evaluate("localStorage.getItem('wind_access_token')") == "new-wind-session"
+    assert page.evaluate("sessionStorage.getItem('wind_access_token')") == "new-wind-session"
+    assert page.evaluate("localStorage.getItem('wind_access_token')") is None
     assert reset_attempts[-1] == {"token": valid_token, "password": "NewStrongPassword1!", "totp_code": "123456"}
     assert not errors

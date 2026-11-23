@@ -17,7 +17,8 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
-from collections import defaultdict, deque
+from collections import deque
+from threading import Lock
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -33,7 +34,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pwdlib import PasswordHash
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine, desc, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -75,8 +76,9 @@ NEWS_RSS_URL = os.getenv(  # устарело: ленты задаются в NE
     "NEWS_RSS_URL",
     "https://news.google.com/rss/search?q=%28S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones%20OR%20%D0%A4%D0%A0%D0%A1%20OR%20%D0%B0%D0%BC%D0%B5%D1%80%D0%B8%D0%BA%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B5%20%D0%B0%D0%BA%D1%86%D0%B8%D0%B8%20OR%20%D1%84%D0%BE%D0%BD%D0%B4%D0%BE%D0%B2%D1%8B%D0%B9%20%D1%80%D1%8B%D0%BD%D0%BE%D0%BA%29%20%28%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D0%B7%20OR%20%D0%BE%D0%B1%D0%B7%D0%BE%D1%80%20OR%20%D0%BF%D1%80%D0%BE%D0%B3%D0%BD%D0%BE%D0%B7%29%20-%D1%81%D0%BC%D0%B0%D1%80%D1%82%D1%84%D0%BE%D0%BD%20-%D1%82%D0%B5%D1%85%D0%BD%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D0%B8&hl=ru&gl=RU&ceid=RU:ru",
 )
-TRUST_PROXY = os.getenv("TRUST_PROXY", "0") == "1"           # включи за nginx/Cloudflare
-TOKEN_EXPIRE_DAYS = 7
+TOKEN_LIFETIME = timedelta(hours=12)
+TELEGRAM_AUTH_MAX_AGE = 300
+TELEGRAM_CLOCK_SKEW = 30
 START_BALANCE_KOP = 2_450_000 if SIMULATOR else 0
 PLANS = {"month": (19_900, 30), "year": (179_000, 365)}      # цена в копейках, дней
 STARS_TOPUPS = {"topup_1000": 1000, "topup_5000": 5000, "topup_10000": 10000}
@@ -123,7 +125,12 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 password_hash = PasswordHash.recommended()
 DUMMY_HASH = password_hash.hash("dummy-password-for-timing")
 bearer_scheme = HTTPBearer(auto_error=False)
-_totp_cipher = Fernet(base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest()))
+_legacy_totp_cipher = Fernet(base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest()))
+_totp_key = os.getenv("WINDFINANCE_TOTP_ENCRYPTION_KEY", "")
+_totp_cipher = MultiFernet([Fernet(_totp_key.encode()), _legacy_totp_cipher]) if _totp_key else _legacy_totp_cipher
+_telegram_link_key = os.getenv("WINDFINANCE_TELEGRAM_LINK_KEY", "").encode() or hmac.digest(
+    SECRET_KEY.encode(), b"wind-finance:telegram-link", "sha256")
+
 
 
 def now_naive() -> datetime:
@@ -329,6 +336,13 @@ class GameScore(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_naive)
 
 
+class GameBonusClaim(Base):
+    __tablename__ = "game_bonus_claims"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    game: Mapped[str] = mapped_column(String(20), primary_key=True)
+    week: Mapped[str] = mapped_column(String(10), primary_key=True)
+
+
 class PartnerClick(Base):
     """Переход пользователя на Bybit по партнёрской ссылке (для статистики в админке)."""
     __tablename__ = "partner_clicks"
@@ -368,30 +382,36 @@ class RateLimiter:
     """Простой лимитер в памяти процесса. При нескольких воркерах нужен Redis."""
 
     def __init__(self):
-        self.hits: dict[str, deque] = defaultdict(deque)
+        self.hits: dict[str, tuple[deque, float]] = {}
+        self.next_cleanup = 0.0
+        self.lock = Lock()
 
     def check(self, key: str, limit: int, window: int):
         now = time.monotonic()
-        q = self.hits[key]
-        while q and now - q[0] > window:
-            q.popleft()
-        if len(q) >= limit:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток, попробуй позже")
-        q.append(now)
+        with self.lock:
+            if now >= self.next_cleanup:
+                for expired in [key for key, (_, expiry) in self.hits.items() if expiry <= now]:
+                    del self.hits[expired]
+                self.next_cleanup = now + 60
+            q, _ = self.hits.get(key, (deque(), 0))
+            while q and now - q[0] >= window:
+                q.popleft()
+            if len(q) >= limit:
+                raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток, попробуй позже")
+            q.append(now)
+            self.hits[key] = (q, now + window)
 
 
 limiter = RateLimiter()
 
 
 def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if TRUST_PROXY and fwd:
-        return fwd.split(",")[0].strip()
+    # Uvicorn resolves proxy headers only for its configured trusted peers.
     return request.client.host if request.client else "?"
 
 
 def make_access_token(user: User) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
+    exp = datetime.now(timezone.utc) + TOKEN_LIFETIME
     return jwt.encode({"sub": str(user.id), "exp": exp, "ver": user.session_version}, SECRET_KEY, algorithm="HS256")
 
 
@@ -402,7 +422,7 @@ def get_current_user(
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация")
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"], options={"require": ["exp", "sub", "ver"]})
         user_id = int(payload.get("sub", ""))
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Недействительный токен")
@@ -628,6 +648,7 @@ class LoginRequest(BaseModel):
 
 class TelegramRequest(BaseModel):
     init_data: str = Field(min_length=10, max_length=4096)
+    totp_code: str | None = Field(default=None, max_length=8)
 
 
 class CodeRequest(BaseModel):
@@ -695,6 +716,18 @@ class FeedbackRequest(BaseModel):
 app = FastAPI(title="Wind Finance API", version="0.2.0")
 app.include_router(bybit_broker.router_for(get_current_user, get_db, limiter))
 
+def is_exact_https_origin(value: str) -> bool:
+    try:
+        origin = urlsplit(value)
+        return bool(origin.scheme == "https" and origin.hostname and not origin.username and not origin.password
+                    and not origin.path and not origin.query and not origin.fragment and "*" not in value)
+    except ValueError:
+        return False
+
+
+if ENV == "prod" and not all(is_exact_https_origin(origin) for origin in ALLOWED_ORIGINS):
+    raise RuntimeError("WINDFINANCE_ALLOWED_ORIGINS должен содержать точные HTTPS origins")
+
 if ENV == "dev" or ALLOWED_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -712,6 +745,8 @@ async def security_headers(request: Request, call_next):
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.headers.get("Authorization") or request.scope["path"].startswith("/auth/"):
+        resp.headers["Cache-Control"] = "no-store"
     if ENV == "prod":
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
@@ -755,13 +790,18 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     ok = password_hash.verify(payload.password, user.password_hash if user else DUMMY_HASH)  # одинаковое время ответа
     if user is None or not ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
-    if user.totp_enabled:
-        if not payload.totp_code:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "2fa_required")
-        secret = reveal_totp_secret(user.totp_secret)
-        if not secret or not pyotp.TOTP(secret).verify(payload.totp_code.strip(), valid_window=1):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный код 2FA")
+    require_totp(user, payload.totp_code)
     return token_out(user)
+
+
+def require_totp(user: User, code: str | None):
+    if not user.totp_enabled:
+        return
+    if not code:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "2fa_required")
+    secret = reveal_totp_secret(user.totp_secret)
+    if not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный код 2FA")
 
 
 def verify_telegram(init_data: str) -> dict:
@@ -778,7 +818,8 @@ def verify_telegram(init_data: str) -> dict:
     if not hmac.compare_digest(calc, received):
         raise HTTPException(401, "Неверная подпись Telegram")
     try:
-        if time.time() - int(pairs.get("auth_date", "0")) > 86400:
+        age = time.time() - int(pairs.get("auth_date", "0"))
+        if not -TELEGRAM_CLOCK_SKEW <= age <= TELEGRAM_AUTH_MAX_AGE:
             raise HTTPException(401, "Данные Telegram устарели")
         return json.loads(pairs["user"])
     except (ValueError, KeyError):
@@ -789,7 +830,10 @@ def verify_telegram(init_data: str) -> dict:
 def auth_telegram(payload: TelegramRequest, request: Request, db: Session = Depends(get_db)):
     limiter.check(f"tg:{client_ip(request)}", 30, 300)
     tg = verify_telegram(payload.init_data)
-    tg_id = int(tg["id"])
+    if not isinstance(tg, dict) or type(tg.get("id")) is not int or not 0 < tg["id"] < 2**52:
+        raise HTTPException(401, "Неверные данные Telegram")
+    tg_id = tg["id"]
+    limiter.check(f"tg-user:{tg_id}", 8, 300)
     user = db.scalar(select(User).where(User.tg_id == tg_id))
     if user is None:
         base = str(tg.get("username") or tg.get("first_name") or "user")[:40]
@@ -803,12 +847,21 @@ def auth_telegram(payload: TelegramRequest, request: Request, db: Session = Depe
         db.refresh(user)
         seed_user_assets(db, user)
         db.commit()
+    require_totp(user, payload.totp_code)
     return token_out(user)
 
 
 @app.get("/auth/me")
 def me(user: User = Depends(get_current_user)):
     return user_out(user)
+
+
+@app.post("/auth/logout", status_code=204)
+def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.execute(update(User).where(User.id == user.id, User.session_version == user.session_version)
+               .values(session_version=User.session_version + 1))
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.post("/auth/2fa/setup")
@@ -949,15 +1002,15 @@ def password_reset(payload: ResetRequest, request: Request, db: Session = Depend
 
 # ---------------- Telegram: привязка и уведомления ----------------
 def telegram_link_code(user_id: int) -> str:
-    exp = int(time.time()) + 3600
-    sig = hmac.new(SECRET_KEY.encode(), f"tglink:{user_id}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
+    exp = int(time.time()) + 300
+    sig = hmac.new(_telegram_link_key, f"tglink:{user_id}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
     return f"{user_id}-{exp}-{sig}"
 
 
 def parse_link_code(code: str) -> int | None:
     try:
         uid, exp, sig = code.split("-")
-        good = hmac.new(SECRET_KEY.encode(), f"tglink:{uid}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
+        good = hmac.new(_telegram_link_key, f"tglink:{uid}:{exp}".encode(), hashlib.sha256).hexdigest()[:16]
         if hmac.compare_digest(good, sig) and int(exp) > time.time():
             return int(uid)
     except ValueError:
@@ -1049,7 +1102,9 @@ def confirm_stars_payment(db: Session, details: dict, payer_id: int | None) -> N
 def telegram_link(user: User = Depends(get_current_user)):
     if not TG_BOT_TOKEN or not TG_BOT_USERNAME:
         raise HTTPException(503, "Telegram-бот пока не подключён")
-    return {"url": f"https://t.me/{TG_BOT_USERNAME}?start={telegram_link_code(user.id)}", "linked": user.tg_id is not None}
+    if user.tg_id is not None:
+        return {"url": None, "linked": True}
+    return {"url": f"https://t.me/{TG_BOT_USERNAME}?start={telegram_link_code(user.id)}", "linked": False}
 
 
 @app.post("/telegram/webhook")
@@ -1066,7 +1121,10 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db),
         confirm_stars_payment(db, message["successful_payment"], (message.get("from") or {}).get("id"))
         return {"ok": True}
     text = str(message.get("text") or "")
-    chat_id = (message.get("chat") or {}).get("id")
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    if chat.get("type") != "private" or chat_id != (message.get("from") or {}).get("id"):
+        return {"ok": True}
     if chat_id and text.split(maxsplit=1)[:1] in (["/paysupport"], [f"/paysupport@{TG_BOT_USERNAME}"]):
         await telegram_send(chat_id, "По вопросам оплаты открой Wind Finance и выбери «Сообщить об ошибке». Укажи номер платежа из чека Telegram.")
         return {"ok": True}
@@ -1081,11 +1139,17 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db),
     if owner and owner.id != user_id:
         await telegram_send(chat_id, "Этот Telegram уже привязан к другому аккаунту Wind Finance.")
         return {"ok": True}
-    user = db.get(User, user_id)
-    if user:
-        user.tg_id = chat_id
+    try:
+        bound = db.execute(update(User).where(User.id == user_id, User.tg_id.is_(None))
+                           .values(tg_id=chat_id))
         db.commit()
-        await telegram_send(chat_id, f"Готово, {user.username}! Ценовые уведомления Wind Finance будут приходить сюда.")
+    except IntegrityError:
+        db.rollback()
+        bound = None
+    if bound is not None and bound.rowcount == 1:
+        await telegram_send(chat_id, "Готово! Ценовые уведомления Wind Finance будут приходить сюда.")
+    else:
+        await telegram_send(chat_id, "Не удалось привязать Telegram. Проверь текущую привязку в Wind Finance.")
     return {"ok": True}
 
 
@@ -1388,8 +1452,11 @@ def create_goal(payload: GoalCreate, user: User = Depends(get_current_user), db:
 def goal_deposit(goal_id: int, payload: GoalMove, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     goal = own_goal(db, user.id, goal_id)
     kop = int(payload.amount * 100)
+    moved = db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id, SavingsGoal.closed_at.is_(None))
+                       .values(saved_kop=SavingsGoal.saved_kop + kop))
+    if moved.rowcount != 1:
+        raise HTTPException(404, "Копилка не найдена")
     charge(db, user.id, kop, f"В копилку: {goal.title}")
-    db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id).values(saved_kop=SavingsGoal.saved_kop + kop))
     db.commit()
     return goals_payload(db, user.id)
 
@@ -1398,7 +1465,7 @@ def goal_deposit(goal_id: int, payload: GoalMove, user: User = Depends(get_curre
 def goal_withdraw(goal_id: int, payload: GoalMove, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     goal = own_goal(db, user.id, goal_id)
     kop = int(payload.amount * 100)
-    res = db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id, SavingsGoal.saved_kop >= kop)
+    res = db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id, SavingsGoal.closed_at.is_(None), SavingsGoal.saved_kop >= kop)
                      .values(saved_kop=SavingsGoal.saved_kop - kop))
     if res.rowcount != 1:
         db.rollback()
@@ -1411,10 +1478,13 @@ def goal_withdraw(goal_id: int, payload: GoalMove, user: User = Depends(get_curr
 @app.delete("/goals/{goal_id}")
 def close_goal(goal_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     goal = own_goal(db, user.id, goal_id)
-    if goal.saved_kop > 0:
-        credit(db, user.id, goal.saved_kop, f"Копилка закрыта: {goal.title}")
-    goal.saved_kop = 0
-    goal.closed_at = now_naive()
+    saved_kop = db.scalar(update(SavingsGoal).where(SavingsGoal.id == goal.id, SavingsGoal.closed_at.is_(None))
+                          .values(closed_at=now_naive()).returning(SavingsGoal.saved_kop))
+    if saved_kop is None:
+        raise HTTPException(404, "Копилка не найдена")
+    db.execute(update(SavingsGoal).where(SavingsGoal.id == goal.id).values(saved_kop=0))
+    if saved_kop > 0:
+        credit(db, user.id, saved_kop, f"Копилка закрыта: {goal.title}")
     db.commit()
     return goals_payload(db, user.id)
 
@@ -2044,8 +2114,16 @@ def leaderboard(game: Literal["drop"] = "drop", user: User = Depends(get_current
 
 @app.post("/game/claim-bonus")
 def claim_bonus(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not SIMULATOR:
+        raise HTTPException(403, "Бонус доступен только для учебного баланса")
     b = bonus_for(db, user)
     if not b:
+        raise HTTPException(404, "Бонус недоступен или уже получен")
+    db.add(GameBonusClaim(user_id=user.id, game="drop", week=b["week"]))
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(404, "Бонус недоступен или уже получен")
     credit(db, user.id, b["amount"] * 100, b["title"])
     db.commit()

@@ -1,3 +1,11 @@
+const previousAccessToken = localStorage.getItem('wind_access_token');
+if (previousAccessToken && !sessionStorage.getItem('wind_access_token')) {
+	sessionStorage.setItem('wind_access_token', previousAccessToken);
+}
+localStorage.removeItem('wind_access_token');
+Object.keys(localStorage).filter(key => key.startsWith('wind_primary_currency_'))
+	.forEach(key => localStorage.removeItem(key));
+
 const tg = window.Telegram?.WebApp;
 const inTelegram = Boolean(tg?.initData);
 document.documentElement.classList.toggle('telegram-app', inTelegram);
@@ -21,16 +29,19 @@ const onAppView = (views, change) => {
 };
 
 const vendorSources = {
-	lucide: 'https://unpkg.com/lucide@1.57.0/dist/umd/lucide.min.js',
-	LightweightCharts: 'https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js',
-	QRCode: 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+	lucide: { url: 'https://unpkg.com/lucide@1.57.0/dist/umd/lucide.min.js', integrity: 'sha384-Qp5jsYqEgOGiWD8YMQ6yXIycASOePxr9mmbt+Ua0Wu1IScYxo0Pxf7o3Kx6NWJID' },
+	LightweightCharts: { url: 'https://unpkg.com/lightweight-charts@5.2.1/dist/lightweight-charts.standalone.production.js', integrity: 'sha384-KkYqTZlM13Zya6fVUF3IGCBOQ1ehFeJVVgxaVvD/0MebineF9EI8Jkd3NnWNChqN' },
+	QRCode: { url: 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js', integrity: 'sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU' },
 };
 const vendorLoads = new Map();
 const loadVendor = (name) => {
 	if (window[name]) return Promise.resolve(window[name]);
 	if (vendorLoads.has(name)) return vendorLoads.get(name);
 	const script = document.createElement('script');
-	script.src = vendorSources[name];
+	const source = vendorSources[name];
+	script.crossOrigin = 'anonymous';
+	script.integrity = source.integrity;
+	script.src = source.url;
 	const request = new Promise((resolve, reject) => {
 		const fail = () => {
 			vendorLoads.delete(name);
@@ -751,7 +762,7 @@ const viewTitles = {
 	settings: ['Профиль', 'Настройки'],
 };
 const topbarEyebrow = document.querySelector('.topbar .eyebrow');
-const topbarTitle = document.querySelector('.topbar h1');
+const topbarTitle = document.querySelector('.topbar .app-title');
 const sectionBackdrop = document.querySelector('.section-backdrop');
 const windMotion = window.matchMedia('(prefers-reduced-motion: no-preference)');
 const windEffects = new Map();
@@ -1914,10 +1925,8 @@ const currencyNames = {
 	GBP: 'Фунт стерлингов',
 	AED: 'Дирхам ОАЭ',
 };
-const currencyPreferenceKey = () => {
-	const token = localStorage.getItem('wind_access_token') || 'guest';
-	return `wind_primary_currency_${token.slice(-16)}`;
-};
+let primaryCurrencyOwner = 'guest';
+const currencyPreferenceKey = () => `wind_currency_for_${primaryCurrencyOwner}`;
 const paintPrimaryCurrency = (code = localStorage.getItem(currencyPreferenceKey()) || 'RUB') => {
 	const value = document.querySelector('[data-setting-currency-value]');
 	const label = document.querySelector('[data-setting-currency-label]');
@@ -2041,6 +2050,13 @@ const authModeButtons = authTabs.querySelectorAll('[data-auth-mode]');
 const authBack = document.querySelector('#auth-back');
 const resetAgain = document.querySelector('#auth-reset-again');
 const telegramLoginButton = document.getElementById('telegram-login-button');
+const telegramTotp = document.getElementById('telegram-totp');
+const telegramTotpField = document.getElementById('telegram-totp-field');
+const clearTelegramTotp = () => {
+	telegramTotpField.hidden = true;
+	telegramTotp.value = '';
+	telegramLoginButton.textContent = 'Войти через Telegram';
+};
 let authMode = 'login';
 let needTotp = false;
 const DEMO_PREVIEW_KEY = 'wind_demo_preview';
@@ -2063,7 +2079,7 @@ const demoBalanceKop = () => demoPreviewUser.balance * 100
 
 // единая точка обращения к серверу: токен подставляется сам
 const api = async (path, { method = 'GET', body, timeoutMs = 10000 } = {}) => {
-	const token = isDemoPreview() ? null : localStorage.getItem('wind_access_token');
+	const token = isDemoPreview() ? null : sessionStorage.getItem('wind_access_token');
 	const headers = { 'Content-Type': 'application/json' };
 	if (token) headers.Authorization = `Bearer ${token}`;
 	const controller = new AbortController();
@@ -2123,8 +2139,8 @@ let starsCheckoutActive = false;
 const checkoutWithStars = async (offer) => {
 	if (starsCheckoutActive) throw new Error('Сначала закрой текущий счёт Telegram.');
 	starsCheckoutActive = true;
-	const token = localStorage.getItem('wind_access_token');
-	const sameSession = () => !isDemoPreview() && localStorage.getItem('wind_access_token') === token;
+	const token = sessionStorage.getItem('wind_access_token');
+	const sameSession = () => !isDemoPreview() && sessionStorage.getItem('wind_access_token') === token;
 	try {
 		const { invoice_url, payment_id } = await WindApi('/payments/stars/invoice', {
 			method: 'POST', body: { offer },
@@ -2149,6 +2165,8 @@ const starsPaymentMessage = (status) => status === 'cancelled' ? 'Оплата �
 	: 'Платёж ожидает подтверждения. Проверь баланс или подписку позже.';
 
 const updateProfile = (user) => {
+	primaryCurrencyOwner = user.id || 'guest';
+	paintPrimaryCurrency();
 	document.getElementById('wallet-demo').hidden = user.id !== 0;
 	document.body.classList.toggle('demo-preview', user.id === 0);
 	document.getElementById('demo-goal-shortcut').hidden = user.id !== 0;
@@ -2273,7 +2291,7 @@ const wakeServer = () => {
 	// бесплатный хостинг засыпает: первый запрос будит сервер, пока человек вводит пароль
 	return fetch(`${apiBase}/health`, { cache: 'no-store' }).then((r) => { serverAwake = r.ok; return r.ok; }).catch(() => false);
 };
-if (!inTelegram && !localStorage.getItem('wind_access_token') && !isDemoPreview()) wakeServer();
+if (!inTelegram && !sessionStorage.getItem('wind_access_token') && !isDemoPreview()) wakeServer();
 // подсказка «сервер просыпается», если запрос идёт дольше 3 секунд
 const withWakeHint = async (promise, label) => {
 	const timer = window.setTimeout(() => {
@@ -2327,6 +2345,7 @@ const showDemo = () => {
 };
 demoLoginButton?.addEventListener('click', () => {
 	telegramLoginRequest++;
+	clearTelegramTotp();
 	clearPasswordReset();
 	sessionStorage.setItem(DEMO_PREVIEW_KEY, '1');
 	window.history.replaceState(null, '', '#dashboard');
@@ -2342,23 +2361,42 @@ const showAuth = () => {
 	if (alreadyLogin) animateAuthFields();
 };
 
-telegramLoginButton.hidden = !inTelegram;
+telegramLoginButton.hidden = !inTelegram || !apiConfigured;
 let telegramLoginRequest = 0;
 const tgLogin = async () => {
-	if (!inTelegram || telegramLoginButton.disabled || authForm.querySelector('.auth-submit').disabled) return;
+	if (!apiConfigured || !inTelegram || telegramLoginButton.disabled || authForm.querySelector('.auth-submit').disabled) return;
+	const body = { init_data: tg.initData };
+	if (!telegramTotpField.hidden) {
+		if (!/^\d{6}$/.test(telegramTotp.value)) {
+			telegramTotp.focus();
+			setNotice('Введи шестизначный код из приложения-аутентификатора.', 'warn');
+			return;
+		}
+		body.totp_code = telegramTotp.value;
+	}
 	const request = ++telegramLoginRequest;
 	telegramLoginButton.disabled = true;
 	setNotice('Входим через Telegram…', 'wait');
 	try {
-		const r = await api('/auth/telegram', { method: 'POST', body: { init_data: tg.initData }, timeoutMs: 70000 });
+		const r = await api('/auth/telegram', { method: 'POST', body, timeoutMs: 70000 });
 		if (request !== telegramLoginRequest) return;
-		localStorage.setItem('wind_access_token', r.access_token);
+		clearTelegramTotp();
+		sessionStorage.setItem('wind_access_token', r.access_token);
 		sessionStorage.removeItem(DEMO_PREVIEW_KEY);
 		updateProfile(r.user);
 		setNotice('');
 		authGate.hidden = true;
 	} catch (e) {
 		if (request !== telegramLoginRequest) return;
+		if (e.message === '2fa_required' || (!telegramTotpField.hidden && e.message === 'Неверный код 2FA')) {
+			telegramTotpField.hidden = false;
+			telegramTotp.value = '';
+			telegramLoginButton.textContent = 'Подтвердить код';
+			setNotice(e.message === '2fa_required' ? 'Для входа через Telegram нужен код 2FA.' : e.message, e.message === '2fa_required' ? '' : 'warn');
+			telegramTotp.focus();
+			return;
+		}
+		clearTelegramTotp();
 		const detail = e.status === 401 ? 'Открой приложение заново из чата с ботом.'
 			: 'Можно повторить попытку, войти по почте или открыть демо.';
 		setNotice(`Не удалось войти через Telegram. ${detail}`, 'warn');
@@ -2367,6 +2405,9 @@ const tgLogin = async () => {
 	}
 };
 telegramLoginButton.addEventListener('click', tgLogin);
+telegramTotp.addEventListener('keydown', (event) => {
+	if (event.key === 'Enter') tgLogin();
+});
 
 const checkSession = async () => {
 	const url = new URL(location.href);
@@ -2391,12 +2432,12 @@ const checkSession = async () => {
 		return;
 	}
 	if (inTelegram) {
-		localStorage.removeItem('wind_access_token');
+		sessionStorage.removeItem('wind_access_token');
 		showAuth();
 		await tgLogin();
 		return;
 	}
-	if (localStorage.getItem('wind_access_token') && apiConfigured) {
+	if (sessionStorage.getItem('wind_access_token') && apiConfigured) {
 		setNotice('Восстанавливаем сессию…', 'wait');
 		try {
 			updateProfile(await withWakeHint(api('/auth/me', { timeoutMs: 70000 })));
@@ -2405,7 +2446,7 @@ const checkSession = async () => {
 			return;
 		} catch (e) {
 			setNotice('');
-			if (e.status === 401) localStorage.removeItem('wind_access_token'); // токен чистим только при 401
+			if (e.status === 401) sessionStorage.removeItem('wind_access_token'); // токен чистим только при 401
 			else if (e.status === undefined) { showAuth(); setNotice('Сервер не ответил. Проверь интернет и попробуй войти ещё раз.', 'warn'); return; }
 		}
 	}
@@ -2454,7 +2495,7 @@ authForm.addEventListener('submit', async (event) => {
 			const body = { token: resetToken, password: passwordField.value };
 			if (needTotp) body.totp_code = totpField.value.trim();
 			const result = await withWakeHint(api('/auth/password/reset', { method: 'POST', body, timeoutMs: 70000 }), submitLabel);
-			localStorage.setItem('wind_access_token', result.access_token);
+			sessionStorage.setItem('wind_access_token', result.access_token);
 			clearPasswordReset();
 			updateProfile(result.user);
 			authGate.hidden = true;
@@ -2492,7 +2533,7 @@ authForm.addEventListener('submit', async (event) => {
 	try {
 		const result = await withWakeHint(api(`/auth/${authMode}`, { method: 'POST', body, timeoutMs: 70000 }), submitLabel);
 		setNotice('');
-		localStorage.setItem('wind_access_token', result.access_token);
+		sessionStorage.setItem('wind_access_token', result.access_token);
 		updateProfile(result.user);
 		authGate.hidden = true;
 		authForm.reset();
@@ -2513,8 +2554,18 @@ authForm.addEventListener('submit', async (event) => {
 
 document.querySelector('.logout')?.addEventListener('click', (event) => {
 	event.preventDefault();
+	if (apiConfigured && !isDemoPreview() && sessionStorage.getItem('wind_access_token')) {
+		api('/auth/logout', { method: 'POST' }).catch((error) => {
+			if (!authGate.hidden && error.status !== 401 && !sessionStorage.getItem('wind_access_token')) {
+				setNotice('Не удалось подтвердить завершение сессии на сервере.', 'warn');
+			}
+		});
+	}
+	clearTelegramTotp();
 	sessionStorage.removeItem(DEMO_PREVIEW_KEY);
-	localStorage.removeItem('wind_access_token');
+	sessionStorage.removeItem('wind_access_token');
+	primaryCurrencyOwner = 'guest';
+	paintPrimaryCurrency();
 	document.body.classList.remove('demo-preview');
 	document.getElementById('wallet-demo').hidden = true;
 	document.getElementById('demo-goal-shortcut').hidden = true;
@@ -3033,7 +3084,7 @@ if (inTelegram) {
 	});
 
 	// ---- синхронизация с сервером: он проверяет цены и шлёт уведомление в Telegram, даже когда сайт закрыт ----
-	const serverMode = () => Boolean(localStorage.getItem('wind_access_token')) && window.WindApi;
+	const serverMode = () => Boolean(sessionStorage.getItem('wind_access_token')) && window.WindApi;
 	const tgButton = $('alert-telegram');
 	let telegramLinked = false;
 	const paintTelegram = () => {
@@ -3068,6 +3119,11 @@ if (inTelegram) {
 	tgButton?.addEventListener('click', async () => {
 		try {
 			const d = await WindApi('/telegram/link', { method: 'POST' });
+			if (d.linked) {
+				await syncFromServer();
+				setHint('Telegram уже подключён.', 'ok');
+				return;
+			}
 			window.open(d.url, '_blank', 'noopener');
 			setHint('Открой бота и нажми «Start» — после этого уведомления будут приходить в Telegram.', 'ok');
 		} catch (e) { setHint(e.message, 'error'); }
@@ -3849,7 +3905,7 @@ if (inTelegram) {
 		const amount = Math.round(getAmount() * 100) / 100;
 		if (amount < 100) { ui.error.textContent = 'Минимальная сумма — 100 ₽'; return; }
 		if (amount > getBalance()) { ui.error.textContent = 'Недостаточно средств на балансе'; return; }
-		if (!localStorage.getItem('wind_access_token')) { ui.error.textContent = 'Войди в аккаунт, чтобы покупать активы'; return; }
+		if (!sessionStorage.getItem('wind_access_token')) { ui.error.textContent = 'Войди в аккаунт, чтобы покупать активы'; return; }
 		ui.confirm.disabled = true;
 		let data;
 		try {
@@ -3990,7 +4046,7 @@ if (inTelegram) {
 	};
 
 	const load = async () => {
-		if (!localStorage.getItem('wind_access_token')) {
+		if (!sessionStorage.getItem('wind_access_token')) {
 			state = null;
 			renderEmpty('Портфель доступен после входа', 'Войди в аккаунт, чтобы покупать активы и следить за доходностью.', false);
 			window.dispatchEvent(new Event('wind-portfolio'));
@@ -4468,7 +4524,7 @@ if (inTelegram) {
 	let trialAvailable = false;
 	window.addEventListener('wind-auth', (e) => {
 		setPlus(e.detail && e.detail.plus);
-		trialAvailable = Boolean(e.detail && e.detail.trial_available) && Boolean(localStorage.getItem('wind_access_token'));
+		trialAvailable = Boolean(e.detail && e.detail.trial_available) && Boolean(sessionStorage.getItem('wind_access_token'));
 		applyPlan();
 	});
 	window.addEventListener('wind-logout', () => { state = null; trialAvailable = false; applyPlan(); });
@@ -5906,7 +5962,7 @@ else window.setTimeout(paintIcons, 200);
 		if (text != null) el.textContent = text;
 		return el;
 	};
-	const goalSession = () => isDemoPreview() ? 'demo' : localStorage.getItem('wind_access_token');
+	const goalSession = () => isDemoPreview() ? 'demo' : sessionStorage.getItem('wind_access_token');
 	const empty = (text) => grid.replaceChildren(mk('div', 'goals-empty', text));
 	const description = document.getElementById('goals-description');
 
@@ -6129,7 +6185,7 @@ else window.setTimeout(paintIcons, 200);
 	const list = document.getElementById('invest-board-list');
 	const chart = document.getElementById('portfolio-chart');
 	const chartSubtitle = document.getElementById('portfolio-chart-sub');
-	const authed = () => Boolean(localStorage.getItem('wind_access_token'));
+	const authed = () => Boolean(sessionStorage.getItem('wind_access_token'));
 	const mk = (tag, cls, text) => {
 		const el = document.createElement(tag);
 		if (cls) el.className = cls;
@@ -6166,9 +6222,170 @@ else window.setTimeout(paintIcons, 200);
 		[349, 10000, 10000], [276, 11200, 11000], [190, 12350, 12000], [115, 15000, 15000],
 		[87, 15600, 15000], [73, 14800, 15000], [52, 17400, 16500], [34, 17150, 16500],
 		[28, 18000, 17000], [22, 17400, 17000], [17, 18300, 17500], [10, 18600, 17500],
-		[5, 18450, 17500], [0, 19600, 18000],
+		[5, 18450, 17500], [0, 20700, 18000],
 	];
 	let days = 90, historyRevision = 0;
+	const pnlCard = document.getElementById('portfolio-pnl');
+	const pnlAmount = document.getElementById('pnl-value');
+	const pnlPercent = document.getElementById('pnl-percent');
+	const pnlContext = document.getElementById('pnl-context');
+	const pnlPlot = document.getElementById('pnl-plot');
+	const pnlSave = document.getElementById('pnl-save');
+	const pnlDemoSwitch = document.getElementById('pnl-demo-switch');
+	if ('IntersectionObserver' in window) {
+		new IntersectionObserver(([entry]) => pnlCard.classList.toggle('pnl-in-view', entry.isIntersecting),
+			{ threshold: 0.15 }).observe(pnlCard);
+	}
+	const pnlColors = { gain: '#8ff0cf', loss: '#ffadb8', flat: '#d9c8ff' };
+	const pnlNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2, signDisplay: 'exceptZero' });
+	const pnlMoney = (value) => `${pnlNumber.format(value).replace(/^-/, '−')} ₽`;
+	const pnlDate = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeZone: 'UTC' });
+	let pnlSample = 'gain', pnlResult = null, pnlFrame = 0, pnlDisplayed = 0;
+
+	const setPnlAmount = (value) => {
+		cancelAnimationFrame(pnlFrame);
+		if (!windMotion.matches || pnlDisplayed === value) {
+			pnlDisplayed = value;
+			pnlAmount.textContent = pnlMoney(value);
+			return;
+		}
+		const from = pnlDisplayed;
+		const began = performance.now();
+		const tick = (time) => {
+			const progress = windMotion.matches ? Math.min(1, (time - began) / 500) : 1;
+			pnlDisplayed = from + (value - from) * (1 - (1 - progress) ** 3);
+			pnlAmount.textContent = pnlMoney(progress === 1 ? value : Math.round(pnlDisplayed * 100) / 100);
+			if (progress < 1) pnlFrame = requestAnimationFrame(tick);
+		};
+		pnlFrame = requestAnimationFrame(tick);
+	};
+
+	const resetPnl = (message) => {
+		cancelAnimationFrame(pnlFrame);
+		pnlResult = null;
+		pnlDisplayed = 0;
+		pnlCard.dataset.tone = 'flat';
+		pnlAmount.textContent = '—';
+		pnlPercent.hidden = true;
+		pnlSave.disabled = true;
+		pnlDemoSwitch.hidden = true;
+		pnlPlot.replaceChildren();
+		pnlContext.textContent = message;
+	};
+
+	const drawPnl = (points, demo) => {
+		const invested = points.filter(point => Number.isFinite(point.invested) && Number.isFinite(point.cost) && point.cost > 0 && Number.isFinite(Date.parse(point.day)));
+		const latest = points.at(-1);
+		if (!invested.length || !(latest?.cost > 0) || invested.at(-1) !== latest) {
+			resetPnl('Нет снимка с открытыми позициями.');
+			return;
+		}
+		const scale = demo && pnlSample === 'loss' ? -1 : 1;
+		const values = invested.map(p => Math.round(scale * (p.invested - p.cost) * 100) / 100);
+		const value = values.at(-1);
+		const tone = value > 0 ? 'gain' : value < 0 ? 'loss' : 'flat';
+		const percent = pct(value / latest.cost * 100);
+		const date = pnlDate.format(Date.parse(latest.day));
+		const context = demo ? `Учебные данные · ${date}` : `По снимку портфеля · ${date}`;
+		const min = Math.min(0, ...values);
+		const max = Math.max(0, ...values);
+		const y = v => 86 - (max === min ? 40 : (v - min) / (max - min) * 80);
+		const start = Date.parse(invested[0].day);
+		const span = Date.parse(latest.day) - start;
+		const coordinates = values.map((v, i) => [
+			span ? 8 + (Date.parse(invested[i].day) - start) / span * 384 : 200,
+			y(v),
+		]);
+		const [endX, endY] = coordinates.at(-1);
+		const path = coordinates.map(([x, cy], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${cy.toFixed(2)}`).join(' ');
+		const zero = y(0);
+		const changed = pnlResult?.value !== value || pnlResult?.tone !== tone;
+		pnlResult = { value, tone, percent, context, coordinates, zero };
+		pnlCard.dataset.tone = tone;
+		pnlPercent.textContent = percent;
+		pnlPercent.hidden = false;
+		pnlSave.disabled = false;
+		pnlDemoSwitch.hidden = !demo;
+		if (pnlContext.textContent !== context) pnlContext.textContent = context;
+		setPnlAmount(value);
+		if (changed) playWindEffect(pnlCard, [{ opacity: .72 }, { opacity: 1 }], 420);
+		pnlPlot.innerHTML = `<svg viewBox="0 0 400 96" preserveAspectRatio="none" role="img" aria-label="Результат открытых позиций по снимкам за выбранный период">
+			<defs><linearGradient id="pnl-fill" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".27"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+			<path class="pnl-zero" d="M0 ${zero}H400"/>
+			<path class="pnl-area" d="${path} L${endX} 96 L${coordinates[0][0]} 96 Z" fill="url(#pnl-fill)"/>
+			<path class="pnl-line" d="${path}" pathLength="1"/>
+			<circle class="pnl-marker" cx="${endX}" cy="${endY}" r="3"/>
+		</svg>`;
+		drawPlotLine(pnlPlot.querySelector('.pnl-line'), 740);
+		revealPlot(pnlPlot.querySelector('.pnl-area'), 680);
+		settlePlotPoint(pnlPlot.querySelector('.pnl-marker'), 800);
+	};
+
+	pnlDemoSwitch.addEventListener('click', event => {
+		const button = event.target.closest('[data-pnl-demo]');
+		if (!button || pnlSample === button.dataset.pnlDemo) return;
+		pnlSample = button.dataset.pnlDemo;
+		pnlDemoSwitch.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+		loadHistory();
+	});
+
+	pnlSave.addEventListener('click', () => {
+		if (!pnlResult) return;
+		const result = pnlResult;
+		const canvas = document.createElement('canvas');
+		canvas.width = 1200;
+		canvas.height = 720;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return;
+		const accent = pnlColors[result.tone];
+		const background = ctx.createLinearGradient(0, 0, 1200, 720);
+		background.addColorStop(0, '#11162d');
+		background.addColorStop(1, result.tone === 'loss' ? '#472237' : '#173e44');
+		ctx.fillStyle = background;
+		ctx.fillRect(0, 0, 1200, 720);
+		ctx.fillStyle = '#f1efff';
+		ctx.font = '700 32px system-ui';
+		ctx.fillText('WIND FINANCE', 72, 86);
+		ctx.font = '600 37px system-ui';
+		ctx.fillText('Результат открытых позиций', 72, 154);
+		ctx.fillStyle = accent;
+		ctx.font = '800 106px system-ui';
+		ctx.fillText(pnlMoney(result.value), 72, 285, 1056);
+		ctx.font = '700 42px system-ui';
+		ctx.fillText(result.percent, 72, 350);
+		ctx.strokeStyle = '#ffffff52';
+		ctx.setLineDash([8, 10]);
+		ctx.beginPath();
+		ctx.moveTo(72, 382 + result.zero * 2);
+		ctx.lineTo(1128, 382 + result.zero * 2);
+		ctx.stroke();
+		ctx.setLineDash([]);
+		ctx.strokeStyle = accent;
+		ctx.lineWidth = 5;
+		ctx.lineJoin = 'round';
+		ctx.beginPath();
+		result.coordinates.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](72 + x * 2.64, 382 + y * 2));
+		ctx.stroke();
+		const [lx, ly] = result.coordinates.at(-1);
+		ctx.beginPath();
+		ctx.arc(72 + lx * 2.64, 382 + ly * 2, 7, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.fillStyle = '#d4d4e9';
+		ctx.font = '500 27px system-ui';
+		ctx.fillText(result.context, 72, 660);
+		canvas.toBlob(blob => {
+			if (!blob) return;
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = 'wind-finance-pnl.png';
+			document.body.append(link);
+			link.click();
+			link.remove();
+			window.setTimeout(() => URL.revokeObjectURL(url), 15000);
+		}, 'image/png');
+	});
+
 	const drawChart = (points) => {
 		if (!chart) return;
 		if (points.length < 2) {
@@ -6220,18 +6437,24 @@ else window.setTimeout(paintIcons, 200);
 		chartSubtitle.textContent = demo ? 'Учебный пример · стоимость и вложения' : 'Стоимость инвестиций по дням';
 		if (demo) {
 			const sampleDate = Date.UTC(2026, 0, 15);
-			drawChart(demoHistory.filter(([age]) => age < days).map(([age, invested, cost]) => ({
+			const points = demoHistory.filter(([age]) => age < days).map(([age, invested, cost]) => ({
 				day: new Date(sampleDate - age * dayMs).toISOString().slice(0, 10), invested, cost,
-			})));
+			}));
+			drawChart(points);
+			drawPnl(points, true);
 			return;
 		}
-		if (!authed()) { chart.replaceChildren(); return; }
+		if (!authed()) { chart.replaceChildren(); resetPnl('Войди в аккаунт, чтобы увидеть результат.'); return; }
+		resetPnl('Загружаем данные портфеля…');
 		const isCurrent = () => historyRevision === request && authed() && document.body.classList.contains('show-investment-profile');
 		try {
 			const data = await WindApi(`/invest/history?days=${days}`);
-			if (isCurrent()) drawChart(data.points);
+			if (isCurrent()) { drawChart(data.points); drawPnl(data.points, false); }
 		} catch {
-			if (isCurrent()) chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.'));
+			if (isCurrent()) {
+				chart.replaceChildren(mk('p', 'portfolio-chart-empty', 'Не удалось загрузить историю.'));
+				resetPnl('Не удалось загрузить результат портфеля.');
+			}
 		}
 	};
 	document.querySelectorAll('#portfolio-chart-range [data-days]').forEach((b) => b.addEventListener('click', () => {
@@ -6246,7 +6469,7 @@ else window.setTimeout(paintIcons, 200);
 	const boardVisible = () => document.getElementById('auth-gate').hidden && document.body.dataset.view === 'investments';
 	window.addEventListener('wind-portfolio-open', loadHistory);
 	window.addEventListener('wind-portfolio', () => { if (boardVisible()) { loadBoard(); if (!isDemoPreview()) loadHistory(); } });
-	window.addEventListener('wind-logout', () => { historyRevision++; chart?.replaceChildren(); });
+	window.addEventListener('wind-logout', () => { historyRevision++; chart?.replaceChildren(); resetPnl('Войди в аккаунт, чтобы увидеть результат.'); });
 	onAppView(['investments'], (active) => { if (active) { loadBoard(); loadHistory(); } });
 	setInterval(() => { if (!document.hidden && boardVisible()) loadBoard(); }, 120000);
 })();

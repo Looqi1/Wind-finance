@@ -8,13 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     WINDFINANCE_ALLOWED_ORIGINS=https://looqi1.github.io
 
 WORKDIR /srv/backend
-COPY backend/requirements.txt .
-RUN python -m pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.txt backend/constraints.txt .
+RUN python -m pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY backend/app/*.py app/
 COPY backend/migrations/ migrations/
 COPY backend/alembic.ini backend/start-container.sh ./
-COPY sitefinance/index.html sitefinance/style.css sitefinance/script.js /srv/sitefinance/
+COPY sitefinance/index.html sitefinance/converter.html sitefinance/portfolio.html sitefinance/sitemap.xml sitefinance/style.css sitefinance/script.js /srv/sitefinance/
 COPY sitefinance/assets/ /srv/sitefinance/assets/
 
 USER 10001
