@@ -232,7 +232,6 @@ body.agent-open .news-page > #learn-news { transition-delay: .26s; }
 	transform: rotate(-23deg);
 	opacity: .76;
 	background:
-		repeating-radial-gradient(ellipse 90% 32% at 84% 118%, transparent 0 14px, #abffee8a 15px, transparent 17px 29px),
 		radial-gradient(ellipse 54% 11% at 72% 46%, #66f4dca6, transparent 94%),
 		radial-gradient(ellipse 54% 15% at 67% 59%, #8b83f393, transparent 94%);
 	mask-image: radial-gradient(ellipse at 62% 51%, #000 8%, #000a 35%, transparent 63%);
