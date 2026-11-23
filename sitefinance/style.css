@@ -3614,25 +3614,16 @@ body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]))) {
 .hero-grid .wallet-actions .button-light { background: #e1dbff; color: #241b4f; }
 .hero-grid .wallet-actions .button:hover { filter: brightness(1.13); }
 
-.stats-card { border-color: #dad1fb; }
-.focus-card, .rate-plot { background: color-mix(in srgb, var(--section-soft) 53%, var(--card)); }
-body.dark-theme :is(.focus-card, .rate-plot) { background: color-mix(in srgb, var(--section-light) 10%, var(--card)); }
-.market-pairs button[aria-pressed="true"], .rate-periods button[aria-pressed="true"] {
-	color: var(--section-accent);
-	border-color: color-mix(in srgb, var(--section-accent) 55%, transparent);
-	background: var(--section-soft);
+.stats-card :is(.market-pairs, .rate-periods) button[aria-pressed="true"] {
+	color: var(--section-ink);
+	border-color: var(--section-border);
+	background: var(--section-tint);
 }
-body.dark-theme :is(.market-pairs, .rate-periods) button[aria-pressed="true"] {
-	color: var(--section-light);
-	background: color-mix(in srgb, var(--section-light) 17%, transparent);
-}
-.rate-plot svg { color: var(--section-accent); }
-body.dark-theme .rate-plot svg { color: var(--section-light); }
+.rate-plot svg { color: var(--section-ink); }
 #rate-history-line { stroke: currentColor; stroke-dasharray: 1; }
 #rate-history-area { transform-box: view-box; transform-origin: 50% 100%; }
 #rate-history-end { fill: currentColor; stroke: var(--card); stroke-width: 1.5; }
 :is(.goal-bar, .gh-xp) > span { background: linear-gradient(90deg, #6650ba, #397ca5, #52ae9b); }
-.goal-card.done { border-color: #50a080; background: linear-gradient(112deg, #70c9ab22, transparent 72%), var(--card); }
 
 .invest-overview {
 	position: relative;
@@ -3715,8 +3706,7 @@ body.dark-theme .rate-plot svg { color: var(--section-light); }
 body.dark-theme .market-pair:has(:checked) { background: #eeae5726; }
 
 #converter .converter { border-color: #7fb6d280; }
-#converter .converter-output { border-color: #87bddb; background: #e4f4ff; color: #134766; }
-body.dark-theme #converter .converter-output { background: #1c3c57; color: #e2f6ff; }
+#converter .converter-output { border-color: var(--section-border); background: #253c59; color: #e5f7ff; }
 #converter :is(.swap-currency, .converter-submit) { background: var(--section-fill); color: #fff; }
 
 #game .game-hub { border-color: #edafbe70; background: linear-gradient(120deg,#ee91ad1d,#ffb58422); }
@@ -3925,16 +3915,12 @@ main > :is(#investments, #crypto, #converter, #game, #settings) .card {
 /* Wind Plus */
 #subscription-modal { place-items: center; }
 .plus-modal {
-	--plus-accent: #165f4b;
-	--plus-panel: #f4f9f6;
-	--plus-selected: #dff2e8;
+	--plus-accent: #a7ebd0;
+	--plus-panel: #1c302f;
+	--plus-selected: #263e3d;
+	--lab-range: var(--plus-accent);
 	width: min(850px, 100%); max-height: 92dvh; min-width: 0; overflow-y: auto;
 	padding: 0; border-radius: 24px; background: var(--card);
-}
-body.dark-theme .plus-modal {
-	--plus-accent: #b6eacb;
-	--plus-panel: #212e2c;
-	--plus-selected: #253e32;
 }
 .plus-hero {
 	position: relative; isolation: isolate; overflow: hidden;
@@ -4026,13 +4012,11 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 
 /* Уведомления, анализ и калькулятор Wind Plus. */
 #crypto #price-alerts {
-	--alert-ink: #175b50;
+	--alert-ink: #a4e8d7;
 	--alert-tint: color-mix(in srgb, #36a994 17%, var(--card));
 	--alert-border: color-mix(in srgb, #318c79 32%, var(--line));
-	background: linear-gradient(145deg, var(--alert-tint), var(--card) 67%);
 	border-color: var(--alert-border);
 }
-body.dark-theme #crypto #price-alerts { --alert-ink: #a4e8d7; }
 #crypto #price-alerts::before,
 #analysis-card .an-overview::before,
 .plus-modal :is(.plus-benefit, .plus-lab, .lab-result)::before {
@@ -4082,9 +4066,6 @@ body.dark-theme #crypto #price-alerts { --alert-ink: #a4e8d7; }
 }
 #price-alerts .alert-empty svg { color: var(--alert-ink); }
 
-#crypto #analysis-card {
-	background: linear-gradient(155deg, var(--section-tint), var(--card) 56%);
-}
 #analysis-card .an-overview {
 	--outlook-color: #e9ac53;
 	border-color: color-mix(in srgb, var(--outlook-color) 46%, var(--line));
@@ -4133,10 +4114,7 @@ body.dark-theme #crypto #price-alerts { --alert-ink: #a4e8d7; }
 
 .plus-modal {
 	--plus-gold: #ffd88e;
-	--lab-range: #247c65;
-	background: linear-gradient(150deg, var(--plus-panel), var(--card));
 }
-body.dark-theme .plus-modal { --lab-range: #95dfc0; }
 .plus-modal .plus-benefit {
 	padding: 14px;
 	border-color: #357360;
@@ -4336,5 +4314,106 @@ body.dark-theme .plus-modal { --lab-range: #95dfc0; }
 	@keyframes pnl-marker-loop {
 		0%, 100% { opacity: 1; transform: scale(1); }
 		50% { opacity: .65; transform: scale(1.5); }
+	}
+}
+
+/* Карточки используют палитру PnL с акцентом текущей вкладки. */
+body:has(#auth-gate[hidden]) { --card-wind-art: url("assets/wind-airstream.webp"); }
+
+body :is(.card:not(.wallet-bar), .modal .modal-card, .crypto-purchase,
+	.news-lead, .news-rows, .game-hub > *, .game-tabs > button:not(.active), .edu-progress) {
+	--ink: #f3f4ff;
+	--muted: #c0cbe0;
+	--card: #232d44;
+	--soft-panel: #1c253b;
+	--paper: #1a2337;
+	--line: #53617d;
+	--row-line: #64749458;
+	--bg-shell: var(--soft-panel);
+	--green: #99ead0;
+	--coral: #ffadba;
+	--mint: #204742;
+	--lavender: #383259;
+	--pill-up-bg: #22463f;
+	--pill-down-bg: #472e42;
+	--pill-down-ink: var(--coral);
+	--section-ink: var(--section-light);
+	--section-soft: var(--section-tint);
+	--section-tint: color-mix(in srgb, var(--section-light) 12%, var(--card));
+	--section-border: color-mix(in srgb, var(--section-light) 20%, var(--line));
+	--card-wind-glow: color-mix(in srgb, var(--section-accent) 38%, #212b46);
+	position: relative;
+	isolation: isolate;
+	border-color: var(--section-border);
+	background:
+		linear-gradient(106deg, #14192efc 12%, #192138ed 55%, #1a263ca8),
+		radial-gradient(ellipse at top right, var(--card-wind-glow), transparent 72%),
+		var(--card-wind-art, none) right center / cover no-repeat,
+		#202c44;
+	color: var(--ink);
+	color-scheme: dark;
+	box-shadow: 0 9px 22px #1722382d;
+}
+
+:is(.card:not(.wallet-bar), .crypto-purchase, .modal-card) :where(
+	input, select, textarea, .button-light, .back-button, .amount-option, .currency-modal-option, .timeframes button:hover
+) {
+	border-color: var(--section-border);
+	background: var(--card);
+	color: var(--ink);
+}
+
+.card :is(.focus-card, .rate-plot, .cg-stats > div, .portfolio-summary > div),
+.modal-card .checkout-summary {
+	border-color: var(--section-border);
+	background: var(--soft-panel);
+}
+:is(.card:not(.wallet-bar), .crypto-purchase, .modal-card) :is(input, textarea)::placeholder {
+	color: var(--muted);
+	opacity: .85;
+}
+body :is(.goal-card.done, .gh-daily.done) { --card-wind-glow: #265453; border-color: #50a080; }
+.card:not(.wallet-bar) :is(.positive, .an-chip.pos, .an-verdict .pos, .ni-chip.risk-low, .gm-stamp.ok) { color: var(--green); }
+.card:not(.wallet-bar) :is(.negative, .an-chip.neg, .an-verdict .neg, .ni-chip.risk-high, .gm-stamp.bad) { color: var(--coral); }
+.card :is(.an-verdict .neu, .ni-chip.risk-mid) { color: #ffcf84; }
+.card :is(.ni-icon, .ledger-tag.transfer, .news-icon.purple, .purple-tag) { color: #decfff; }
+.card :is(.ni-follow.on, .edu-done, .twofa-btn.on), .gh-daily.done .gh-mini-icon.target { color: #152b2c; }
+.crypto-news-feature .news-feature-label { color: #1c5247; }
+.card .gm-stamp { background: #17233aeb; }
+:is(.gm-card .gm-rules li, .cg-card .cg-controls button) { color: var(--section-ink); }
+.gm-card .gm-rules li::before { color: var(--section-ink); }
+.game-hub :is(.gh-mini-icon.target, .gh-daily em) { color: #decfff; }
+.card :is(.setting-action, .setting-action:hover) { color: var(--ink); }
+.card .setting-action:hover { background: var(--section-tint); }
+.news-rows .news-row:hover, .news-rows .news-row:focus-visible {
+	background: color-mix(in srgb, var(--tag) 18%, var(--card));
+}
+.news-rows .news-chip, .news-lead .news-chip { background: var(--section-tint); color: var(--ink); }
+.news-rows .news-row:focus-visible, .news-lead:focus-visible { outline: 2px solid var(--section-ink); outline-offset: -3px; }
+#price-alerts .alert-coin:is(.active, :hover), #analysis-card .alert-coin:is(.active, :hover) { background: var(--card); }
+.modal-card .asset-picker-option { background: var(--soft-panel); }
+.modal-card .asset-picker-option.active { background: var(--section-tint); border-color: var(--section-ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+	body:where(:has(#auth-gate[hidden])) .card-wind-visible::after {
+		position: absolute;
+		z-index: -1;
+		inset: 14% 5%;
+		border-radius: inherit;
+		background:
+			repeating-radial-gradient(ellipse 255px 61px at 88% 105%, transparent 0 13px, var(--section-light) 14px, transparent 15px 22px),
+			radial-gradient(ellipse at 75% 45%, var(--card-wind-glow), transparent 72%);
+		mask-image: radial-gradient(ellipse at 68% 50%, #000, transparent 69%);
+		animation: card-wind-loop 9s ease-in-out infinite;
+		pointer-events: none;
+		content: '';
+	}
+	#game-tabs > .card-wind-visible:not(.active)::after { display: block; }
+	.card-wind-visible:nth-child(even)::after { animation-delay: -4.5s; }
+	body:not(.agent-open) #news .card-wind-visible::after,
+	body:has(.modal:not([hidden]), .wind-welcome[open]) .app .card-wind-visible::after { animation-play-state: paused; }
+	@keyframes card-wind-loop {
+		0%, 100% { opacity: .08; transform: translate3d(-4%, 3%, 0); }
+		50% { opacity: .32; transform: translate3d(4%, -4%, 0); }
 	}
 }

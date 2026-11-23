@@ -661,7 +661,6 @@ const syncNotificationIndicator = () => {
 
 const applyTheme = (isDark, save = true) => {
 	document.body.classList.toggle('dark-theme', isDark);
-	cryptoChart?.applyOptions(cryptoChartPalette());
 	if (themeToggle) {
 		themeToggle.setAttribute('aria-pressed', String(isDark));
 		themeToggle.innerHTML = isDark ? '<i data-lucide="sun"></i>' : '<i data-lucide="moon"></i>';
@@ -2584,27 +2583,20 @@ const formatCryptoPrice = (price) => {
 	return Number(price).toLocaleString('ru-RU', { maximumFractionDigits: digits });
 };
 
-function cryptoChartPalette() {
-	const dark = document.body.classList.contains('dark-theme');
-	const grid = { color: dark ? '#3c3a2f' : '#f1e5d4' };
-	const borderColor = dark ? '#574831' : '#e9d6bb';
-	return {
-		layout: { background: { color: dark ? '#22241e' : '#fffaf3' }, textColor: dark ? '#ead1ad' : '#715539' },
-		grid: { vertLines: grid, horzLines: grid },
-		rightPriceScale: { borderColor },
-		timeScale: { borderColor, timeVisible: true, secondsVisible: false },
-	};
-}
-
 const createCryptoChart = () => {
 	if (!cryptoChartElement || !window.LightweightCharts) {
 		return;
 	}
 
+	const grid = { color: '#3e4560' };
+	const borderColor = '#606c89';
 	cryptoChart = LightweightCharts.createChart(cryptoChartElement, {
 		width: cryptoChartElement.clientWidth,
 		height: cryptoChartElement.clientHeight,
-		...cryptoChartPalette(),
+		layout: { background: { color: '#192338' }, textColor: '#e5d6c6' },
+		grid: { vertLines: grid, horzLines: grid },
+		rightPriceScale: { borderColor },
+		timeScale: { borderColor, timeVisible: true, secondsVisible: false },
 		crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
 	});
 
@@ -4186,6 +4178,34 @@ if (inTelegram) {
 				numbers.forEach((n) => ioNum.observe(n));
 			});
 		}).observe(gate, { attributes: true, attributeFilter: ['hidden'] });
+	}
+})();
+
+(() => {
+	if (!('IntersectionObserver' in window)) return;
+
+	const selector = '.card:not(.wallet-bar), .modal-card, .crypto-purchase, .news-lead, .news-rows, .game-hub > *, .game-tabs > button, .edu-progress';
+	const observer = new IntersectionObserver((entries) => {
+		for (const { target, isIntersecting } of entries) {
+			target.classList.toggle('card-wind-visible', isIntersecting);
+		}
+	});
+	document.querySelectorAll(selector).forEach((card) => observer.observe(card));
+
+	const observeCards = (node, watch) => {
+		if (!(node instanceof Element)) return;
+		if (node.matches(selector)) watch(node);
+		node.querySelectorAll(selector).forEach(watch);
+	};
+	const updates = new MutationObserver((records) => {
+		for (const { addedNodes, removedNodes } of records) {
+			removedNodes.forEach((node) => observeCards(node, (card) => observer.unobserve(card)));
+			addedNodes.forEach((node) => observeCards(node, (card) => observer.observe(card)));
+		}
+	});
+	for (const id of ['goals-grid', 'edu-grid', 'learn-news']) {
+		const container = document.getElementById(id);
+		if (container) updates.observe(container, { childList: true, subtree: true });
 	}
 })();
 
