@@ -191,6 +191,36 @@ def test_demo_portfolio_chart_shows_sample_history_and_switches_period(open_app)
     assert not errors
 
 
+def test_pnl_wind_loop_and_chart_transition_are_continuous(open_app):
+    page, _, errors = open_app(width=390, backend=False)
+    page.emulate_media(reduced_motion="no-preference")
+    page.get_by_role("button", name="Попробовать демо").click()
+    page.locator('.nav a[href="#investments"]').click()
+    page.get_by_role("button", name="Открыть портфель").click()
+    pnl = page.locator("#portfolio-pnl")
+    pnl.scroll_into_view_if_needed()
+    page.wait_for_function("() => document.querySelector('#portfolio-pnl').classList.contains('card-wind-visible')")
+    assert pnl.evaluate("card => getComputedStyle(card, '::after').animationDirection") == "alternate"
+
+    assert pnl.evaluate("""card => {
+        const chart = card.querySelector('#pnl-plot svg');
+        const line = chart.querySelector('.pnl-line');
+        const before = line.getAttribute('d');
+        card.querySelector('[data-pnl-demo="loss"]').click();
+        return chart === card.querySelector('#pnl-plot svg') && line.getAttribute('d') === before;
+    }""")
+    expect(pnl.locator(".pnl-marker")).to_have_attribute("cy", "86")
+    expect(pnl.locator("#pnl-percent")).to_have_text("−15%")
+
+    pnl.evaluate("""card => {
+        card.querySelector('[data-days="30"]').click();
+        card.querySelector('[data-pnl-demo="gain"]').click();
+    }""")
+    expect(pnl.locator(".pnl-marker")).to_have_attribute("cy", "6")
+    expect(pnl.locator("#pnl-percent")).to_have_text("+15%")
+    assert not errors
+
+
 def test_demo_goal_moves_only_virtual_money_and_survives_reload(open_app):
     page, requests, errors = open_app(width=320)
     page.get_by_role("button", name="Попробовать демо").click()

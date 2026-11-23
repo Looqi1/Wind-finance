@@ -4367,7 +4367,8 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 #portfolio-pnl #portfolio-chart-range button.active { color: var(--pnl-accent); background: #29354d; }
 
 @media (prefers-reduced-motion: no-preference) {
-	.pnl-card.card-wind-visible .pnl-marker { animation: pnl-marker-loop 1.7s .42s ease-in-out infinite; }
+	.pnl-reading, .pnl-plot, .pnl-header p { transition: color .2s ease; }
+	.pnl-card.card-wind-visible .pnl-marker { animation: pnl-marker-loop 1.7s ease-in-out infinite; }
 	@keyframes pnl-marker-loop {
 		0%, 100% { opacity: 1; transform: scale(1); }
 		50% { opacity: .65; transform: scale(1.5); }
@@ -4466,17 +4467,18 @@ body :is(.goal-card.done, .gh-daily.done) { --card-wind-glow: #265453; border-co
 	body:where(:has(#auth-gate[hidden])) .card-wind-visible::after {
 		position: absolute;
 		z-index: -1;
-		inset: auto 10% 18% auto;
-		width: min(72%, 380px);
-		height: min(54%, 210px);
+		inset: auto 17% 20% auto;
+		width: min(66%, 380px);
+		max-height: 55%;
+		aspect-ratio: 1.85;
 		background: radial-gradient(ellipse at center,
 			color-mix(in srgb, var(--card-wind-color, var(--section-light)) 47%, transparent), transparent 69%);
-		animation: card-wind-loop 3.8s ease-in-out infinite;
+		animation: card-wind-loop 2s ease-in-out infinite alternate;
 		pointer-events: none;
 		content: '';
 	}
 	#game-tabs > .card-wind-visible:not(.active)::after { display: block; }
-	.card-wind-visible:nth-child(even)::after { animation-delay: -1.9s; }
+	.card-wind-visible:nth-child(even)::after { animation-delay: -1s; }
 	body:not(.agent-open) #news .card-wind-visible::after,
 	body.agent-open .app .card-wind-visible:not(#news *)::after,
 	body.agent-open .agent-pet-face::before,
@@ -4485,8 +4487,7 @@ body :is(.goal-card.done, .gh-daily.done) { --card-wind-glow: #265453; border-co
 	body:is(.agent-open, :has(.modal:not([hidden]), .wind-welcome[open])) .app .pnl-marker,
 	body:has(.modal:not([hidden]), .wind-welcome[open]) .app .card-wind-visible::after { animation-play-state: paused; }
 	@keyframes card-wind-loop {
-		0% { opacity: .14; transform: translate3d(-12%, 15%, 0) rotate(-17deg) scale(.9); }
-		45% { opacity: .68; }
-		100% { opacity: 0; transform: translate3d(12%, -15%, 0) rotate(-17deg) scale(1.12); }
+		from { opacity: .22; transform: translate3d(-12%, 12%, 0) rotate(-17deg) scale(.94); }
+		to { opacity: .62; transform: translate3d(12%, -12%, 0) rotate(-17deg) scale(1.06); }
 	}
 }

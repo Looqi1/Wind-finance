@@ -4192,7 +4192,7 @@ if (inTelegram) {
 		for (const { target, isIntersecting } of entries) {
 			target.classList.toggle('card-wind-visible', isIntersecting);
 		}
-	});
+	}, { rootMargin: '16px 0px' });
 	document.querySelectorAll(selector).forEach((card) => observer.observe(card));
 
 	const observeCards = (node, watch) => {
@@ -6264,6 +6264,7 @@ else window.setTimeout(paintIcons, 200);
 	const pnlMoney = (value) => `${pnlNumber.format(value).replace(/^-/, '−')} ₽`;
 	const pnlDate = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeZone: 'UTC' });
 	let pnlSample = 'gain', pnlResult = null, pnlFrame = 0, pnlDisplayed = 0;
+	let pnlPlotFrame = 0, pnlPlotShape = null;
 
 	const setPnlAmount = (value) => {
 		cancelAnimationFrame(pnlFrame);
@@ -6286,8 +6287,10 @@ else window.setTimeout(paintIcons, 200);
 
 	const resetPnl = (message) => {
 		cancelAnimationFrame(pnlFrame);
+		cancelAnimationFrame(pnlPlotFrame);
 		pnlResult = null;
 		pnlDisplayed = 0;
+		pnlPlotShape = null;
 		pnlCard.dataset.tone = 'flat';
 		pnlAmount.textContent = '—';
 		pnlPercent.hidden = true;
@@ -6295,6 +6298,73 @@ else window.setTimeout(paintIcons, 200);
 		pnlDemoSwitch.hidden = true;
 		pnlPlot.replaceChildren();
 		pnlContext.textContent = message;
+	};
+
+	const interpolate = (a, b, progress) => a + (b - a) * progress;
+	const padPlotPoints = (points, length) => {
+		if (points.length === length) return points;
+		if (points.length === 1) return Array(length).fill(points[0]);
+		// Subdivide existing segments to keep their shape when the period changes.
+		const segments = points.length - 1;
+		const shares = Math.floor((length - 1) / segments);
+		const remainder = (length - 1) % segments;
+		const padded = [points[0]];
+		for (let i = 0; i < segments; i++) {
+			const [x, y] = points[i];
+			const [nextX, nextY] = points[i + 1];
+			const steps = shares + (i < remainder ? 1 : 0);
+			for (let step = 1; step <= steps; step++) {
+				padded.push([interpolate(x, nextX, step / steps), interpolate(y, nextY, step / steps)]);
+			}
+		}
+		return padded;
+	};
+
+	const renderPnlPlot = (coordinates, zero) => {
+		cancelAnimationFrame(pnlPlotFrame);
+		const previous = pnlPlotShape;
+		if (!previous) {
+			pnlPlot.innerHTML = `<svg viewBox="0 0 400 96" preserveAspectRatio="none" role="img" aria-label="Результат открытых позиций по снимкам за выбранный период">
+				<defs><linearGradient id="pnl-fill" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".27"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+				<path class="pnl-zero"/><path class="pnl-area" fill="url(#pnl-fill)"/>
+				<path class="pnl-line" pathLength="1"/><circle class="pnl-marker" r="3"/>
+			</svg>`;
+		}
+		const line = pnlPlot.querySelector('.pnl-line');
+		const area = pnlPlot.querySelector('.pnl-area');
+		const baseline = pnlPlot.querySelector('.pnl-zero');
+		const marker = pnlPlot.querySelector('.pnl-marker');
+		const paint = (points, zeroY) => {
+			const [endX, endY] = points.at(-1);
+			const path = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+			line.setAttribute('d', path);
+			area.setAttribute('d', `${path} L${endX} 96 L${points[0][0]} 96 Z`);
+			baseline.setAttribute('d', `M0 ${zeroY}H400`);
+			marker.setAttribute('cx', endX);
+			marker.setAttribute('cy', endY);
+			pnlPlotShape = { coordinates: points, zero: zeroY };
+		};
+		if (!previous || !windMotion.matches || !pnlCard.classList.contains('card-wind-visible')) {
+			paint(coordinates, zero);
+			if (!previous) playWindEffect(pnlPlot.firstElementChild, [{ opacity: .64 }, { opacity: 1 }], 220);
+			return;
+		}
+		const count = Math.max(previous.coordinates.length, coordinates.length);
+		const from = padPlotPoints(previous.coordinates, count);
+		const to = padPlotPoints(coordinates, count);
+		const started = performance.now();
+		const frame = (now) => {
+			const elapsed = Math.min(1, (now - started) / 360);
+			if (elapsed === 1 || !windMotion.matches || !pnlCard.classList.contains('card-wind-visible')) {
+				paint(coordinates, zero);
+				return;
+			}
+			const progress = elapsed ** 2 * (3 - 2 * elapsed);
+			paint(from.map(([x, y], i) => [interpolate(x, to[i][0], progress), interpolate(y, to[i][1], progress)]),
+				interpolate(previous.zero, zero, progress));
+			pnlPlotFrame = requestAnimationFrame(frame);
+		};
+		pnlPlotFrame = requestAnimationFrame(frame);
 	};
 
 	const drawPnl = (points, demo) => {
@@ -6320,10 +6390,7 @@ else window.setTimeout(paintIcons, 200);
 			span ? 8 + (Date.parse(invested[i].day) - start) / span * 384 : 200,
 			y(v),
 		]);
-		const [endX, endY] = coordinates.at(-1);
-		const path = coordinates.map(([x, cy], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${cy.toFixed(2)}`).join(' ');
 		const zero = y(0);
-		const changed = pnlResult?.value !== value || pnlResult?.tone !== tone;
 		pnlResult = { value, tone, percent, context, coordinates, zero };
 		pnlCard.dataset.tone = tone;
 		pnlPercent.textContent = percent;
@@ -6332,17 +6399,7 @@ else window.setTimeout(paintIcons, 200);
 		pnlDemoSwitch.hidden = !demo;
 		if (pnlContext.textContent !== context) pnlContext.textContent = context;
 		setPnlAmount(value);
-		if (changed) playWindEffect(pnlCard, [{ opacity: .84 }, { opacity: 1 }], 240);
-		pnlPlot.innerHTML = `<svg viewBox="0 0 400 96" preserveAspectRatio="none" role="img" aria-label="Результат открытых позиций по снимкам за выбранный период">
-			<defs><linearGradient id="pnl-fill" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".27"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
-			<path class="pnl-zero" d="M0 ${zero}H400"/>
-			<path class="pnl-area" d="${path} L${endX} 96 L${coordinates[0][0]} 96 Z" fill="url(#pnl-fill)"/>
-			<path class="pnl-line" d="${path}" pathLength="1"/>
-			<circle class="pnl-marker" cx="${endX}" cy="${endY}" r="3"/>
-		</svg>`;
-		drawPlotLine(pnlPlot.querySelector('.pnl-line'), 390);
-		revealPlot(pnlPlot.querySelector('.pnl-area'), 350);
-		settlePlotPoint(pnlPlot.querySelector('.pnl-marker'), 440);
+		renderPnlPlot(coordinates, zero);
 	};
 
 	pnlDemoSwitch.addEventListener('click', event => {
@@ -6469,7 +6526,12 @@ else window.setTimeout(paintIcons, 200);
 			return;
 		}
 		if (!authed()) { chart.replaceChildren(); resetPnl('Войди в аккаунт, чтобы увидеть результат.'); return; }
-		resetPnl('Загружаем данные портфеля…');
+		if (pnlResult) {
+			pnlContext.textContent = 'Загружаем данные за выбранный период…';
+			pnlSave.disabled = true;
+		} else {
+			resetPnl('Загружаем данные портфеля…');
+		}
 		const isCurrent = () => historyRevision === request && authed() && document.body.classList.contains('show-investment-profile');
 		try {
 			const data = await WindApi(`/invest/history?days=${days}`);
