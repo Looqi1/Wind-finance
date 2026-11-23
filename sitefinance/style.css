@@ -4311,6 +4311,7 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 .pnl-card {
 	--pnl-accent: #d9c8ff;
 	--pnl-glow: #7461b951;
+	--card-wind-color: var(--pnl-accent);
 	position: relative;
 	isolation: isolate;
 	overflow: hidden;
@@ -4366,23 +4367,7 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 #portfolio-pnl #portfolio-chart-range button.active { color: var(--pnl-accent); background: #29354d; }
 
 @media (prefers-reduced-motion: no-preference) {
-	.pnl-card.pnl-in-view:has(.pnl-line)::after {
-		position: absolute;
-		z-index: -1;
-		inset: 12% 0 auto auto;
-		width: min(76%, 500px);
-		height: 46%;
-		background: radial-gradient(ellipse, var(--pnl-glow), transparent 69%);
-		animation: pnl-wind-loop 7s ease-in-out infinite;
-		pointer-events: none;
-		content: '';
-	}
-	.pnl-card.pnl-in-view .pnl-marker { animation: pnl-marker-loop 2.8s .85s ease-in-out infinite; }
-	@keyframes pnl-wind-loop {
-		0%, 100% { opacity: 0; transform: translate3d(26%, 18%, 0) scale(.85); }
-		44% { opacity: .95; }
-		76% { opacity: 0; transform: translate3d(-20%, -26%, 0) scale(1.16); }
-	}
+	.pnl-card.card-wind-visible .pnl-marker { animation: pnl-marker-loop 1.7s .42s ease-in-out infinite; }
 	@keyframes pnl-marker-loop {
 		0%, 100% { opacity: 1; transform: scale(1); }
 		50% { opacity: .65; transform: scale(1.5); }
@@ -4481,35 +4466,27 @@ body :is(.goal-card.done, .gh-daily.done) { --card-wind-glow: #265453; border-co
 	body:where(:has(#auth-gate[hidden])) .card-wind-visible::after {
 		position: absolute;
 		z-index: -1;
-		inset: 14% 5%;
-		border-radius: inherit;
-		background:
-			repeating-radial-gradient(ellipse 255px 61px at 88% 105%, transparent 0 13px, var(--section-light) 14px, transparent 15px 22px),
-			radial-gradient(ellipse at 75% 45%, var(--card-wind-glow), transparent 72%);
-		mask-image: radial-gradient(ellipse at 68% 50%, #000, transparent 69%);
-		animation: card-wind-loop 9s ease-in-out infinite;
+		inset: auto 10% 18% auto;
+		width: min(72%, 380px);
+		height: min(54%, 210px);
+		background: radial-gradient(ellipse at center,
+			color-mix(in srgb, var(--card-wind-color, var(--section-light)) 47%, transparent), transparent 69%);
+		animation: card-wind-loop 3.8s ease-in-out infinite;
 		pointer-events: none;
 		content: '';
 	}
 	#game-tabs > .card-wind-visible:not(.active)::after { display: block; }
-	.card-wind-visible:nth-child(even)::after { animation-delay: -4.5s; }
+	.card-wind-visible:nth-child(even)::after { animation-delay: -1.9s; }
 	body:not(.agent-open) #news .card-wind-visible::after,
 	body.agent-open .app .card-wind-visible:not(#news *)::after,
 	body.agent-open .agent-pet-face::before,
 	body.agent-open .agent-pet-face::after,
 	body.agent-open :is(.agent-pet-face, .alert-live i, .alerts-icon svg),
+	body:is(.agent-open, :has(.modal:not([hidden]), .wind-welcome[open])) .app .pnl-marker,
 	body:has(.modal:not([hidden]), .wind-welcome[open]) .app .card-wind-visible::after { animation-play-state: paused; }
 	@keyframes card-wind-loop {
-		0%, 100% { opacity: .08; transform: translate3d(-4%, 3%, 0); }
-		50% { opacity: .32; transform: translate3d(4%, -4%, 0); }
-	}
-}
-@media (prefers-reduced-motion: no-preference) and (pointer: coarse) {
-	body .card-wind-visible::after {
-		inset: auto 5% 12% auto;
-		width: min(74%, 380px);
-		height: min(64%, 240px);
-		background: radial-gradient(ellipse, var(--card-wind-glow), transparent 70%);
-		mask-image: none;
+		0% { opacity: .14; transform: translate3d(-12%, 15%, 0) rotate(-17deg) scale(.9); }
+		45% { opacity: .68; }
+		100% { opacity: 0; transform: translate3d(12%, -15%, 0) rotate(-17deg) scale(1.12); }
 	}
 }

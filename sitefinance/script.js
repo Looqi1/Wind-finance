@@ -1805,10 +1805,10 @@ const renderRateHistory = () => {
 	for (const marker of [end, halo]) {
 		marker.setAttribute('cx', x);
 		marker.setAttribute('cy', y);
-		settlePlotPoint(marker, 850);
+		settlePlotPoint(marker, 490);
 	}
-	drawPlotLine(line, 690);
-	revealPlot(area, 780);
+	drawPlotLine(line, 400);
+	revealPlot(area, 445);
 	document.getElementById('rate-y-high').textContent = `${formatMoney(high)} ₽`;
 	document.getElementById('rate-y-low').textContent = high === low ? '' : `${formatMoney(low)} ₽`;
 	document.getElementById('rate-history-summary').textContent =
@@ -2642,7 +2642,7 @@ const loadCryptoCandles = async () => {
 		cryptoPriceLabel.textContent = `${formatCryptoPrice(candles[candles.length - 1].close)} USDT`;
 		cryptoUpdated.textContent = `Котировки Bybit · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 		cryptoChart.timeScale().fitContent();
-		revealPlot(cryptoChartElement, 640);
+		revealPlot(cryptoChartElement, 440);
 		connectBybitStream(symbol, interval);
 	} catch (error) {
 		if (request !== streamVersion) return;
@@ -4187,7 +4187,7 @@ if (inTelegram) {
 (() => {
 	if (!('IntersectionObserver' in window)) return;
 
-	const selector = '.card:not(.wallet-bar), .modal-card, .crypto-purchase, .news-lead, .news-rows, .game-hub > *, .game-tabs > button, .edu-progress';
+	const selector = '.card, .pnl-card, .modal-card, .crypto-purchase, .news-lead, .news-rows, .game-hub > *, .game-tabs > button, .edu-progress';
 	const observer = new IntersectionObserver((entries) => {
 		for (const { target, isIntersecting } of entries) {
 			target.classList.toggle('card-wind-visible', isIntersecting);
@@ -6259,10 +6259,6 @@ else window.setTimeout(paintIcons, 200);
 	const pnlPlot = document.getElementById('pnl-plot');
 	const pnlSave = document.getElementById('pnl-save');
 	const pnlDemoSwitch = document.getElementById('pnl-demo-switch');
-	if ('IntersectionObserver' in window) {
-		new IntersectionObserver(([entry]) => pnlCard.classList.toggle('pnl-in-view', entry.isIntersecting),
-			{ threshold: 0.15 }).observe(pnlCard);
-	}
 	const pnlColors = { gain: '#8ff0cf', loss: '#ffadb8', flat: '#d9c8ff' };
 	const pnlNumber = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2, signDisplay: 'exceptZero' });
 	const pnlMoney = (value) => `${pnlNumber.format(value).replace(/^-/, '−')} ₽`;
@@ -6279,9 +6275,10 @@ else window.setTimeout(paintIcons, 200);
 		const from = pnlDisplayed;
 		const began = performance.now();
 		const tick = (time) => {
-			const progress = windMotion.matches ? Math.min(1, (time - began) / 500) : 1;
+			const progress = windMotion.matches ? Math.min(1, (time - began) / 310) : 1;
 			pnlDisplayed = from + (value - from) * (1 - (1 - progress) ** 3);
-			pnlAmount.textContent = pnlMoney(progress === 1 ? value : Math.round(pnlDisplayed * 100) / 100);
+			const text = pnlMoney(progress === 1 ? value : pnlDisplayed);
+			if (pnlAmount.textContent !== text) pnlAmount.textContent = text;
 			if (progress < 1) pnlFrame = requestAnimationFrame(tick);
 		};
 		pnlFrame = requestAnimationFrame(tick);
@@ -6335,7 +6332,7 @@ else window.setTimeout(paintIcons, 200);
 		pnlDemoSwitch.hidden = !demo;
 		if (pnlContext.textContent !== context) pnlContext.textContent = context;
 		setPnlAmount(value);
-		if (changed) playWindEffect(pnlCard, [{ opacity: .72 }, { opacity: 1 }], 420);
+		if (changed) playWindEffect(pnlCard, [{ opacity: .84 }, { opacity: 1 }], 240);
 		pnlPlot.innerHTML = `<svg viewBox="0 0 400 96" preserveAspectRatio="none" role="img" aria-label="Результат открытых позиций по снимкам за выбранный период">
 			<defs><linearGradient id="pnl-fill" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".27"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
 			<path class="pnl-zero" d="M0 ${zero}H400"/>
@@ -6343,9 +6340,9 @@ else window.setTimeout(paintIcons, 200);
 			<path class="pnl-line" d="${path}" pathLength="1"/>
 			<circle class="pnl-marker" cx="${endX}" cy="${endY}" r="3"/>
 		</svg>`;
-		drawPlotLine(pnlPlot.querySelector('.pnl-line'), 740);
-		revealPlot(pnlPlot.querySelector('.pnl-area'), 680);
-		settlePlotPoint(pnlPlot.querySelector('.pnl-marker'), 800);
+		drawPlotLine(pnlPlot.querySelector('.pnl-line'), 390);
+		revealPlot(pnlPlot.querySelector('.pnl-area'), 350);
+		settlePlotPoint(pnlPlot.querySelector('.pnl-marker'), 440);
 	};
 
 	pnlDemoSwitch.addEventListener('click', event => {
@@ -6446,10 +6443,10 @@ else window.setTimeout(paintIcons, 200);
 		playWindEffect(chart.querySelector('.pf-cost'), [
 			{ clipPath: 'inset(0 100% 0 0) view-box', opacity: .35 },
 			{ clipPath: 'inset(0 0 0 0) view-box', opacity: 1 },
-		], 445);
-		drawPlotLine(chart.querySelector('.pf-value'), 820);
-		revealPlot(chart.querySelector('.pf-area'), 875);
-		chart.querySelectorAll('.pf-end, .plot-halo').forEach(marker => settlePlotPoint(marker, 950));
+		], 300);
+		drawPlotLine(chart.querySelector('.pf-value'), 440);
+		revealPlot(chart.querySelector('.pf-area'), 460);
+		chart.querySelectorAll('.pf-end, .plot-halo').forEach(marker => settlePlotPoint(marker, 510));
 		const fmt = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
 		const first = new Date(points[0].day).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 		const legend = mk('div', 'portfolio-chart-legend');
