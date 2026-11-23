@@ -221,6 +221,29 @@ def test_pnl_wind_loop_and_chart_transition_are_continuous(open_app):
     assert not errors
 
 
+def test_investments_backdrop_stays_aligned_when_scrolling(open_app):
+    page, _, errors = open_app(width=390, backend=False)
+    page.emulate_media(reduced_motion="no-preference")
+    page.get_by_role("button", name="Попробовать демо").click()
+    page.evaluate("""() => {
+        document.querySelector('.nav a[href="#converter"]').click();
+        document.querySelector('.nav a[href="#investments"]').click();
+    }""")
+
+    backdrop = page.locator(".section-backdrop")
+    measure = """node => ({
+        top: node.getBoundingClientRect().top,
+        offset: getComputedStyle(node, '::before').transform,
+        fade: node.getAnimations().some(animation => !animation.animationName),
+    })"""
+    assert backdrop.evaluate(measure) == {"top": 0, "offset": "none", "fade": False}
+    assert backdrop.evaluate("node => getComputedStyle(node, '::after').animationDirection") == "alternate"
+    page.evaluate("() => window.scrollTo(0, 500)")
+    page.wait_for_function("() => window.scrollY > 0")
+    assert backdrop.evaluate(measure) == {"top": 0, "offset": "none", "fade": False}
+    assert not errors
+
+
 def test_demo_goal_moves_only_virtual_money_and_survives_reload(open_app):
     page, requests, errors = open_app(width=320)
     page.get_by_role("button", name="Попробовать демо").click()

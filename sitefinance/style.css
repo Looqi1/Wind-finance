@@ -3595,6 +3595,12 @@ body.dark-theme {
 		linear-gradient(var(--scene-angle), transparent 24%, color-mix(in srgb, var(--scene-glow) 44%, transparent) 44%, transparent 68%);
 	content: '';
 }
+body[data-view="investments"] .section-backdrop {
+	bottom: auto;
+	height: 100vh;
+	height: 100lvh;
+	background: radial-gradient(ellipse 85% 75% at var(--scene-origin), var(--scene-glow), transparent) var(--scene-base);
+}
 body[data-view="dashboard"] {
 	--scene-base: #eee5f6;
 	--scene-glow: #f2cde3;
@@ -3624,7 +3630,18 @@ body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]))) .section-backdro
 body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%, #0f151a); }
 @media (prefers-reduced-motion: no-preference) {
 	body { transition: background-color .6s ease, color .2s ease; }
-	body:not([data-view="dashboard"]) .section-backdrop::before { animation: section-breeze 16s ease-in-out infinite alternate; }
+	body:not([data-view="dashboard"], [data-view="investments"]) .section-backdrop::before {
+		animation: section-breeze 16s ease-in-out infinite alternate;
+	}
+	body[data-view="investments"] .section-backdrop::after {
+		position: absolute;
+		inset: 34% auto auto 5%;
+		width: min(48vw, 380px);
+		aspect-ratio: 2;
+		background: radial-gradient(ellipse, var(--section-light), transparent 70%);
+		animation: card-wind-loop 4s ease-in-out infinite alternate;
+		content: '';
+	}
 	body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]), .wind-welcome[open])) .section-backdrop::after {
 		position: absolute;
 		inset: 10% 5% auto auto;
@@ -3641,6 +3658,7 @@ body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%,
 		100% { opacity: 0; transform: translate3d(-24%, 30%, 0); }
 	}
 	body.agent-open .section-backdrop::before,
+	body[data-view="investments"]:is(.agent-open, :has(.wind-welcome[open], .modal:not([hidden]))) .section-backdrop::after,
 	body:has(.wind-welcome[open], .modal:not([hidden])) .section-backdrop::before { animation-play-state: paused; }
 	@keyframes section-breeze {
 		from { transform: translate3d(-1.4%, -.8%, 0) scale(1); }
@@ -3648,7 +3666,10 @@ body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%,
 	}
 }
 @media (prefers-reduced-motion: no-preference) and (pointer: coarse) {
-	body:not([data-view="dashboard"]) .section-backdrop::before { animation-iteration-count: 1; animation-duration: 2s; }
+	body:not([data-view="dashboard"], [data-view="investments"]) .section-backdrop::before {
+		animation-iteration-count: 1;
+		animation-duration: 2s;
+	}
 }
 .nav a[href="#dashboard"] { --section-accent: #5a45b6; --section-soft: #ece6ff; --section-light: #c9b8ff; }
 .nav a:not(.active) .nav-icon { color: var(--muted); }
@@ -3812,15 +3833,8 @@ body.dark-theme .market-pair:has(:checked) { background: #eeae5726; }
 @keyframes breeze-chart-bars { from { transform: scaleY(.05); opacity: .2; } }
 @keyframes breeze-reveal { from { opacity: .45; transform: translate(0,9px); } }
 @keyframes breeze-info { 0% { opacity: .4; translate: -5px 3px; } 100% { opacity: 1; } }
-@keyframes breeze-portfolio {
-	from { opacity: .11; transform: translateX(-13%) rotate(-17deg); }
-	50% { opacity: 1; }
-	to { transform: translateX(0) rotate(-24deg); }
-}
-
 @media (prefers-reduced-motion: no-preference) {
 	.wallet-bar.in-view::before { animation: breeze-contours 3.3s ease-out both; }
-	.invest-overview.in-view::before { animation: breeze-portfolio 1.7s ease-out; }
 	.nav a.active .nav-icon, .wallet-bar.in-view .wallet-symbol { animation: breeze-icon .57s cubic-bezier(.2,.75,.21,1); }
 	.auth-sparkline i { transform-origin: bottom; animation: breeze-chart-bars .68s cubic-bezier(.24,.68,.24,1) backwards; }
 	.auth-sparkline i:nth-child(2n) { animation-delay: .12s; }

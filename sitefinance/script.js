@@ -836,9 +836,13 @@ const setAppView = (view) => {
 	paintViewTitle(nextView);
 	if (changed) {
 		window.scrollTo({ top: 0, behavior: 'instant' });
-		playWindEffect(sectionBackdrop, [
-			{ opacity: .2 }, { opacity: 1 },
-		], 900);
+		if (nextView === 'investments') {
+			windEffects.get(sectionBackdrop)?.cancel();
+		} else {
+			playWindEffect(sectionBackdrop, [
+				{ opacity: .2 }, { opacity: 1 },
+			], 900);
+		}
 		playWindEffect(topbarTitle, [
 			{ opacity: .35, translate: '-10px 4px' }, { opacity: 1, translate: '0 0' },
 		], 385);
