@@ -529,7 +529,6 @@ body.dark-theme .chart-hover-tooltip { background: rgba(18,27,24,.96); border-co
 	background: linear-gradient(105deg, transparent, rgba(255,255,255,.48), transparent);
 	content: '';
 	transform: skewX(-18deg);
-	animation: actionShimmer 3.4s ease-in-out infinite;
 	pointer-events: none;
 }
 .modal-submit > *,
@@ -539,6 +538,13 @@ body.dark-theme .chart-hover-tooltip { background: rgba(18,27,24,.96); border-co
 .converter-submit > * {
 	position: relative;
 	z-index: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+	.modal-submit::after,
+	.trade-button::after,
+	.wallet-actions .button::after,
+	.add-asset-button::after,
+	.converter-submit::after { animation: actionShimmer 3.4s ease-in-out infinite; }
 }
 @keyframes actionShimmer {
 	0%, 35% { transform: translateX(0) skewX(-18deg); opacity: 0; }
@@ -2580,8 +2586,11 @@ body.dark-theme .news-read { color: #0d1714; }
 	position: absolute;
 	z-index: -1;
 	inset: 0 0 0 44%;
-	background: url("assets/crypto-compass.svg?v=2") right center / contain no-repeat;
+	background: var(--crypto-compass-art, none) right center / contain no-repeat;
 	pointer-events: none;
+}
+body[data-view="crypto"]:not(:has(.auth-gate:not([hidden]))) {
+	--crypto-compass-art: url("assets/crypto-compass.svg?v=2");
 }
 .bp-main { max-width: 54%; }
 .bybit-partner-label { display: inline-flex; align-items: center; gap: 9px; color: #c5ebd8; font-size: .88rem; font-weight: 650; letter-spacing: .08em; }
@@ -3379,7 +3388,9 @@ body:has(.wind-welcome[open]) { overflow: hidden; }
 @media(max-width:420px){#investments .inv-id>.asset-icon { display:none; } #investments .inv-title h3 { overflow-wrap:anywhere; } }
 
 @media (prefers-reduced-motion: reduce) {
-	.crypto-compass { background-image: url("assets/crypto-compass-still.svg?v=2"); }
+	body[data-view="crypto"]:not(:has(.auth-gate:not([hidden]))) {
+		--crypto-compass-art: url("assets/crypto-compass-still.svg?v=2");
+	}
 }
 
 .plus-lab { display:grid; gap:10px; margin:14px 0; }
@@ -3536,7 +3547,7 @@ body[data-view="dashboard"] .section-backdrop {
 		radial-gradient(ellipse 95vw 75vh at 12% 81%, var(--scene-glow), transparent),
 		var(--scene-base);
 }
-body[data-view="dashboard"] .section-backdrop::before {
+body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]))) .section-backdrop::before {
 	background: url("assets/wind-overview-current.webp") 78% center / cover no-repeat;
 	mask-image: linear-gradient(144deg, transparent 6%, #0009 32%, black 64%);
 	filter: grayscale(1);
@@ -3547,7 +3558,22 @@ body[data-view="dashboard"] .section-backdrop::before {
 body.dark-theme .sidebar { background: color-mix(in srgb, var(--scene-base) 74%, #0f151a); }
 @media (prefers-reduced-motion: no-preference) {
 	body { transition: background-color .6s ease, color .2s ease; }
-	.section-backdrop::before { animation: section-breeze 16s ease-in-out infinite alternate; }
+	body:not([data-view="dashboard"]) .section-backdrop::before { animation: section-breeze 16s ease-in-out infinite alternate; }
+	body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]), .wind-welcome[open])) .section-backdrop::after {
+		position: absolute;
+		inset: 10% 5% auto auto;
+		width: min(40vw, 420px);
+		aspect-ratio: 2 / 1;
+		background: radial-gradient(ellipse, var(--overview-lavender), transparent 70%);
+		opacity: 0;
+		animation: overview-breeze 6s ease-out;
+		content: '';
+	}
+	@keyframes overview-breeze {
+		0% { opacity: 0; transform: translate3d(10%, -14%, 0); }
+		30% { opacity: .48; }
+		100% { opacity: 0; transform: translate3d(-24%, 30%, 0); }
+	}
 	body:has(.auth-gate:not([hidden]), .wind-welcome[open]) .section-backdrop::before { animation-play-state: paused; }
 	@keyframes section-breeze {
 		from { transform: translate3d(-1.4%, -.8%, 0) scale(1); }
@@ -3568,9 +3594,12 @@ body.dark-theme .topbar .eyebrow { color: var(--section-light); }
 	--wind-white: #f7f6ff;
 	--wind-mint: #d5d5ff;
 	background: linear-gradient(92deg, #161636fa 2%, #171938da 32%, #1a1a3d42 70%, #27235232),
-		url("assets/wind-airstream.webp") 69% center / cover no-repeat #202047;
+		var(--wallet-art, none) 69% center / cover no-repeat #202047;
 	border-color: #7065ac;
 	box-shadow: 0 14px 32px #23164c32;
+}
+body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]))) {
+	--wallet-art: url("assets/wind-airstream.webp");
 }
 .wallet-bar::before {
 	background: repeating-radial-gradient(ellipse at center, transparent 0 16px, #d2e2ff3d 17px 18px, transparent 19px 27px);

@@ -485,7 +485,7 @@ def test_pages_demo_shows_dated_quotes_when_backend_is_unconfigured(open_app):
     expect(page.locator("#rate-history-figure")).to_be_visible()
     page.get_by_role("button", name="30 дней").click()
     assert len(page.locator("#rate-history-line").get_attribute("points").split()) > 2
-    assert not any(path.startswith("/market/") for _, path, _, _ in requests)
+    assert not any(path.startswith("/market/") or path == "/wallet/exchange/quote" for _, path, _, _ in requests)
     assert not errors
 
 

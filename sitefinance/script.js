@@ -5797,6 +5797,10 @@ if (inTelegram) {
 		const BASE = 1.0, PLUS_FEE = 0.6;
 		let serverFee = null;
 		const loadQuote = async () => {
+			if (!apiConfigured || isDemoPreview()) {
+				serverFee = null;
+				return;
+			}
 			try { serverFee = Number((await WindApi('/wallet/exchange/quote')).fee_pct); } catch (e) { serverFee = null; }
 			if (typeof updateConverter === 'function') updateConverter();
 		};
@@ -5804,7 +5808,7 @@ if (inTelegram) {
 		document.addEventListener('wind-plus-change', loadQuote);
 		const parts = () => {
 			const plusOn = document.body.classList.contains('plus-active');
-			const fee = Number.isFinite(serverFee) && serverFee > 0 ? serverFee : (plusOn ? PLUS_FEE : BASE);
+			const fee = !isDemoPreview() && Number.isFinite(serverFee) && serverFee > 0 ? serverFee : (plusOn ? PLUS_FEE : BASE);
 			return { fee, plus: plusOn ? BASE - fee : 0, game: 0 };
 		};
 		window.WindFee = { rate: () => parts().fee, parts };
