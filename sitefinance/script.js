@@ -2588,12 +2588,12 @@ const createCryptoChart = () => {
 		return;
 	}
 
-	const grid = { color: '#3e4560' };
-	const borderColor = '#606c89';
+	const grid = { color: '#4a392b' };
+	const borderColor = '#796046';
 	cryptoChart = LightweightCharts.createChart(cryptoChartElement, {
 		width: cryptoChartElement.clientWidth,
 		height: cryptoChartElement.clientHeight,
-		layout: { background: { color: '#192338' }, textColor: '#e5d6c6' },
+		layout: { background: { color: '#2a211a' }, textColor: '#f0deca' },
 		grid: { vertLines: grid, horzLines: grid },
 		rightPriceScale: { borderColor },
 		timeScale: { borderColor, timeVisible: true, secondsVisible: false },
@@ -6359,8 +6359,8 @@ else window.setTimeout(paintIcons, 200);
 		if (!ctx) return;
 		const accent = pnlColors[result.tone];
 		const background = ctx.createLinearGradient(0, 0, 1200, 720);
-		background.addColorStop(0, '#11162d');
-		background.addColorStop(1, result.tone === 'loss' ? '#472237' : '#173e44');
+		background.addColorStop(0, '#102825');
+		background.addColorStop(1, result.tone === 'loss' ? '#472237' : '#203e37');
 		ctx.fillStyle = background;
 		ctx.fillRect(0, 0, 1200, 720);
 		ctx.fillStyle = '#f1efff';

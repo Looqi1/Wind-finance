@@ -4247,7 +4247,7 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 	padding: clamp(15px, 3vw, 30px);
 	border: 1px solid #6e7b9c;
 	border-radius: 22px;
-	background: radial-gradient(ellipse at 100% 0%, var(--pnl-glow), transparent 66%), linear-gradient(135deg, #12182e, #1c263c);
+	background: radial-gradient(ellipse at 100% 0%, var(--pnl-glow), transparent 66%), linear-gradient(135deg, #102825, #203e37);
 	color: #f3f2ff;
 }
 .pnl-card[data-tone="gain"] { --pnl-accent: #8ff0cf; --pnl-glow: #348e855e; }
@@ -4257,7 +4257,8 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 	z-index: -1;
 	inset: 0;
 	opacity: .35;
-	background: url("assets/wind-airstream.webp") right 58% / cover no-repeat;
+	background: url("assets/wind-airstream.webp") right 58% / cover no-repeat #236257;
+	background-blend-mode: luminosity;
 	mask-image: linear-gradient(120deg, transparent 18%, #000);
 	pointer-events: none;
 	content: '';
@@ -4317,18 +4318,29 @@ body.dark-theme .an-overview .an-verdict .neu { color: #ffd5a1; }
 	}
 }
 
-/* Карточки используют палитру PnL с акцентом текущей вкладки. */
+/* Поверхности и воздушные линии берут цвета текущей вкладки. */
 body:has(#auth-gate[hidden]) { --card-wind-art: url("assets/wind-airstream.webp"); }
+
+body:is([data-view="investments"], [data-view="crypto"], [data-view="converter"], [data-view="game"], [data-view="settings"]) {
+	--card-wind-surface: color-mix(in srgb, var(--scene-night) 69%, var(--scene-night-glow));
+	--card-wind-panel: color-mix(in srgb, var(--scene-night) 85%, var(--scene-night-glow));
+	--card-wind-border: color-mix(in srgb, var(--scene-night-glow) 63%, var(--section-light));
+	--card-wind-shade: linear-gradient(106deg,
+		color-mix(in srgb, var(--scene-night) 98%, transparent) 12%,
+		color-mix(in srgb, var(--card-wind-surface) 93%, transparent) 55%,
+		color-mix(in srgb, var(--scene-night-glow) 57%, transparent));
+	--card-wind-blend: normal, normal, luminosity;
+}
 
 body :is(.card:not(.wallet-bar), .modal .modal-card, .crypto-purchase,
 	.news-lead, .news-rows, .game-hub > *, .game-tabs > button:not(.active), .edu-progress) {
 	--ink: #f3f4ff;
 	--muted: #c0cbe0;
-	--card: #232d44;
-	--soft-panel: #1c253b;
-	--paper: #1a2337;
-	--line: #53617d;
-	--row-line: #64749458;
+	--card: var(--card-wind-surface, #232d44);
+	--soft-panel: var(--card-wind-panel, #1c253b);
+	--paper: var(--card-wind-panel, #1a2337);
+	--line: var(--card-wind-border, #53617d);
+	--row-line: color-mix(in srgb, var(--card-wind-border, #647494) 34.5%, transparent);
 	--bg-shell: var(--soft-panel);
 	--green: #99ead0;
 	--coral: #ffadba;
@@ -4341,15 +4353,16 @@ body :is(.card:not(.wallet-bar), .modal .modal-card, .crypto-purchase,
 	--section-soft: var(--section-tint);
 	--section-tint: color-mix(in srgb, var(--section-light) 12%, var(--card));
 	--section-border: color-mix(in srgb, var(--section-light) 20%, var(--line));
-	--card-wind-glow: color-mix(in srgb, var(--section-accent) 38%, #212b46);
+	--card-wind-glow: color-mix(in srgb, var(--section-accent) 38%, var(--card-wind-surface, #212b46));
 	position: relative;
 	isolation: isolate;
 	border-color: var(--section-border);
 	background:
-		linear-gradient(106deg, #14192efc 12%, #192138ed 55%, #1a263ca8),
+		var(--card-wind-shade, linear-gradient(106deg, #14192efc 12%, #192138ed 55%, #1a263ca8)),
 		radial-gradient(ellipse at top right, var(--card-wind-glow), transparent 72%),
 		var(--card-wind-art, none) right center / cover no-repeat,
-		#202c44;
+		var(--card-wind-surface, #202c44);
+	background-blend-mode: var(--card-wind-blend, normal);
 	color: var(--ink);
 	color-scheme: dark;
 	box-shadow: 0 9px 22px #1722382d;
