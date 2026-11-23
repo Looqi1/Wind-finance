@@ -311,7 +311,17 @@ def test_telegram_unavailable_then_retry(open_app):
 def test_demo_plus_is_a_preview_without_checkout(open_app):
     page, requests, errors = open_app(width=320)
     page.get_by_role("button", name="Попробовать демо").click()
-    page.get_by_role("button", name="Пример Wind Plus").click()
+    trigger = page.get_by_role("button", name="Пример Wind Plus")
+    trigger.press("Enter")
+    modal = page.get_by_role("dialog", name="Анализ рынка и ценовые уведомления")
+    expect(modal.get_by_role("button", name="Закрыть")).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(modal.locator("#plus-show-analysis")).to_be_focused()
+    expect(modal.locator("#plus-show-analysis")).to_be_in_viewport()
+    page.keyboard.press("Escape")
+    expect(modal).to_be_hidden()
+    expect(trigger).to_be_focused()
+    trigger.click()
     expect(page.locator("#plus-preview")).to_be_visible()
     expect(page.locator("#plus-preview")).to_contain_text("RSI 56")
     preset = page.locator('.lab-scenarios [data-lab-change="10"]')
@@ -427,22 +437,23 @@ def test_welcome_opens_full_screen_only_after_successful_sign_in(open_app):
     assert not errors
 
 
-def test_welcome_reappears_after_exiting_and_entering_demo(open_app):
+def test_inline_greeting_reappears_after_exiting_and_entering_demo(open_app):
     page, _, errors = open_app(welcome=True)
-    welcome = page.get_by_role("dialog", name="Привет, я Винд!")
-    # The old version marked the greeting as seen before the visitor entered.
-    page.evaluate("sessionStorage.setItem('wind_welcome_seen', '1')")
+    greeting = page.locator("#demo-greeting")
+    full_screen = page.locator("#wind-welcome")
     page.get_by_role("button", name="Попробовать демо").click()
-    expect(page.locator("#auth-gate")).to_be_hidden()
-    expect(welcome).to_be_visible()
-    welcome.get_by_role("button", name="Продолжить").click()
-    expect(welcome).to_be_hidden()
-    page.locator(".profile-trigger").click()
+    expect(greeting).to_be_visible()
+    expect(full_screen).to_be_hidden()
+    expect(page.locator("#sim-banner")).to_be_hidden()
+    greeting.get_by_role("button", name="Закрыть приветствие").click()
+    expect(greeting).to_be_hidden()
+    expect(page.get_by_role("button", name="Помощник Винд")).to_be_focused()
+    page.get_by_role("button", name="Меню профиля").click()
     page.locator(".logout").click()
     expect(page.locator("#auth-gate")).to_be_visible()
-    expect(welcome).to_be_hidden()
+    expect(greeting).to_be_hidden()
     page.get_by_role("button", name="Попробовать демо").click()
-    expect(welcome).to_be_visible()
+    expect(greeting).to_be_visible()
     assert not errors
 
 
@@ -478,7 +489,12 @@ def test_market_widgets_are_loaded_when_opened(open_app):
 def test_pages_demo_shows_dated_quotes_when_backend_is_unconfigured(open_app):
     page, requests, errors = open_app(backend=False)
     expect(page.locator("#auth-notice")).to_contain_text("после подключения сервера")
-    page.get_by_role("button", name="Попробовать демо").click()
+    expect(page.locator("#auth-form")).to_be_hidden()
+    demo = page.get_by_role("button", name="Попробовать демо")
+    expect(demo).to_be_in_viewport(ratio=1)
+    demo.click()
+    expect(page.locator(".topbar-actions .agent-pet")).to_be_visible()
+    assert page.get_by_role("button", name="Уведомления").bounding_box()["height"] >= 44
     expect(page.locator("#rate-history-figure")).to_be_visible()
     expect(page.locator("#market-source")).to_contain_text("ЦБ РФ ·")
     page.get_by_role("button", name="EUR / RUB").click()
@@ -494,7 +510,10 @@ def test_mobile_crypto_pair_controls_trade_alert_and_partner_link(open_app):
     page.get_by_role("button", name="Попробовать демо").click()
     page.locator('.nav a[href="#crypto"]').click()
     signup = page.locator('#bybit-partner [data-bybit-signup]')
-    expect(signup).to_be_in_viewport()
+    expect(signup).to_be_hidden()
+    page.get_by_role("button", name="За рубли · P2P").click()
+    expect(signup).to_be_visible()
+    page.get_by_role("button", name="Спот в Wind").click()
     assert signup.get_attribute("href").startswith("https://www.bybit.com/invite?ref=")
     page.locator(".market-pair").filter(has_text="ETH").click()
     expect(page.locator('#crypto-pair input[value="ETHUSDT"]')).to_be_checked()
@@ -583,10 +602,7 @@ def test_agent_uses_wind_motion_while_fetching_news(open_app):
     pending = []
     page.route("**/market/news", lambda route: pending.append(route))
     page.get_by_role("button", name="Попробовать демо").click()
-    robot = page.locator(".welcome-robot")
-    expect(robot).to_be_visible()
-    assert "wind-arrival" in robot.evaluate("node => getComputedStyle(node).animationName")
-    page.get_by_role("button", name="Продолжить").click()
+    expect(page.locator("#demo-greeting")).to_be_visible()
     page.get_by_role("button", name="Помощник Винд").click()
     expect(page.locator("#news")).to_have_attribute("aria-busy", "true")
     body = page.locator(".agent-character-body")

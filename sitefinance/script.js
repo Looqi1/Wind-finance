@@ -1,9 +1,14 @@
 const tg = window.Telegram?.WebApp;
 const inTelegram = Boolean(tg?.initData);
 document.documentElement.classList.toggle('telegram-app', inTelegram);
-if (inTelegram) {
-	document.querySelector('.topbar-actions').prepend(document.querySelector('.agent-pet'));
-}
+const agentDock = window.matchMedia('(max-width: 620px)');
+const placeAgentButton = () => {
+	const button = document.querySelector('.agent-pet');
+	if (inTelegram || agentDock.matches) document.querySelector('.topbar-actions').prepend(button);
+	else document.querySelector('.agent-backdrop').before(button);
+};
+placeAgentButton();
+agentDock.addEventListener('change', placeAgentButton);
 
 const onAppView = (views, change) => {
 	const gate = document.getElementById('auth-gate');
@@ -123,6 +128,7 @@ const successMessage = document.querySelector('.success-message');
 
 const closeModal = (modal) => {
 	if (modal) {
+		if (modal instanceof HTMLDialogElement && modal.open) modal.close();
 		modal.hidden = true;
 	}
 };
@@ -136,9 +142,17 @@ const openTriggeredModal = (trigger) => {
 	const modal = document.getElementById(id);
 	if (modal) {
 		modal.hidden = false;
-		if (id === 'subscription-modal') modal.querySelector('.plus-modal').scrollTop = 0;
+		if (id === 'subscription-modal' && !modal.open) {
+			trigger.focus({ preventScroll: true });
+			modal.showModal();
+			modal.querySelector('.plus-modal').scrollTop = 0;
+		}
 	}
 };
+document.getElementById('subscription-modal').addEventListener('cancel', (event) => {
+	event.preventDefault();
+	closeModal(event.currentTarget);
+});
 modalTriggers.forEach((trigger) => trigger.addEventListener('click', () => openTriggeredModal(trigger)));
 // кнопки, которые появляются позже (например, в пустом портфеле)
 document.addEventListener('click', (event) => {
@@ -2283,6 +2297,9 @@ const withWakeHint = async (promise, label) => {
 	try { return await promise; } finally { window.clearTimeout(timer); }
 };
 if (!apiConfigured) {
+	authGate.classList.add('auth-demo-only');
+	authNotice.before(demoLoginButton);
+	authForm.inert = true;
 	setNotice('Вход и регистрация доступны после подключения сервера. Демо уже работает.', 'setup');
 }
 
@@ -2342,10 +2359,10 @@ const showAuth = () => {
 	if (alreadyLogin) animateAuthFields();
 };
 
-telegramLoginButton.hidden = !inTelegram;
+telegramLoginButton.hidden = !inTelegram || !apiConfigured;
 let telegramLoginRequest = 0;
 const tgLogin = async () => {
-	if (!inTelegram || telegramLoginButton.disabled || authForm.querySelector('.auth-submit').disabled) return;
+	if (!apiConfigured || !inTelegram || telegramLoginButton.disabled || authForm.querySelector('.auth-submit').disabled) return;
 	const request = ++telegramLoginRequest;
 	telegramLoginButton.disabled = true;
 	setNotice('Входим через Telegram…', 'wait');
@@ -4532,7 +4549,9 @@ if (inTelegram) {
 			trialAvailable = false;
 			setPlus(d.plus);
 			applyPlan();
-			showSuccess('Wind Plus включён на 7 дней — без оплаты и автосписаний');
+			const message = 'Wind Plus включён на 7 дней — без оплаты и автосписаний';
+			if (modal.open) m.status.textContent += ` · ${message}`;
+			else showSuccess(message);
 		} catch (e) {
 			m.status.textContent = e.message;
 			m.status.classList.add('warn');
@@ -4546,6 +4565,7 @@ if (inTelegram) {
 		renderModal();
 		m.status.textContent = 'Открываем счёт…';
 		let feedback = '';
+		let confirmation = '';
 		try {
 			if (inTelegram) {
 				const result = await checkoutWithStars(plan);
@@ -4555,7 +4575,9 @@ if (inTelegram) {
 						setPlus(user.plus);
 						applyPlan();
 					}
-					showSuccess('Оплата Wind Plus подтверждена');
+					const message = 'Оплата Wind Plus подтверждена';
+					if (modal.open) confirmation = message;
+					else showSuccess(message);
 				} else if (result !== 'stale') {
 					feedback = starsPaymentMessage(result);
 				}
@@ -4569,6 +4591,7 @@ if (inTelegram) {
 			checkoutBusy = false;
 			renderModal();
 			if (feedback) m.status.textContent = feedback;
+			if (confirmation) m.status.textContent += ` · ${confirmation}`;
 		}
 	});
 
@@ -6487,6 +6510,11 @@ else window.setTimeout(paintIcons, 200);
 
 const welcomeDialog = document.getElementById('wind-welcome');
 const welcomeSessionKey = 'wind_welcome_after_login_seen';
+const demoGreeting = document.getElementById('demo-greeting');
+document.getElementById('demo-greeting-close').addEventListener('click', () => {
+	demoGreeting.hidden = true;
+	document.querySelector('.agent-pet').focus({ preventScroll: true });
+});
 let welcomeCloseTimer;
 const dismissWelcome = () => {
 	if (!welcomeDialog.open || welcomeDialog.hasAttribute('data-closing')) return;
@@ -6511,6 +6539,11 @@ window.addEventListener('wind-auth', () => {
 	try {
 		if (sessionStorage.getItem(welcomeSessionKey)) return;
 	} catch { /* Приветствие всё равно можно открыть. */ }
+	if (isDemoPreview()) {
+		demoGreeting.hidden = false;
+		try { sessionStorage.setItem(welcomeSessionKey, '1'); } catch { /* Хранилище недоступно. */ }
+		return;
+	}
 	const mascot = document.querySelector('.agent-pet').getBoundingClientRect();
 	welcomeDialog.style.setProperty('--welcome-x', `${mascot.left + mascot.width / 2}px`);
 	welcomeDialog.style.setProperty('--welcome-y', `${mascot.top + mascot.height / 2}px`);
@@ -6518,6 +6551,7 @@ window.addEventListener('wind-auth', () => {
 	try { sessionStorage.setItem(welcomeSessionKey, '1'); } catch { /* Хранилище недоступно. */ }
 });
 window.addEventListener('wind-logout', () => {
+	demoGreeting.hidden = true;
 	if (welcomeDialog.open) welcomeDialog.close();
 	try { sessionStorage.removeItem(welcomeSessionKey); } catch { /* Хранилище недоступно. */ }
 });
