@@ -7,10 +7,10 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f2f5ef">
 	<title>Wind Finance</title>
-	<link rel="stylesheet" href="style.css?v=67">
+	<link rel="stylesheet" href="style.css?v=66">
 	<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 	<script defer src="config.js"></script>
-	<script defer src="script.js?v=67"></script>
+	<script defer src="script.js?v=62"></script>
 	<script defer src="assets/bybit-spot.js?v=54"></script>
 </head>
 <body>
@@ -26,7 +26,6 @@
 				<a href="#game"><span class="nav-icon"><i data-lucide="gamepad-2"></i></span> Игра</a>
 			</nav>
 		</aside>
-
 
 		<button class="agent-pet" type="button" data-agent-toggle aria-label="Помощник Винд" aria-expanded="false" aria-controls="news">
 			<span class="agent-pet-aura"></span><span class="agent-pet-face"><b></b></span><span class="agent-pet-label">Wind рядом</span><span class="agent-pet-dot"></span><span class="agent-pet-badge" id="agent-pet-badge" hidden></span>
@@ -50,7 +49,7 @@
 						<i data-lucide="moon"></i>
 					</button>
 					<div class="profile-menu">
-						<button class="profile-trigger" type="button" aria-label="Меню профиля" aria-expanded="false" aria-controls="profile-dropdown">
+						<button class="profile-trigger" type="button" aria-expanded="false" aria-controls="profile-dropdown">
 							<span class="avatar wind-avatar"><i data-lucide="wind"></i></span><span class="profile-copy"><span class="profile-name">Гость</span><span class="profile-meta">Free</span></span><span class="profile-chevron"><i data-lucide="chevron-down"></i></span>
 						</button>
 						<div class="profile-dropdown" id="profile-dropdown" hidden>
@@ -65,7 +64,6 @@
 					</div>
 				</div>
 			</header>
-			<div class="demo-greeting" id="demo-greeting" hidden><p><strong>Я Винд!</strong> Здесь можно попробовать копилки и учебный портфель.</p><button id="demo-greeting-close" type="button" aria-label="Закрыть приветствие">×</button></div>
 			<div class="sim-banner" id="sim-banner"><span><b>Режим симулятора.</b> Портфель и баланс Wind учебные.</span><button id="sim-ok" type="button">Понятно</button></div>
 
 			<section class="hero-grid" aria-label="Баланс и курсы валют">
@@ -382,6 +380,11 @@
 							<h2 id="partner-title"><span class="web-trading">Купить<br>крипту</span><span class="mini-app-purchase">Учебная<br>покупка</span></h2>
 						</div>
 						<p class="web-trading">Спотовая покупка за USDT или предложения за рубли на Bybit P2P.</p>
+						<div class="bp-actions web-trading">
+							<a class="purchase-signup" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Регистрация на Bybit</a>
+							<button type="button" class="bp-copy" id="bybit-ref-copy" aria-label="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
+						</div>
+						<small class="web-trading">Wind может получать часть торговой комиссии за приглашённых клиентов.</small>
 					</div>
 					<section class="crypto-purchase" id="spot-panel" aria-label="Купить криптовалюту">
 						<div class="purchase-modes web-trading" role="group" aria-label="Способ покупки">
@@ -394,13 +397,8 @@
 								<label><input type="radio" name="p2p-coin" value="BTC"><span>BTC</span></label>
 								<label><input type="radio" name="p2p-coin" value="ETH"><span>ETH</span></label>
 							</fieldset>
-							<p>Курс, способ оплаты и лимиты выбираются у продавца на Bybit.</p>
+							<p>Впервые на Bybit? Сначала зарегистрируйся по ссылке Wind выше. Курс, способ оплаты и лимиты выбираются у продавца на Bybit.</p>
 							<a class="purchase-primary" id="purchase-offers" href="https://www.bybit.com/ru-RU/p2p/buy/USDT/RUB" target="_blank" rel="noopener noreferrer">Предложения USDT на Bybit <i data-lucide="external-link" aria-hidden="true"></i></a>
-							<div class="bp-actions">
-								<a class="purchase-signup" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Регистрация на Bybit</a>
-								<button type="button" class="bp-copy" id="bybit-ref-copy" aria-label="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
-							</div>
-							<small class="bp-disclosure">Wind может получать часть торговой комиссии за приглашённых клиентов.</small>
 						</div>
 						<div id="purchase-spot">
 							<p class="spot-source" id="spot-source">Учебный пример · без списаний</p>
@@ -838,21 +836,16 @@
 			<small class="bybit-trade-note">Продажу и её условия ты подтверждаешь на Bybit.</small>
 		</div>
 	</div>
-	<dialog class="modal" id="subscription-modal" aria-labelledby="subscription-title" hidden>
-		<div class="modal-card plus-modal">
+	<div class="modal" id="subscription-modal" hidden>
+		<div class="modal-card plus-modal" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
 			<header class="plus-hero">
-				<button class="modal-close" type="button" data-close-modal aria-label="Закрыть" autofocus>×</button>
+				<button class="modal-close" type="button" data-close-modal aria-label="Закрыть">×</button>
 				<p class="eyebrow">Wind Plus</p>
 				<h2 id="subscription-title">Анализ рынка и ценовые уведомления</h2>
 				<p>Разбирай движение BTC, ETH и SOL и получай сигнал, когда цена достигнет твоего уровня.</p>
 			</header>
 			<div class="plus-layout">
 				<div class="plus-offer">
-					<div class="plus-demo-offer">
-						<strong class="lab-web-price">199 ₽ за 30 дней · 1 790 ₽ за 365 дней</strong>
-						<p>Выбрать тариф можно после входа. Для новых аккаунтов доступен пробный период на 7 дней.</p>
-						<button type="button" class="plus-example-link" id="plus-show-analysis">Попробовать анализ на учебных данных</button>
-					</div>
 					<div class="plus-benefit">
 						<strong>30</strong>
 						<div><b>ценовых уведомлений</b><small>В базовом тарифе доступны три</small></div>
@@ -868,6 +861,10 @@
 					<button class="button modal-submit" id="plus-subscribe" type="button">Оформить Wind Plus</button>
 					<button class="plus-trial" id="plus-trial" type="button" hidden><i data-lucide="gift" aria-hidden="true"></i> Попробовать 7 дней бесплатно</button>
 					<p class="plus-status" id="plus-status" role="status"></p>
+					<div class="plus-demo-offer">
+						<strong class="lab-web-price">199 ₽ за 30 дней · 1 790 ₽ за 365 дней</strong>
+						<p>Выбрать тариф можно после входа. Для новых аккаунтов доступен пробный период на 7 дней.</p>
+					</div>
 				</div>
 				<div class="plus-experience">
 					<section class="plus-lab" aria-label="Сценарии Wind Plus">
@@ -894,6 +891,7 @@
 					<details open>
 						<summary>Анализ рынка</summary>
 						<p><strong>BTC · RSI 56</strong> — в этом примере индикатор между уровнями перепроданности и перекупленности.</p>
+						<button type="button" class="plus-example-link" id="plus-show-analysis">Попробовать анализ на учебных данных</button>
 					</details>
 					<details>
 						<summary>Радар крипторынка</summary>
@@ -913,7 +911,7 @@
 			</div>
 			<p class="article-note">Аналитика носит информационный характер.</p>
 		</div>
-	</dialog>
+	</div>
 	<div class="modal" id="article-modal" hidden>
 		<div class="modal-card article-card" role="dialog" aria-modal="true" aria-labelledby="article-title">
 			<button class="modal-close" type="button" data-close-modal aria-label="Закрыть"><i data-lucide="x"></i></button>
