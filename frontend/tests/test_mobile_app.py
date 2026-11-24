@@ -608,12 +608,18 @@ def test_spot_purchase_preview_and_ruble_offers(open_app):
     purchase.locator("#purchase-p2p").get_by_text("ETH", exact=True).click()
     expect(purchase.locator("#purchase-offers")).to_have_attribute("href", "https://www.bybit.com/ru-RU/p2p/buy/ETH/RUB")
     purchase.get_by_role("button", name="Спот в Wind").click()
+    expect(purchase.locator("#spot-price")).to_have_text("65 000 USDT")
     purchase.locator("#spot-form").get_by_text("ETH", exact=True).click()
+    expect(purchase.locator("#spot-price")).to_have_text("3 200 USDT")
     amount = purchase.get_by_label("Сумма, USDT")
+    purchase.get_by_role("button", name="50", exact=True).click()
+    expect(amount).to_have_value("50")
+    expect(purchase.locator("#spot-estimate")).to_have_text("≈ 0,015625 ETH")
     amount.fill("0")
     purchase.get_by_role("button", name="Рассчитать покупку").click()
     expect(purchase.locator("#purchase-review")).to_be_hidden()
     amount.fill("32")
+    expect(purchase.locator("#spot-estimate")).to_have_text("≈ 0,01 ETH")
     purchase.get_by_role("button", name="Рассчитать покупку").click()
     expect(purchase.locator("#spot-qty")).to_have_text("0,01 ETH")
     purchase.get_by_role("button", name="Изменить").click()
@@ -716,6 +722,8 @@ def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
             return False
         replies = {
             "/status": {"enabled": True, "network": "testnet", "max_usdt": "100", "uid": None},
+            "/prices/BTCUSDT": {"symbol": "BTCUSDT", "ask": "50000"},
+            "/prices/ETHUSDT": {"symbol": "ETHUSDT", "ask": "2400"},
             "/connect": {"url": "https://testnet.bybit.com/oauth?client_id=wind"},
             "/pair": {"uid": "1234"},
             "/quotes": order,
@@ -731,6 +739,8 @@ def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
     page.locator("#auth-password").fill("TestPassword123")
     page.locator(".auth-submit").click()
     page.locator('.nav a[href="#crypto"]').click()
+    expect(page.locator("#spot-price")).to_have_text("50 000 USDT")
+    expect(page.locator("#spot-review-start")).to_be_hidden()
     page.get_by_role("button", name="Подключить Bybit").click()
     expect(page.locator("#spot-authorize")).to_have_attribute("href", "https://testnet.bybit.com/oauth?client_id=wind")
     page.locator("#spot-pin").fill("DEADBEEF00")
@@ -738,7 +748,11 @@ def test_customer_spot_broker_connection_and_explicit_confirmation(open_app):
     expect(page.locator("#spot-source")).to_contain_text("Bybit Testnet")
     expect(page.locator("#spot-source")).to_contain_text("1234")
     page.locator("#spot-form label").filter(has_text="ETH").click()
+    expect(page.locator("#spot-price")).to_have_text("2 400 USDT")
+    expect(page.locator("#spot-estimate")).to_have_text("≈ 0,01041667 ETH")
+    assert not any(path.endswith('/quotes') for _, path, _, _ in requests)
     page.get_by_role("button", name="Рассчитать покупку").click()
+    expect(page.locator("#spot-review-price")).to_have_text("2 500 USDT")
     expect(page.locator("#spot-qty")).to_have_text("0,01 ETH")
     assert not any(path.endswith('/confirm') for _, path, _, _ in requests)
     page.get_by_role("button", name="Купить за 25 USDT").click()

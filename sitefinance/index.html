@@ -21,11 +21,11 @@
 	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23246f54'/%3E%3Cpath d='M7 12h12a3 3 0 1 0-3-3M7 17h17a3 3 0 1 1-3 3M7 22h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 	<meta name="theme-color" content="#f2f5ef">
 	<link rel="preload" href="assets/wind-auth-current.webp" as="image" fetchpriority="high">
-	<link rel="stylesheet" href="style.css?v=80">
+	<link rel="stylesheet" href="style.css?v=81">
 	<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 	<script defer src="config.js"></script>
 	<script defer src="script.js?v=80"></script>
-	<script defer src="assets/bybit-spot.js?v=70"></script>
+	<script defer src="assets/bybit-spot.js?v=81"></script>
 </head>
 <body>
 	<div class="app" inert>
@@ -409,7 +409,7 @@
 							<span class="bybit-partner-label web-trading">Wind <span>×</span> Bybit</span>
 							<h2 id="partner-title"><span class="web-trading">Купить<br>крипту</span><span class="mini-app-purchase">Учебная<br>покупка</span></h2>
 						</div>
-						<p class="web-trading">Спотовая покупка за USDT или предложения за рубли на Bybit P2P.</p>
+						<p class="web-trading">Выбери монету и сразу посмотри курс. Спотовую заявку можно подтвердить в Wind после подключения аккаунта Bybit.</p>
 						<div class="bp-actions web-trading">
 							<a class="purchase-signup" data-bybit-signup="partner-card" href="https://www.bybit.com/invite?ref=393YMZP" target="_blank" rel="noopener noreferrer sponsored">Регистрация на Bybit</a>
 							<button type="button" class="bp-copy" id="bybit-ref-copy" aria-label="Скопировать реферальный код"><i data-lucide="copy"></i> Код <code id="bybit-ref-code">393YMZP</code></button>
@@ -432,6 +432,27 @@
 						</div>
 						<div id="purchase-spot">
 							<p class="spot-source" id="spot-source">Учебный пример · без списаний</p>
+							<form id="spot-form">
+								<fieldset class="purchase-coins"><legend>Что купить за USDT</legend>
+									<label><input type="radio" name="spot-asset" value="BTCUSDT" checked><span>BTC</span></label>
+									<label><input type="radio" name="spot-asset" value="ETHUSDT"><span>ETH</span></label>
+									<label><input type="radio" name="spot-asset" value="SOLUSDT"><span>SOL</span></label>
+								</fieldset>
+								<div class="spot-price-card">
+									<div><span>Цена за <span id="spot-price-asset">BTC</span></span><strong id="spot-price">—</strong></div>
+									<button type="button" id="spot-refresh" class="spot-chip" hidden>Обновить</button>
+									<small id="spot-price-note" role="status"></small>
+								</div>
+								<label class="purchase-amount-label" for="spot-amount">Сумма, USDT</label>
+								<input id="spot-amount" type="number" required min="0.01" step="0.01" value="25" inputmode="decimal">
+								<div class="spot-presets" role="group" aria-label="Быстрые суммы в USDT">
+									<button class="spot-chip" type="button" data-spot-budget="25">25</button>
+									<button class="spot-chip" type="button" data-spot-budget="50">50</button>
+									<button class="spot-chip" type="button" data-spot-budget="100">100</button>
+								</div>
+								<div class="spot-estimate"><label for="spot-estimate">Примерно получишь</label><output id="spot-estimate" for="spot-amount" aria-live="off">—</output></div>
+								<button class="purchase-primary" type="submit" id="spot-review-start">Рассчитать покупку</button>
+							</form>
 							<div id="spot-connect" hidden>
 								<p>Разреши Wind размещать спотовые заявки через твой аккаунт Bybit.</p>
 								<button type="button" class="purchase-primary" id="spot-connect-start">Подключить Bybit</button>
@@ -443,19 +464,13 @@
 									<button class="purchase-back" id="spot-connect-restart" type="button">Получить новый код</button>
 								</div>
 							</div>
-							<form id="spot-form">
-								<fieldset class="purchase-coins"><legend>Что купить за USDT</legend>
-									<label><input type="radio" name="spot-asset" value="BTCUSDT" checked><span>BTC</span></label>
-									<label><input type="radio" name="spot-asset" value="ETHUSDT"><span>ETH</span></label>
-									<label><input type="radio" name="spot-asset" value="SOLUSDT"><span>SOL</span></label>
-								</fieldset>
-								<label class="purchase-amount-label" for="spot-amount">Сумма, USDT</label>
-								<input id="spot-amount" type="number" required min="0.01" step="0.01" value="25" inputmode="decimal">
-								<button class="purchase-primary" type="submit">Рассчитать покупку</button>
-							</form>
 							<div id="purchase-review" tabindex="-1" hidden>
 								<h3 id="spot-title"></h3>
-								<dl><div><dt>Сумма</dt><dd id="spot-total"></dd></div><div><dt id="spot-qty-label">Ориентировочно</dt><dd id="spot-qty"></dd></div></dl>
+								<dl>
+									<div id="spot-review-price-row"><dt id="spot-review-price-label">Цена</dt><dd id="spot-review-price"></dd></div>
+									<div><dt>Сумма</dt><dd id="spot-total"></dd></div>
+									<div><dt id="spot-qty-label">Ориентировочно</dt><dd id="spot-qty"></dd></div>
+								</dl>
 								<p id="spot-note"></p>
 								<button type="button" class="purchase-primary" id="spot-confirm"></button>
 								<button type="button" class="purchase-back" id="spot-reset">Изменить</button>

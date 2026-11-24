@@ -3602,16 +3602,16 @@ body[data-view="investments"] .section-backdrop {
 	background: radial-gradient(ellipse 85% 75% at var(--scene-origin), var(--scene-glow), transparent) var(--scene-base);
 }
 body[data-view="dashboard"] {
-	--scene-base: #eee5f6;
-	--scene-glow: #f2cde3;
-	--scene-night: #231d32;
-	--scene-night-glow: #492c49;
-	--overview-lavender: #d6c8f3;
+	--scene-base: #eee7fc;
+	--scene-glow: #d9bff5;
+	--scene-night: #21182f;
+	--scene-night-glow: #4b2d6a;
+	--overview-lavender: #baaae9;
 }
 body.dark-theme[data-view="dashboard"] {
 	--scene-base: var(--scene-night);
 	--scene-glow: var(--scene-night-glow);
-	--overview-lavender: #41345f;
+	--overview-lavender: #513e79;
 }
 body[data-view="dashboard"] .section-backdrop {
 	background:
@@ -3777,6 +3777,39 @@ body[data-view="dashboard"]:not(:has(.auth-gate:not([hidden]))) {
 .purchase-primary svg, .purchase-back svg { width: 16px; height: 16px; flex-shrink: 0; }
 .purchase-back { margin-top: 6px; background: transparent; color: var(--section-ink); }
 #spot-amount, #spot-pin { width: 100%; min-height: 48px; padding: 8px 12px; border: 1px solid var(--section-border); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.spot-price-card, .spot-estimate {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px 10px;
+	padding: 11px 12px;
+	border: 1px solid var(--section-border);
+	border-radius: 12px;
+	background: var(--soft-panel);
+}
+.spot-price-card { margin-bottom: 14px; background: linear-gradient(120deg, var(--section-tint), var(--soft-panel)); }
+.spot-price-card > div { display: grid; gap: 3px; }
+.spot-price-card span, .spot-estimate label, .spot-price-card small { color: var(--muted); font-size: .81rem; }
+.spot-price-card small { flex-basis: 100%; }
+.spot-price-card strong, .spot-estimate output { color: var(--section-ink); font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.spot-price-card strong { font-size: clamp(1rem, 3vw, 1.3rem); }
+.spot-presets { display: flex; gap: 6px; margin: 8px 0 12px; }
+.spot-presets .spot-chip { flex: 1; }
+.spot-chip {
+	min-height: 42px;
+	padding: 5px 10px;
+	border: 1px solid var(--section-border);
+	border-radius: 9px;
+	background: var(--section-tint);
+	color: var(--section-ink);
+	font: inherit;
+	font-size: .81rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+.spot-chip:hover:not(:disabled) { border-color: var(--section-ink); }
+.spot-chip:disabled, #spot-review-start:disabled, #spot-confirm:disabled { opacity: .6; cursor: wait; }
 #purchase-review dl > div { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; padding-top: 12px; }
 #purchase-review dt { color: var(--muted); font-size: .9rem; }
 #purchase-review dd { margin: 0; font-weight: 750; font-variant-numeric: tabular-nums; }

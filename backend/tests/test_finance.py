@@ -682,6 +682,11 @@ def test_customer_broker_oauth_confirmation_and_timeout_reconciliation(spot_brok
     buyer = auth(register("spot@example.com", "spot-buyer"))
     other = auth(register("other-spot@example.com", "other-buyer"))
     root = "/broker/bybit"
+    assert client.get(root + "/prices/BTCUSDT").status_code == 401
+    assert client.get(root + "/prices/DOGEUSDT", headers=buyer).status_code == 422
+    assert client.get(root + "/prices/BTCUSDT", headers=buyer).json() == {"symbol": "BTCUSDT", "ask": "50000"}
+    with SessionLocal() as db:
+        assert db.query(broker.BrokerBuy).count() == 0
     pin = broker_pin(buyer)
     assert client.post(root + "/pair", json={"pin": pin}, headers=other).status_code == 400
     assert client.post(root + "/pair", json={"pin": pin}, headers=buyer).json() == {"uid": "1234"}

@@ -56,8 +56,11 @@ class BrokerBuy(Base):
     note: Mapped[str] = mapped_column(String(180), default="")
 
 
+SpotSymbol = Literal["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+
+
 class BuyInput(BaseModel):
-    symbol: Literal["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    symbol: SpotSymbol
     amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
 
 
@@ -180,6 +183,24 @@ def summary(order):
 FINAL = {"Filled", "Cancelled", "Rejected", "PartiallyFilledCanceled", "Deactivated"}
 
 
+async def market_ask(cfg: Config, symbol: SpotSymbol) -> Decimal:
+    ticks = await exchange("GET", cfg.api + "/v5/market/tickers", params={"category": "spot", "symbol": symbol})
+    rows = ticks.get("list")
+    if not isinstance(rows, list):
+        raise HTTPException(502, "Нет актуальной цены предложения")
+    for row in rows:
+        if not isinstance(row, dict) or row.get("symbol") != symbol:
+            continue
+        try:
+            ask = Decimal(str(row.get("ask1Price")))
+        except ArithmeticError:
+            break
+        if ask.is_finite() and ask > 0:
+            return ask
+        break
+    raise HTTPException(502, "Нет актуальной цены предложения")
+
+
 def router_for(current_user, get_db, limiter):
     router = APIRouter(prefix="/broker/bybit", tags=["Bybit Broker"])
 
@@ -284,20 +305,18 @@ def router_for(current_user, get_db, limiter):
             db.commit()
         return {"ok": True}
 
+    @router.get("/prices/{symbol}")
+    async def price(symbol: SpotSymbol, user=Depends(trader), cfg=Depends(enabled)):
+        limiter.check(f"broker-price:{user.id}", 30, 60)
+        return {"symbol": symbol, "ask": str(await market_ask(cfg, symbol))}
+
     @router.post("/quotes")
     async def quote(payload: BuyInput, user=Depends(trader), db: Session = Depends(get_db), cfg=Depends(enabled)):
         account = connection(db, user, cfg)
         limiter.check(f"broker-quote:{user.id}", 20, 60)
         if payload.amount > cfg.limit:
             raise HTTPException(400, "Сумма превышает лимит на одну покупку")
-        ticks = await exchange("GET", cfg.api + "/v5/market/tickers", params={"category": "spot", "symbol": payload.symbol})
-        rows = ticks.get("list") or []
-        try:
-            ask = Decimal(str(rows[0]["ask1Price"])) if rows and rows[0].get("symbol") == payload.symbol else Decimal(0)
-        except (ArithmeticError, KeyError, TypeError):
-            ask = Decimal(0)
-        if not ask.is_finite() or ask <= 0:
-            raise HTTPException(502, "Нет актуальной цены предложения")
+        ask = await market_ask(cfg, payload.symbol)
         order = BrokerBuy(id=uuid.uuid4().hex, user_id=user.id, uid=account.uid, integration=cfg.integration,
                           symbol=payload.symbol, budget=payload.amount, ask=ask, created=now(), status="preview")
         db.add(order)
